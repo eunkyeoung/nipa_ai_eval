@@ -1,0 +1,11 @@
+# AIPS QA 화면(qa_app.py) 실행 설정 — qa_app.py와 같은 폴더의 .streamlit 폴더에 둡니다.
+[server]
+showEmailPrompt = false     # 처음 실행 시 이메일 입력 질문 안 함
+headless = false            # 실행하면 브라우저 자동으로 열기
+port = 8501
+
+[client]
+toolbarMode = "viewer"      # 오른쪽 상단 개발자 메뉴·Deploy 버튼 숨김
+
+[browser]
+gatherUsageStats = false    # 사용 통계 전송 안 함

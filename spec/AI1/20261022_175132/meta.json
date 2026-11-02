@@ -1,0 +1,13 @@
+{
+ "item": "AI1",
+ "시험항목": "[AI 1] 인허가 질의에 대한 사전 진단 판단 결과 도출 기능",
+ "base": "http://aips.iptime.org:17000/api",
+ "repeat": 1,
+ "testset": "spec_data\\testset_ai1.csv",
+ "testset_sha256": "0e1701b58ad8777f7e679ac9228fb0767a2873c89834ca12ed7eb37d10081d5b",
+ "answer": "spec_data\\answer_ai1.csv",
+ "answer_sha256": "92b10ba007c4c681ee5b0e1a230a62f5ddf0ef2b194aa211299ba1b03a634eac",
+ "lawdb": null,
+ "lawdb_sha256": null,
+ "started": "2026-10-22 17:51:32"
+}

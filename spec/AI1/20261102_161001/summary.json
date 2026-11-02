@@ -1,0 +1,10 @@
+{
+ "item": "AI1",
+ "value": 70.0,
+ "target": 95.0,
+ "cmp": ">=",
+ "passed": false,
+ "n": 10,
+ "aux": {},
+ "scored": 1793610748.279627
+}

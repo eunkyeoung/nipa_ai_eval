@@ -1,0 +1,13 @@
+{
+ "item": "AI2",
+ "시험항목": "[AI 2] 유의어·유사 표현 질의에 대한 동일 사전 진단 결과 재현 기능",
+ "base": "http://aips.iptime.org:17000/api",
+ "repeat": 1,
+ "testset": "spec_data\\testset_ai2.csv",
+ "testset_sha256": "9e65ca0d2430dcbc229dfc7d7bf76abf80f407693d33a6e960fea3a588cd253b",
+ "answer": "spec_data\\answer_ai2.csv",
+ "answer_sha256": "a0906be0e71b484b0c03137218106e7b35c20e39a34a908b53df72f3804a1a4d",
+ "lawdb": null,
+ "lawdb_sha256": null,
+ "started": "2026-10-22 13:12:04"
+}
