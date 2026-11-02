@@ -1,0 +1,28 @@
+# ── AIPS QA 시스템(nipa_ai_eval) git 제외 목록 ──
+# 실행 결과·상태 파일은 각자 PC에서 실행하면 새로 생기므로 저장소에 올리지 않습니다.
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 실행 결과 (QA 대시보드 / 규격서 시험 / 판단 여부 점검)
+dashboard/
+spec/
+check/
+
+# 실행 상태·로그·임시 파일
+run_status.json
+run_status.json.*.tmp
+run_stop.flag
+run.log
+_variants_run.txt
+
+# 엑셀로 열어 둔 파일이 만드는 잠금 파일
+~$*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
