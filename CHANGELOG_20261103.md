@@ -2,7 +2,7 @@
 
 시험의뢰서(규격서 v.15, KGCT 261102)의 AI1~AI7 시험조건과 QA 시스템을 대조했습니다.
 이어서 AI1(사전 진단 판단 정확도)을 실제로 돌려 보면서 고친 내용을 정리합니다.
-브랜치: `docs/system-architecture` (커밋 전 작업분)
+브랜치: `feature/spec-test-ai1` (구 `docs/system-architecture`에서 이름 변경)
 
 ---
 
