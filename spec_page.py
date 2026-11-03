@@ -18,6 +18,7 @@ FILES = {"AI1": ["testset_ai1", "answer_ai1"], "AI2": ["testset_ai2", "answer_ai
          "AI6": ["testset_ai6", "answer_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"]}
 LABEL = {"testset": "시험셋(질의)", "answer": "정답셋", "law_article_db": "법령·조례 조문 DB",
          "result": "실행 결과(시스템 응답)"}
+HIDE_CASE_COLS = ["적용룰셋"]          # 사례별 결과 화면에서 숨길 컬럼 (사례 상세·result.xlsx에는 남음)
 SHORT = {"AI1": "AI 1 정확도", "AI2": "AI 2 F1", "AI3": "AI 3 일관성", "AI4": "AI 4 조건부", "AI5": "AI 5 환각",
          "AI6": "AI 6 지도 제어", "AI7": "AI 7 3D 시뮬레이션"}
 NOT_PROVIDED = ["AI 엔진 모델 버전 · 룰셋 버전 · 법령·조례 DB 버전 — 시스템 응답에 없음 → 시스템 빌드(build)·계약 버전으로 대신 표시 (개발 요청 필요, README 9-7)",
@@ -91,9 +92,14 @@ def _score(item, run_dir, mt, ans, ts, law, files_mt):
 
 def score_run(item, run_dir):
     meta = read_json(os.path.join(run_dir, "meta.json"))
-    ans = meta.get("answer") if meta.get("answer") and os.path.exists(meta.get("answer")) else data_path(f"answer_{item.lower()}")
-    ts = meta.get("testset") if meta.get("testset") and os.path.exists(meta.get("testset")) else data_path(f"testset_{item.lower()}")
-    law = meta.get("lawdb") if meta.get("lawdb") and os.path.exists(meta.get("lawdb")) else data_path("law_article_db")
+
+    def pick(key, stem):                      # 실행 폴더의 사본(data/) → meta 경로 → 현재 spec_data 순
+        p = meta.get(key)
+        snap = os.path.join(run_dir, "data", os.path.basename(p)) if p else None
+        if snap and os.path.exists(snap):
+            return snap
+        return p if p and os.path.exists(p) else data_path(stem)
+    ans, ts, law = pick("answer", f"answer_{item.lower()}"), pick("testset", f"testset_{item.lower()}"), pick("lawdb", "law_article_db")
     if item != "AI5":
         law = None
     if item == "AI3":
@@ -353,6 +359,7 @@ def render(item, area, help_fn=None):
         view = cases
         if only and flag in cases:
             view = cases[cases[flag] == (item == "AI5")] if item == "AI5" else cases[~cases[flag].astype(bool)]
+        view = view.drop(columns=[c for c in HIDE_CASE_COLS if c in view])      # 화면에서만 숨김 (result.xlsx엔 유지)
         st.dataframe(view, hide_index=True, width="stretch", height=min(420, 38 + 35 * max(len(view), 1)))
         d1, d2 = st.columns(2)
         rx = os.path.join(run_dir, "result.xlsx")
@@ -387,13 +394,13 @@ def render(item, area, help_fn=None):
             return
         st.markdown(f"**질의문** {rec.get('질의문')}")
         out = [("판단 유형", rec.get("판단유형")), ("시스템 원 판정", rec.get("원판정")),
+               ("근거 법령", "; ".join(rec.get("적용법령") or []) or "-"),
                ("근거 조문 (법령ID.조.항)", "; ".join(rec.get("근거조문") or []) or "-"),
-               ("적용 법령", "; ".join(rec.get("적용법령") or []) or "-"),
                ("적용 룰셋", "; ".join(rec.get("적용룰셋") or []) or "미제공"),
                ("단서 조건 근거 조문", "; ".join(rec.get("단서조건근거조문") or []) or "-"),
                ("보완사항", rec.get("보완사항") or "-"),
                ("필요 행정절차", "; ".join(rec.get("필요행정절차") or []) or "-"),
-               ("설명문", rec.get("설명문") or "-"), ("trace_id", rec.get("trace_id") or "-"),
+               ("설명문", rec.get("설명문") or "-"), ("추적 ID", rec.get("trace_id") or "-"),
                ("소요(초)", rec.get("소요초")), ("오류", rec.get("오류") or "-")]
         st.dataframe(pd.DataFrame(out, columns=["출력 항목", "값"]).astype(str), hide_index=True, width="stretch")
         steps = rec.get("단계로그") or []
@@ -426,5 +433,5 @@ def render(item, area, help_fn=None):
             st.dataframe(sdf.astype(str), hide_index=True, width="stretch")
         rp = os.path.join(run_dir, "raw", f"{cid}_{int(rec['회차'])}.json")
         if os.path.exists(rp):
-            with st.expander("응답 원문 (raw JSON)"):
+            with st.expander("응답 원문 (JSON)"):
                 st.json(read_json(rp), expanded=False)

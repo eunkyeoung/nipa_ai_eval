@@ -185,6 +185,11 @@ div[class*="st-key-warn_"] { background: rgba(245, 158, 11, 0.10); }
 div[class*="st-key-kpi_runend"] { background: rgba(34, 197, 94, 0.09); }
 div[class*="st-key-"] h4 { margin-top: 0; padding-top: 0; font-size: 1.15rem; }
 div[data-testid="stMetric"] { background: transparent; }
+/* 회색 영역 안의 선택 상자는 배경과 같은 색이라 안 보임 → 흰 바탕 + 테두리 */
+div[class*="st-key-box_"] div[data-baseweb="select"] > div {
+    background: #ffffff !important; border: 1px solid #94a3b8 !important; border-radius: 8px;
+}
+div[class*="st-key-box_"] div[data-baseweb="select"] > div:hover { border-color: #3b82f6 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -270,7 +275,8 @@ def progress_panel():
                 df = pd.read_excel(out)
                 if "질의" in df:
                     df = df[df["질의"].notna()]
-                cols = [c for c in ["case_id", "사례ID", "회차", "질의", "AI판정", "판단유형", "AI근거", "근거조문", "소요초"] if c in df]
+                cols = [c for c in ["case_id", "사례ID", "회차", "질의", "AI판정", "판단유형", "AI근거", "근거법령",
+                                    "근거조문", "소요초"] if c in df]   # 적용룰셋은 결과 화면(사례별·상세)에서만 표시
                 st.dataframe(df[cols].tail(max(done, 1)), width="stretch", hide_index=True, height=180)
         except Exception:                                       # noqa: BLE001 (러너가 쓰는 중이면 다음 갱신 때 표시)
             pass

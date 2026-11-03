@@ -15,6 +15,7 @@
 import argparse
 import json
 import os
+import shutil
 import sys
 import threading
 import time
@@ -55,6 +56,8 @@ def main():
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--rescore", help="재질의 없이 이 결과 폴더를 다시 채점")
     ap.add_argument("--base")
+    ap.add_argument("--ref-base", default=S.REF_BASE,
+                    help="AI1 참조 정보(PNU·용도지역·규제구역·토지특성) 조회 서버. 빈 값이면 조회 안 함")
     ap.add_argument("--timeout", type=int)
     ap.add_argument("--status-file")
     a = ap.parse_args()
@@ -82,6 +85,11 @@ def main():
     raw_dir = os.path.join(run_dir, "raw")
     os.makedirs(raw_dir, exist_ok=True)
     log_path = os.path.join(run_dir, S.SPEC[item]["log"])
+    snap = os.path.join(run_dir, "data")                          # 실행 당시 시험셋·정답셋 사본 → 나중에 정답셋이 바뀌어도 이 실행은 그대로 채점
+    os.makedirs(snap, exist_ok=True)
+    for p in (a.testset, a.answer, a.lawdb):
+        if p and os.path.exists(p) and not os.path.exists(os.path.join(snap, os.path.basename(p))):
+            shutil.copy2(p, snap)
 
     done_keys = set()
     if a.resume and os.path.exists(log_path):                     # 오류 줄은 버리고 정상 줄만 남김
@@ -153,10 +161,14 @@ def main():
             except Exception as e:                                  # noqa: BLE001
                 rec.update(판단유형=S.UNDECIDED, 단계로그=[], 오류=f"{type(e).__name__}: {str(e)[:300]}")
             rec["소요초"] = round(time.time() - t0, 1)
+            if item == "AI1" and a.ref_base and "주소" in ts.columns:   # 참조 정보 — 질의 입력과 별개, 소요초에 미포함
+                rec.update(S.fetch_ref(r.get("주소"), r.get("시설물"), a.ref_base))
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
             prog.append({"사례ID": rid, "회차": k, "질의": q, "판단유형": rec.get("판단유형"),
-                         "근거조문": "; ".join(rec.get("근거조문") or []), "소요초": rec["소요초"], "오류": rec["오류"]})
+                         "근거법령": "; ".join(rec.get("적용법령") or []), "근거조문": "; ".join(rec.get("근거조문") or []),
+                         "적용룰셋": "; ".join(rec.get("적용룰셋") or []),
+                         "소요초": rec["소요초"], "오류": rec["오류"]})
             try:
                 pd.DataFrame(prog).to_excel(status["out"], index=False)
             except OSError:

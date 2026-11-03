@@ -105,7 +105,8 @@ def read_table(path):
             except UnicodeDecodeError:
                 continue
     df.columns = [str(c).strip() for c in df.columns]
-    return df.fillna("")
+    df = df.fillna("")
+    return df[(df.astype(str).apply(lambda s: s.str.strip()) != "").any(axis=1)].reset_index(drop=True)   # 엑셀 수식 빈 행 제외
 
 
 def type2(v):
@@ -298,6 +299,7 @@ def map_response(events, base=None):
         "불허사유": (rep.get("band") or {}).get("deny_reasons") or [],
         "위반조건": [c.get("source") for c in j.get("conditions") or [] if c.get("status") == "fail"],
         "build": st["start"].get("build"), "contract_version": st["start"].get("contract_version"),
+        **{k: "; ".join(v) for k, v in versions_in(json.dumps(diag, ensure_ascii=False)).items()},
         "trace_id": st["end"].get("trace_id"),
     }
 
@@ -450,12 +452,14 @@ def score_ai1(log, answer):
         gl = {norm_law(x) for x in split_list(g.get("적용법령"))} if g is not None else set()
         pl = {norm_law(x) for x in r.get("적용법령") or []}
         rows.append(dict(사례ID=cid, 질의문=r.get("질의문"), 정답_판단유형=gv, 예측_판단유형=pv, 판단_일치=gv == pv,
+                         예측_적용룰셋="; ".join(r.get("적용룰셋") or []),
                          정답_근거조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          예측_근거조문="; ".join(r.get("근거조문") or []),
                          근거조문_일치=(cite_set_equal(pc, gc) if gc else None),
                          정답_적용법령="; ".join(split_list(g.get("적용법령"))) if g is not None else "",
                          예측_적용법령="; ".join(r.get("적용법령") or []),
-                         적용법령_일치=(gl <= pl if gl else None)))
+                         적용법령_일치=(gl <= pl if gl else None),
+                         **{c: r.get(c, "") for c in REF_COLS if c in log.columns}))
     res = pd.DataFrame(rows)
     n = len(res)
     acc = pct(res["판단_일치"].sum(), n) if n else None
@@ -474,6 +478,34 @@ def score_ai1(log, answer):
                     "일치율(%)": pct(s.astype(bool).sum(), len(s)), "비고": note})
     return dict(value=acc, n=n, tables={"판단 유형별 결과": pd.DataFrame(by_type), "보조 지표": pd.DataFrame(aux)},
                 cases=res, confusion=pd.crosstab(res["정답_판단유형"], res["예측_판단유형"]) if n else pd.DataFrame())
+
+
+VERSION_KEYS = {"룰엔진버전": "engine_version", "공간정보기준일": "stdVer"}      # AIPS 응답 원문 안의 필드명
+
+
+def versions_in(text):
+    """응답 원문(JSON 문자열)에서 버전 필드 값 찾기 → {룰엔진버전: '3.3.0', 공간정보기준일: '2026-04-24'}"""
+    return {k: sorted(set(re.findall(rf'"{f}":\s*"([^"]+)"', text))) for k, f in VERSION_KEYS.items()}
+
+
+def version_table(log, run_dir=None):
+    """시험방법 (2) 동결 버전 확인 — 시스템 응답에 있는 값만 표기, 없는 항목은 '미제공'"""
+    found = {c: {str(x) for x in log[c].dropna() if str(x).strip()} if c in log.columns else set()
+             for c in ("build", "contract_version", *VERSION_KEYS)}
+    if run_dir and not (found["룰엔진버전"] or found["공간정보기준일"]):        # 이전 실행: 저장된 응답 원문에서 찾기
+        import glob
+        for f in glob.glob(os.path.join(run_dir, "raw", "*.json")):
+            with open(f, encoding="utf-8") as fh:
+                for k, v in versions_in(fh.read()).items():
+                    found[k] |= set(v)
+    miss = "미제공 (시스템 응답에 해당 값 없음)"
+    rows = [("시스템 빌드 번호", "build", ""), ("응답 규격 버전", "contract_version", ""),
+            ("AI 사전진단 엔진 모델 버전", None, "LLM 모델명·버전이 응답에 없음"),
+            ("룰셋(룰엔진) 버전", "룰엔진버전", "룰엔진 버전(engine_version) — 룰셋 자체 버전 필드는 없음"),
+            ("법령·조례 DB 버전", None, "법령·조례 DB 시행일·버전이 응답에 없음"),
+            ("공간정보 기준일", "공간정보기준일", "용도지역·지구 지도 데이터 기준일(stdVer)")]
+    return pd.DataFrame([{"항목": k, "값": "; ".join(sorted(found[c])) if c and found[c] else miss, "비고": note}
+                         for k, c, note in rows])
 
 
 # ---------------------------------------------------------------- [AI 2]
@@ -717,6 +749,25 @@ def score(item, run_dir, answer_path=None, testset_path=None, lawdb_path=None):
         r = score_ai1(log, read_table(answer_path))
     r["passed"] = passed(item, r["value"])
     r["item"] = item
+    if not SPEC[item].get("cmd"):                                   # AI1~5: 동결 버전 확인 (시험방법 (2))
+        r["tables"]["버전 정보"] = version_table(log, run_dir)
+    return drop_pred_prefix(r)
+
+
+def drop_pred_prefix(r):
+    """출력(화면·result.xlsx)에서 '예측_' 접두어 제거 — 예측_판단유형 → 판단유형 (산정 로직의 내부 이름은 그대로)"""
+    def ren(df):
+        if not isinstance(df, pd.DataFrame):
+            return df
+        new = {c: c[3:] for c in df.columns if isinstance(c, str) and c.startswith("예측_") and c[3:] not in df.columns}
+        df = df.rename(columns=new)
+        for ax in (df.index, df.columns):                     # 혼동행렬 축 이름
+            if isinstance(ax.name, str) and ax.name.startswith("예측_"):
+                ax.name = ax.name[3:]
+        return df
+    r["cases"] = ren(r.get("cases"))
+    r["confusion"] = ren(r.get("confusion"))
+    r["tables"] = {k: ren(v) for k, v in (r.get("tables") or {}).items()}
     return r
 
 
@@ -739,8 +790,8 @@ def save_result(r, path):
 # ---------------------------------------------------------------- 데이터 양식 (템플릿)
 TEMPLATES = {
     "AI1": {
-        "testset_ai1.csv": (["사례ID", "질의문", "행위유형", "PNU", "용도지역", "규제구역", "토지특성"],
-                            [["AI1-0001", "경상북도 영천시 과전동 91에 단독주택 지을 수 있어?", "건축", "", "일반상업지역", "", ""]]),
+        "testset_ai1.csv": (["사례ID", "질의문", "주소", "시설물"],
+                            [["AI1-0001", "경상북도 영천시 과전동 91에 단독주택 지을 수 있어?", "경상북도 영천시 과전동 91", "단독주택"]]),
         "answer_ai1.csv": (["사례ID", "판단유형", "적용법령", "근거조문"],
                            [["AI1-0001", "허가 가능", "영천시도시계획조례", "영천시도시계획조례.33; 영천시도시계획조례.별표8"]]),
     },
@@ -792,7 +843,7 @@ def gold_to_ai1(gold_df, addr_col, fac_col, folder):
         cid = f"AI1-{int(float(g['case_id'])):04d}" if str(g["case_id"]).replace(".0", "").isdigit() else str(g["case_id"])
         q = g["질의문"] if "질의문" in g and str(g.get("질의문", "")).strip() else f"{g[addr_col]}에 {g[fac_col]} 지을 수 있어?"
         cites = parse_citations(str(g.get("근거", "")))
-        ts.append([cid, q, "건축", "", "", "", ""])
+        ts.append([cid, q, str(g[addr_col]).strip(), str(g[fac_col]).strip()])
         an.append([cid, "허가 불가능" if type2(g.get("정답판정")) == "허가 불가능" else "허가 가능",
                    "; ".join(sorted({law_id(c[0]) for c in cites})), "; ".join(sorted(fmt_cite(c) for c in cites))])
     os.makedirs(folder, exist_ok=True)
@@ -801,6 +852,47 @@ def gold_to_ai1(gold_df, addr_col, fac_col, folder):
     pd.DataFrame(an, columns=TEMPLATES["AI1"]["answer_ai1.csv"][0]).to_csv(
         os.path.join(folder, "answer_ai1.csv"), index=False, encoding="utf-8-sig")
     return len(ts)
+
+
+# AI1 참조 정보 — 시험셋에는 주소·시설물만 두고, PNU·용도지역·규제구역·토지특성은 룰엔진 실측 서버에서 가져옴.
+# 시스템 입력은 여전히 질의문뿐이고, 이 값들은 정답 대조·원인 분석용 참조로만 결과에 붙음 (정확도 산정 미포함)
+REF_BASE = "http://192.168.200.29:8777"
+REF_COLS = ["참조_PNU", "참조_용도지역", "참조_규제구역", "참조_토지특성", "참조_룰엔진판정", "참조_룰엔진사유", "참조_오류"]
+REF_DECISION = {"APPROVED": "허가 가능", "CONDITIONAL": "허가 가능", "DENIED": "허가 불가능"}
+
+
+def fetch_ref(addr, facility, base=REF_BASE, timeout=60):
+    """주소·시설물 → 룰엔진 /api/full (웨이버스 → Fuseki → 룰엔진, 약 3초) → 참조_* 컬럼"""
+    import requests
+    out = dict.fromkeys(REF_COLS, "")
+    addr, facility = str(addr or "").strip(), str(facility or "").strip()
+    if not base or not addr or addr == "nan":
+        out["참조_오류"] = "주소 없음" if base else ""
+        return out
+    try:
+        j = requests.post(f"{base.rstrip('/')}/api/full", timeout=timeout,
+                          json={"query": addr, "input_type": "auto", "user_facility": facility or "단독주택",
+                                "user_activity": ""}).json()
+    except Exception as e:                                          # noqa: BLE001
+        out["참조_오류"] = f"{type(e).__name__}: {str(e)[:200]}"
+        return out
+    p = (j.get("웨이버스") or {}).get("parcel") or {}
+    zone, other = [], []
+    for z in p.get("zones") or []:
+        if not z.get("zone"):
+            continue
+        s = f"{z.get('zone')}({z.get('conflict') or '포함'})"
+        # 국토계획법 용도지역 = UQA(도시지역)·UQB(관리)·UQC(농림)·UQD(자연환경보전), 그 외 지구·구역·시설은 규제구역
+        (zone if str(z.get("code") or "")[:3] in ("UQA", "UQB", "UQC", "UQD") else other).append(s)
+    road = (p.get("road_contact") or {}).get("total_contact_length")
+    v = j.get("판정") or {}
+    out.update(참조_PNU=p.get("pnu") or "", 참조_용도지역="; ".join(zone), 참조_규제구역="; ".join(other),
+               참조_토지특성="; ".join(f"{k}={x}" for k, x in [("면적", f"{p.get('area_m2')}㎡" if p.get("area_m2") else ""),
+                                                          ("지목", p.get("jimok")), ("접도길이", f"{round(road, 1)}m" if road is not None else "")] if x),
+               참조_룰엔진판정=REF_DECISION.get(v.get("decision"), v.get("decision") or ""),
+               참조_룰엔진사유="; ".join(v.get("violations") or []),
+               참조_오류=j.get("error") or ("; ".join(f"{s}" for s in (j.get("웨이버스") or {}).get("failed_steps") or [])))
+    return out
 
 
 # ---------------------------------------------------------------- [AI 6] 지도 제어 · [AI 7] 3D 시뮬레이션
