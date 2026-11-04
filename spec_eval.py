@@ -594,7 +594,7 @@ def version_table(log, run_dir=None):
 
 
 MODEL_NAME_DEFAULT = "gpt-oss-120b"                                           # 시험의뢰서 시험환경 'LLM 추론 환경 (gpt-oss-120b)'
-MODEL_CONSOLE = "http://192.168.200.115:18800/api/models"                     # 공간정보 에이전트·MCP 콘솔 (조회만)
+MODEL_CONSOLE = "http://192.168.200.115:18800/api/models"                     # 공간정보 모듈·MCP 콘솔 (조회만)
 
 
 LAW_STATS = "http://192.168.200.116:17801/api/stats"                          # 법령 수집·적재 관리자 (조회만)
@@ -615,13 +615,13 @@ def current_law_db():
 
 
 def current_model():
-    """실행 시작 때 에이전트 콘솔에서 지금 쓰는 모델명 조회 → (모델명, 출처). 실패하면 기본값"""
+    """실행 시작 때 모듈 콘솔에서 지금 쓰는 모델명 조회 → (모델명, 출처). 실패하면 기본값"""
     try:
         import collections
         import requests
         ag = requests.get(MODEL_CONSOLE, timeout=5).json().get("agents") or []
         name = collections.Counter(a.get("model") for a in ag if a.get("model")).most_common(1)[0][0]
-        return name, "에이전트 콘솔(115:18800) 조회값"
+        return name, "모듈 콘솔(115:18800) 조회값"
     except Exception:                                                         # noqa: BLE001
         return MODEL_NAME_DEFAULT, "기본값(시험의뢰서 시험환경)"
 
