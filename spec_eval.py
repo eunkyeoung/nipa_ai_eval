@@ -685,17 +685,23 @@ def version_table(log, run_dir=None):
     meta = backfill(meta)                                                # 이전 실행: 실행 이후 바뀌지 않은 것이 확인되면 현재 조회값으로 채움
     found["모델명"] = {meta.get("모델명") or MODEL_NAME_DEFAULT}             # 응답에 없음 → 실행 시작 때 콘솔 조회값(없으면 기본값)
     found["법령DB"] = {meta["법령DB"]} if meta.get("법령DB") else set()       # 응답에 없음 → 실행 시작 때 법령 수집 관리자 조회값
+    found["법령해석"] = {meta["법령해석"]} if meta.get("법령해석") else set()  # 매일 바뀌므로 실행 시작 때 기록한 값만 표시
     rows = [("시스템 빌드 번호", "build", ""), ("응답 규격 버전", "contract_version", ""),
             ("AI 사전진단 엔진 모델 버전", "모델명", f"{meta.get('모델명출처') or '기본값'} — 시스템 응답 값 아님"),
             ("룰셋(룰엔진) 버전", "룰엔진버전", "룰엔진 버전(engine_version) — 룰셋 자체 버전 필드는 없음"),
             ("법령·조례 DB 버전", "법령DB", f"{meta['법령DB출처']} — 시스템 응답 값 아님" if meta.get("법령DB")
              else "시스템 응답에 없음 (실행 이후 변경 여부를 확인할 수 없어 비워 둠)"),
-            ("공간정보 기준일", "공간정보기준일", "용도지역·지구 지도 데이터 기준일(stdVer)")]
+            ("법령해석사례", "법령해석", "매일 04시 자동 증분 수집 — 법령·조례 DB와 별도로 갱신됨 (동결 대상 여부 확인 필요)"),
+            ("용도지역·지구 표준분류 기준일", "공간정보기준일",
+             "응답의 stdVer — 용도코드→지도 레이어 대응표의 원천 파일 기준일(공간 DB 명세: 코드변경 및 추가(20260424).xls). 지도 도형 수집일 아님")]
     infra = meta.get("인프라") or {}
     for k, v0 in INSTALL_DOC.items():                                    # 인프라 버전: 실행 당시 조회값, 없으면 설치정보 v1.1
         v, src = (infra.get(k) or ["", ""])
         found[k] = {v or v0}
         rows.append((k, k, f"{src} — 시스템 응답 값 아님" if v else "설치정보 v1.1 기준 (실행 당시 조회값 아님)"))
+    for k, (v, src) in SPATIAL_DOC.items():                              # 공간 DB: 로그인 필요 → 공간 DB 명세 기재값
+        found[k] = {v}
+        rows.append((k, k, src))
     return pd.DataFrame([{"항목": k, "값": "; ".join(sorted(found[c])) if found.get(c) else "-", "비고": note}
                          for k, c, note in rows])
 
@@ -719,6 +725,22 @@ def current_law_db():
                 "법령 수집·적재 관리자(116:17801) 조회값")
     except Exception:                                                         # noqa: BLE001
         return "", ""
+
+
+SPATIAL_DOC = {"공간 DB(PostgreSQL·PostGIS)": ("PostgreSQL 18.6 · PostGIS 3.6.4",
+                                            "토지특성 공간 DB 명세(2026-10-19, 116:17432 ipss) 기준 — 실행 당시 조회값 아님")}
+def current_itpt():
+    """실행 시작 때 법령해석사례 건수·최신 회신일·마지막 수집 시각 조회 (매일 04시 갱신). 실패하면 ''"""
+    try:
+        import datetime as dt
+        import requests
+        it = requests.get(LAW_STATS, timeout=5).json().get("interpretation") or {}
+        at = it.get("last_collected_at") or ""
+        kst = (dt.datetime.fromisoformat(at.replace("Z", "+00:00")) + dt.timedelta(hours=9)).strftime("%Y-%m-%d %H:%M") if at else "-"
+        y = str(it.get("latest_rply_ymd") or "")
+        return f"{it.get('total', 0):,}건 · 최신 회신 {y[:4]}-{y[4:6]}-{y[6:]} · 수집 {kst}"
+    except Exception:                                                         # noqa: BLE001
+        return ""
 
 
 INSTALL_DOC = {"LLM 서빙(vLLM)": "0.24.0", "그래프 DB(Fuseki)": "6.1.0", "벡터 DB(Milvus)": "2.6.18"}   # 설치정보 v1.1
