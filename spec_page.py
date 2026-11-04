@@ -140,7 +140,7 @@ def score_run(item, run_dir):
     lp = os.path.join(run_dir, S.SPEC[item]["log"])
     if not os.path.exists(lp):
         return None, meta, (ans, ts, law)
-    fm = tuple(os.path.getmtime(p) if p and os.path.exists(p) else 0 for p in (ans, ts, law))
+    fm = tuple(os.path.getmtime(p) if p and os.path.exists(p) else 0 for p in (ans, ts, law, S.__file__))   # 채점 코드가 바뀌어도 다시 계산
     try:
         r = _score(item, run_dir, os.path.getmtime(lp), ans, ts, law, fm)
     except Exception as e:                                            # noqa: BLE001

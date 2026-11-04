@@ -682,13 +682,14 @@ def version_table(log, run_dir=None):
     if run_dir and os.path.exists(os.path.join(run_dir, "meta.json")):
         with open(os.path.join(run_dir, "meta.json"), encoding="utf-8") as fh:
             meta = json.load(fh)
+    meta = backfill(meta)                                                # 이전 실행: 실행 이후 바뀌지 않은 것이 확인되면 현재 조회값으로 채움
     found["모델명"] = {meta.get("모델명") or MODEL_NAME_DEFAULT}             # 응답에 없음 → 실행 시작 때 콘솔 조회값(없으면 기본값)
     found["법령DB"] = {meta["법령DB"]} if meta.get("법령DB") else set()       # 응답에 없음 → 실행 시작 때 법령 수집 관리자 조회값
     rows = [("시스템 빌드 번호", "build", ""), ("응답 규격 버전", "contract_version", ""),
             ("AI 사전진단 엔진 모델 버전", "모델명", f"{meta.get('모델명출처') or '기본값'} — 시스템 응답 값 아님"),
             ("룰셋(룰엔진) 버전", "룰엔진버전", "룰엔진 버전(engine_version) — 룰셋 자체 버전 필드는 없음"),
             ("법령·조례 DB 버전", "법령DB", f"{meta['법령DB출처']} — 시스템 응답 값 아님" if meta.get("법령DB")
-             else "시스템 응답에 없음 (다음 실행부터 법령 수집 관리자 조회값을 기록)"),
+             else "시스템 응답에 없음 (실행 이후 변경 여부를 확인할 수 없어 비워 둠)"),
             ("공간정보 기준일", "공간정보기준일", "용도지역·지구 지도 데이터 기준일(stdVer)")]
     infra = meta.get("인프라") or {}
     for k, v0 in INSTALL_DOC.items():                                    # 인프라 버전: 실행 당시 조회값, 없으면 설치정보 v1.1
@@ -737,6 +738,39 @@ def infra_versions():
             out[k] = ("", "")
     out["벡터 DB(Milvus)"] = (INSTALL_DOC["벡터 DB(Milvus)"], "설치정보 v1.1")
     return {k: list(v) for k, v in out.items()}
+
+
+def backfill(meta):
+    """이전 실행(모델명·법령DB 기록 전)이면 현재 조회값을 채움 — 그 값이 실행 시작 전부터 그대로였다고 확인될 때만"""
+    started = meta.get("started") or ""
+    if not started or (meta.get("모델명") and meta.get("법령DB")):
+        return meta
+    meta = dict(meta)
+    import datetime as dt
+    import requests
+    note = f"현재 조회값 — 실행({started}) 이후 변경 없음 확인"
+    if not meta.get("모델명"):
+        try:
+            d = requests.get(MODEL_CONSOLE, timeout=5).json()
+            name, src = current_model()
+            sw = next((re.search(r"(\d{4}-\d{2}-\d{2})\s*전환", m.get("note") or "") for m in d.get("declared") or []
+                       if m.get("id") == name), None)
+            if sw and sw.group(1) < started[:10]:                          # 전환일이 실행일보다 앞섬 → 실행 때도 같은 모델
+                meta["모델명"], meta["모델명출처"] = name, f"{src.replace(' 조회값', '')} {note} (전환 {sw.group(1)})"
+        except Exception:                                                     # noqa: BLE001
+            pass
+    if not meta.get("법령DB"):
+        try:
+            s = requests.get(LAW_STATS, timeout=5).json()
+            at = (s.get("collection") or {}).get("last_collected_at") or ""
+            kst = (dt.datetime.fromisoformat(at.replace("Z", "+00:00")) + dt.timedelta(hours=9)).strftime("%Y-%m-%d %H:%M:%S") if at else ""
+            if kst and kst < started and not (s.get("collection") or {}).get("running_jobs"):   # 마지막 수집이 실행 전 → 실행 때도 같은 DB
+                val, src = current_law_db()
+                if val:
+                    meta["법령DB"], meta["법령DB출처"] = val, f"{src.replace(' 조회값', '')} {note}"
+        except Exception:                                                     # noqa: BLE001
+            pass
+    return meta
 
 
 def current_model():
