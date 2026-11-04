@@ -699,7 +699,7 @@ def version_table(log, run_dir=None):
         v, src = (infra.get(k) or ["", ""])
         found[k] = {v or v0}
         rows.append((k, k, f"{src} — 시스템 응답 값 아님" if v else "설치정보 v1.1 기준 (실행 당시 조회값 아님)"))
-    for k, (v, src) in SPATIAL_DOC.items():                              # 공간 DB: 로그인 필요 → 공간 DB 명세 기재값
+    for k, (v, src) in SPATIAL_DOC.items():                              # 로그인이 필요한 값 → 확인한 날의 값과 출처를 고정 기재
         found[k] = {v}
         rows.append((k, k, src))
     return pd.DataFrame([{"항목": k, "값": "; ".join(sorted(found[c])) if found.get(c) else "-", "비고": note}
@@ -727,7 +727,9 @@ def current_law_db():
         return "", ""
 
 
-SPATIAL_DOC = {"공간 DB(PostgreSQL·PostGIS)": ("PostgreSQL 18.6 · PostGIS 3.6.4",
+SPATIAL_DOC = {"법령 온톨로지(그래프 DB) 버전": ("4.2.0-grounding",
+                                         "Fuseki nipa 데이터셋 owl:versionInfo, 그래프 649개·트리플 1,408,044 (2026-11-04 조회, 로그인 필요) — 실행 당시 조회값 아님"),
+               "공간 DB(PostgreSQL·PostGIS)": ("PostgreSQL 18.6 · PostGIS 3.6.4",
                                             "토지특성 공간 DB 명세(2026-10-19, 116:17432 ipss) 기준 — 실행 당시 조회값 아님")}
 def current_itpt():
     """실행 시작 때 법령해석사례 건수·최신 회신일·마지막 수집 시각 조회 (매일 04시 갱신). 실패하면 ''"""
