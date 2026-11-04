@@ -18,8 +18,8 @@ FILES = {"AI1": ["testset_ai1", "answer_ai1"], "AI2": ["testset_ai2", "answer_ai
          "AI6": ["testset_ai6", "answer_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"]}
 LABEL = {"testset": "시험셋(질의)", "answer": "정답셋", "law_article_db": "법령·조례 조문 DB",
          "result": "실행 결과(시스템 응답)"}
-RAW_VERDICT = {"possible": "가능", "impossible": "불가능", "conditional": "조건부 가능",   # AIPS 원 판정값 → 한국어
-               "needs_review": "검토 필요", "unknown": "판단 불가"}
+RAW_VERDICT = {"possible": "승인 가능", "impossible": "부적합", "conditional": "조건부 가능",   # AIPS 원 판정값 → 수행계획서 4종
+               "needs_review": "검토 필요", "unknown": "검토 필요"}
 HIDE_CASE_COLS = ["적용룰셋"]          # 질의별 결과 화면에서 숨길 컬럼 (질의별 상세 결과·result.xlsx에는 남음)
 
 
