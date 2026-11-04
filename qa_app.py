@@ -6,7 +6,7 @@ AIPS 사전진단 QA 화면 (Streamlit)
 
 qa_runner.py / qa_eval.py 와 같은 폴더에 두고 실행합니다.
 QA 대시보드 결과는 dashboard/ (raw/, pred.xlsx, qa_result.xlsx, f1_result.xlsx, consistency/),
-규격서 시험 결과는 spec/AIn/<시각>/ 에 저장됩니다.
+성과지표 시험 결과는 spec/AIn/<시각>/ 에 저장됩니다.
 """
 import glob
 import io
@@ -40,18 +40,18 @@ for _m in (qa_eval, qa_runner, qa_f1, spec_eval, spec_page, verdict_check, check
         _m._loaded_mtime = _mt
 
 # 화면을 URL로 구분 (메뉴는 숨김)
-#   /           → 규격서 시험 (시험원용 기본 화면)
+#   /           → 성과지표 시험 (시험원용 기본 화면)
 #   /dashboard  → QA 대시보드 (내부용)
 #   /check      → 판단 여부 점검 (내부용)
 def _p_spec(): pass
 def _p_dash(): pass
 def _p_check(): pass
-_page = st.navigation([st.Page(_p_spec, title="규격서 시험", url_path="spec", default=True),
-                       st.Page(_p_dash, title="QA 대시보드", url_path="dashboard"),
+_page = st.navigation([st.Page(_p_spec, title="성과지표", url_path="spec", default=True),
+                       st.Page(_p_dash, title="성능테스트 대시보드", url_path="dashboard"),
                        st.Page(_p_check, title="판단 여부 점검", url_path="check")], position="hidden")
 VIEW = _page.title
 
-st.set_page_config(page_title="AIPS QA", page_icon="🧪",
+st.set_page_config(page_title="AIPS 사전진단 성능테스트", page_icon="🧪",
                    layout="wide" if st.session_state.get("wide", True) else "centered")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))          # 스크립트 폴더 기준으로 파일 저장
 
@@ -185,11 +185,22 @@ div[class*="st-key-warn_"] { background: rgba(245, 158, 11, 0.10); }
 div[class*="st-key-kpi_runend"] { background: rgba(34, 197, 94, 0.09); }
 div[class*="st-key-"] h4 { margin-top: 0; padding-top: 0; font-size: 1.15rem; }
 div[data-testid="stMetric"] { background: transparent; }
-/* 회색 영역 안의 선택 상자는 배경과 같은 색이라 안 보임 → 흰 바탕 + 테두리 */
-div[class*="st-key-box_"] div[data-baseweb="select"] > div {
-    background: #ffffff !important; border: 1px solid #94a3b8 !important; border-radius: 8px;
+/* 회색 영역 안의 선택 상자는 배경과 같은 색이라 안 보임 → 연한 파랑 바탕 + 파란 테두리
+   (Streamlit 1.66 구조: stSelectbox > div > div 가 입력 상자) */
+div[class*="st-key-box_"] div[data-testid="stSelectbox"] > div > div,
+div[class*="st-key-box_"] div[data-testid="stMultiSelect"] > div > div {
+    background: #eff6ff !important; border: 1.5px solid #60a5fa !important; border-radius: 8px;
 }
-div[class*="st-key-box_"] div[data-baseweb="select"] > div:hover { border-color: #3b82f6 !important; }
+div[class*="st-key-box_"] div[data-testid="stSelectbox"] > div > div:hover,
+div[class*="st-key-box_"] div[data-testid="stSelectbox"] > div > div:focus-within,
+div[class*="st-key-box_"] div[data-testid="stMultiSelect"] > div > div:hover,
+div[class*="st-key-box_"] div[data-testid="stMultiSelect"] > div > div:focus-within {
+    border-color: #2563eb !important; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+div[class*="st-key-box_"] div[data-testid="stSelectbox"] input { color: #1e3a8a !important; font-weight: 600; }
+/* 펼친 목록: 마우스를 올린 항목·선택된 항목을 파랑으로 */
+[role="listbox"] [role="option"]:hover,
+[role="listbox"] [role="option"][aria-selected="true"] { background: #dbeafe !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -199,11 +210,11 @@ def area(key):
     return st.container(key=key)
 
 
-SPEC_VIEW = VIEW == "규격서 시험"
+SPEC_VIEW = VIEW == "성과지표"
 CHECK_VIEW = VIEW == "판단 여부 점검"
 with st.container(key="page_header"):
-    st.markdown('<div class="aips-title">' + {"규격서 시험": "규격서 시험 (AI 1 ~ AI 7)",
-                                              "판단 여부 점검": "판단 여부 점검"}.get(VIEW, "AIPS 사전진단 QA")
+    st.markdown('<div class="aips-title">' + {"성과지표": "성과지표 (AI 1 ~ AI 7)",
+                                              "판단 여부 점검": "판단 여부 점검"}.get(VIEW, "AIPS 사전진단 성능테스트")
                 + '</div>', unsafe_allow_html=True)
 
 
@@ -220,7 +231,7 @@ def progress_panel():
             st.session_state["was_running"] = False
             if str(stt.get("mode", "")).startswith("판단 여부"):
                 st.session_state["chk_run_dir"] = stt.get("run_dir")
-            elif str(stt.get("mode", "")).startswith("규격서"):
+            elif str(stt.get("mode", "")).startswith(("성과지표", "규격서")):   # '규격서'는 이름 변경 전 실행
                 st.session_state["spec_run_dir"] = stt.get("run_dir")
             elif str(stt.get("mode", "")).startswith("일관성"):
                 st.session_state["run_dir"] = stt.get("run_dir")
@@ -237,7 +248,7 @@ def progress_panel():
         h1, h2 = st.columns([4, 1], vertical_alignment="center")
         if running:
             el = int(time.time() - stt.get("started", time.time()))
-            h1.markdown(f"**⏳ 실행 중** · {stt.get('mode', '')} · {done}/{total}건 · 경과 {el // 60}분 {el % 60}초")
+            h1.markdown(f"**⏳ 실행 중** · {str(stt.get('mode', '')).replace('규격서', '성과지표')} · {done}/{total}건 · 경과 {el // 60}분 {el % 60}초")
             if os.path.exists(qa_runner.STOP_FILE):
                 h2.button("⏹ 중지 요청됨", width="stretch", disabled=True)
             elif h2.button("⏹ 중지", width="stretch", help="지금 질의가 끝나면 멈춰요. 그때까지의 결과는 저장돼요."):
@@ -250,7 +261,7 @@ def progress_panel():
             st.caption("백그라운드에서 실행 중이에요. 새로고침하거나 브라우저를 닫아도 계속 진행돼요.")
         else:
             icon = {"done": "✅ 완료", "stopped": "⏹ 중지됨", "error": "⚠️ 오류"}.get(state, "⚠️ 비정상 종료")
-            h1.markdown(f"**{icon}** · {stt.get('mode', '')} · {done}/{total}건 · {stt.get('message', '')}")
+            h1.markdown(f"**{icon}** · {str(stt.get('mode', '')).replace('규격서', '성과지표')} · {done}/{total}건 · {stt.get('message', '')}")
             can_resume = (state in ("error", "stopped") or stale) and stt.get("argv") and done < total
             if can_resume:
                 b1, b2 = h2.columns(2)
@@ -275,9 +286,19 @@ def progress_panel():
                 df = pd.read_excel(out)
                 if "질의" in df:
                     df = df[df["질의"].notna()]
+                if "판단유형" in df:                              # 오류 칸: 종류 · 끊긴 위치 (통신 오류 + 응답 중단)
+                    _ids = df["사례ID"] if "사례ID" in df else df.get("case_id", [""] * len(df))
+                    _det = [spec_eval.error_detail({"오류": e if isinstance(e, str) else "", "판단유형": t,
+                                                    "사례ID": i, "회차": n if n == n else 1}, stt.get("run_dir"))
+                            for e, t, i, n in zip(df.get("오류", [""] * len(df)), df["판단유형"], _ids,
+                                                  df.get("회차", [1] * len(df)))]
+                    df["오류"] = [f"{k.split(' — ')[0]} · {w}" if k else "" for k, w in _det]
                 cols = [c for c in ["case_id", "사례ID", "회차", "질의", "AI판정", "판단유형", "AI근거", "근거법령",
                                     "근거조문", "소요초"] if c in df]   # 적용룰셋은 결과 화면(사례별·상세)에서만 표시
-                st.dataframe(df[cols].tail(max(done, 1)), width="stretch", hide_index=True, height=180)
+                if "오류" in df and (df["오류"] != "").any():
+                    cols.insert(cols.index("판단유형") + 1, "오류")      # 오류가 있을 때만 판단유형 옆에 표시
+                _v = df[cols].tail(max(done, 1)).fillna("-")
+                spec_page.show_table(_v, height=180)
         except Exception:                                       # noqa: BLE001 (러너가 쓰는 중이면 다음 갱신 때 표시)
             pass
 
@@ -328,7 +349,7 @@ with side_bottom:
         st.caption(f"작업 폴더: {os.getcwd()}")
         st.caption(f"Streamlit {st.__version__} · 종료: 실행한 터미널에서 Ctrl + C")
 
-side.title("🧪 AIPS QA")
+side.title("🧪 AIPS 사전진단 성능테스트")
 if CHECK_VIEW:
     check_page.sidebar(side, launch, is_running(read_status()))
     progress_panel()

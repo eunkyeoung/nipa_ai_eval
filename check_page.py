@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 import verdict_check as V
+from spec_page import rows_height, show_table
 
 def runs():
     return sorted([d for d in glob.glob(os.path.join(V.ROOT, "*")) if os.path.isdir(d)],
@@ -23,9 +24,9 @@ def sources():
     if up:
         out[f"올린 파일 ({os.path.basename(up)})"] = up
     if os.path.exists("gold.xlsx"):
-        out["gold.xlsx (QA 정답셋)"] = "gold.xlsx"
+        out["gold.xlsx (정답셋)"] = "gold.xlsx"
     for p in sorted(glob.glob(os.path.join("spec_data", "testset_ai*.*"))):
-        out[f"규격서 {os.path.basename(p)}"] = p
+        out[f"성과지표 {os.path.basename(p)}"] = p
     return out
 
 
@@ -125,8 +126,8 @@ def render(area):
         only = st.toggle("판단 못한 질의만 보기", value=bool(n - dec), key="chk_only")
         view = df[df["판단여부"] == "판단 못함"] if only else df
         cols = ["ID", "질의문", "판단여부", "판단결과", "미판단유형", "시스템판정", "미판단사유", "시스템메시지", "소요초"]
-        st.dataframe(view[[c for c in cols if c in view]], hide_index=True, width="stretch",
-                     height=min(460, 38 + 35 * max(len(view), 1)))
+        _v = view[[c for c in cols if c in view]]
+        show_table(_v, height=rows_height(len(_v), cap=460))
         rx = os.path.join(run_dir, "check_result.xlsx")
         if os.path.exists(rx):
             with open(rx, "rb") as f:
@@ -136,12 +137,12 @@ def render(area):
         cid = st.selectbox("질의", df["ID"].tolist(), format_func=lambda i: f"{i} · {df.set_index('ID').loc[i, '판단결과'] or df.set_index('ID').loc[i, '미판단유형']}",
                            key="chk_case")
         r = df.set_index("ID").loc[cid]
-        st.dataframe(pd.DataFrame([(k, str(r[k])) for k in ["질의문", "판단여부", "판단결과", "미판단유형", "시스템판정",
-                                                             "미판단사유", "시스템메시지", "근거"] if k in r],
-                                  columns=["항목", "값"]), hide_index=True, width="stretch")
+        _d = pd.DataFrame([(k, str(r[k])) for k in ["질의문", "판단여부", "판단결과", "미판단유형", "시스템판정",
+                                                     "미판단사유", "시스템메시지", "근거"] if k in r], columns=["항목", "값"])
+        show_table(_d)
         rp = os.path.join(run_dir, "raw", f"{cid}.json")
         if os.path.exists(rp):
-            with st.expander("응답 원문 (raw JSON)"):
+            with st.expander("응답 원문 (JSON)"):
                 with open(rp, encoding="utf-8") as f:
                     st.json(json.load(f), expanded=False)
 

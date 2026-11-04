@@ -1,5 +1,5 @@
 """
-규격서 시험 화면 (AI 1 ~ AI 7) — qa_app.py 사이드바의 '화면' 전환에서 불러옴
+성과지표 화면 (AI 1 ~ AI 7) — qa_app.py 사이드바의 '화면' 전환에서 불러옴
 """
 import glob
 import json
@@ -18,7 +18,30 @@ FILES = {"AI1": ["testset_ai1", "answer_ai1"], "AI2": ["testset_ai2", "answer_ai
          "AI6": ["testset_ai6", "answer_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"]}
 LABEL = {"testset": "시험셋(질의)", "answer": "정답셋", "law_article_db": "법령·조례 조문 DB",
          "result": "실행 결과(시스템 응답)"}
-HIDE_CASE_COLS = ["적용룰셋"]          # 사례별 결과 화면에서 숨길 컬럼 (사례 상세·result.xlsx에는 남음)
+RAW_VERDICT = {"possible": "가능", "impossible": "불가능", "conditional": "조건부 가능",   # AIPS 원 판정값 → 한국어
+               "needs_review": "검토 필요", "unknown": "판단 불가"}
+HIDE_CASE_COLS = ["적용룰셋"]          # 질의별 결과 화면에서 숨길 컬럼 (질의별 상세 결과·result.xlsx에는 남음)
+
+
+EMPTY = "–"                              # 빈칸 표시
+
+
+def show_table(df, where=None, height=None):
+    """모든 표 공통 — 한 줄 표(st.dataframe): 칸 너비는 머리글 경계를 끌어서 조절, 긴 글자는 칸을 넓히거나 전체 화면에서 확인.
+    정렬·검색·CSV 내려받기·전체 화면 도구는 표에 마우스를 올리면 나옴"""
+    d = df.copy()
+    for c in d.columns:
+        if d[c].dtype == object:
+            d[c] = d[c].where(d[c].notna(), EMPTY).replace({"": EMPTY, "-": EMPTY, "nan": EMPTY, "None": EMPTY})
+    kw = {"height": height} if height else {}
+    (where or st).dataframe(d, hide_index=True, width="stretch", **kw)
+
+
+def rows_height(n, cap=420):
+    """한 줄 표의 높이 (머리글 38px + 행 수 × 35px), cap 넘으면 스크롤"""
+    return min(cap, 38 + 35 * max(n, 1))
+
+
 SHORT = {"AI1": "AI 1 정확도", "AI2": "AI 2 F1", "AI3": "AI 3 일관성", "AI4": "AI 4 조건부", "AI5": "AI 5 환각",
          "AI6": "AI 6 지도 제어", "AI7": "AI 7 3D 시뮬레이션"}
 NOT_PROVIDED = ["AI 엔진 모델 버전 · 룰셋 버전 · 법령·조례 DB 버전 — 시스템 응답에 없음 → 시스템 빌드(build)·계약 버전으로 대신 표시 (개발 요청 필요, README 9-7)",
@@ -46,7 +69,7 @@ CRITERIA = {
            "실행 조건이 정답 시나리오와 일치, 실행 상태 '완료')을 순서대로 판정. 셋 다 일치하면 정상 수행 1건, 부분 일치는 오류. "
            "오류 원인은 최초 불일치 기준으로 분류. 실행 대기 상한 안에 '완료'가 아니면 미실행(실행 오류).\n\n결과는 소수점 둘째자리 이하 버림.",
 }
-CMD_NOTE = ("실행 결과 파일(result_ai6 / result_ai7)을 올리면 규격서 기준으로 채점해요. "
+CMD_NOTE = ("실행 결과 파일(result_ai6 / result_ai7)을 올리면 성과지표 기준으로 채점해요. "
             "자동 실행은 지도·3D 명령의 응답 구조를 확인한 뒤 연결할 예정이에요.")
 
 
@@ -235,9 +258,9 @@ def overview():
         rs = runs(it)
         sm = read_json(os.path.join(rs[0], "summary.json")) if rs else {}
         rows.append({"시험항목": f"{S.SPEC[it]['no']} {SHORT[it]}", "지표": S.SPEC[it]["metric"],
-                     "최근 결과": fmt_pct(sm.get("value"), it) if sm else "미실행",
+                     "진단 결과": fmt_pct(sm.get("value"), it) if sm else "미실행",
                      "목표": target_txt(it),
-                     "판정": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
+                     "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
                      "대상": sm.get("n", "-"), "실행": os.path.basename(rs[0]) if rs else "-"})
     return pd.DataFrame(rows)
 
@@ -245,14 +268,17 @@ def overview():
 def render(item, area, help_fn=None):
     sp = S.SPEC[item]
     with area("box_spec_overview"):
-        st.markdown("#### 규격서 시험 현황 (AI 1 ~ AI 7)")
-        st.dataframe(overview(), hide_index=True, width="stretch")
+        st.markdown("#### 성과지표 현황 (AI 1 ~ AI 7)")
+        ov = overview()
+        st.dataframe(ov.style.map(lambda v: "background-color: #eff6ff; color: #1d4ed8; font-weight: 700"   # 진단 결과 열 = 파랑
+                                  if v != "미실행" else "background-color: #eff6ff; color: #94a3b8", subset=["진단 결과"]),
+                     hide_index=True, width="stretch")
 
     rs = runs(item)
     if not rs:
         st.info(f"아직 {SHORT[item]} 시험 결과가 없어요. 왼쪽에서 시험 데이터를 올리고 실행하세요. "
                 f"(데이터: {sp['data']})")
-        with st.expander("규격서 시험 기준", expanded=True):
+        with st.expander("성과지표 시험 기준", expanded=True):
             st.markdown(f"**{sp['no']} {sp['name']}**\n\n- 지표: {sp['metric']} (목표 {target_txt(item)})\n"
                         f"- 산정식: {sp['formula']}\n- 시험 데이터: {sp['data']}\n\n{CRITERIA[item]}")
         return
@@ -280,18 +306,26 @@ def render(item, area, help_fn=None):
     log = S.read_log(run_dir, item)
     builds = sorted({str(x) for x in log.get("build", pd.Series(dtype=str)).dropna()})
     contracts = sorted({str(x) for x in log.get("contract_version", pd.Series(dtype=str)).dropna()})
-    errs = int((log.get("오류", pd.Series(dtype=str)).fillna("") != "").sum())
+    key_col = "질의ID" if "질의ID" in log.columns else "사례ID"
+    err_rows = []                                                           # 통신 오류 + 응답 중단 (종류·끊긴 위치)
+    for _, rr in log.iterrows():
+        kind, where = S.error_detail(rr, run_dir)
+        if kind:
+            err_rows.append({key_col: rr[key_col], "회차": rr.get("회차"), "질의문": rr.get("질의문"),
+                             "오류 종류": kind, "발생 위치": where, "소요(초)": rr.get("소요초")})
+    errs = len(err_rows)
     with area("kpi_spec_main"):
         st.markdown(f"#### {sp['no']} {sp['name']}")
         k = st.columns([1.3, 1, 1, 1, 1])
         k[0].metric(sp["metric"], fmt_pct(r["value"], item), help=f"**{sp['formula']}**\n\n{trunc_txt(item)}")
         k[1].metric("목표", target_txt(item))
-        k[2].metric("판정", "달성" if r["passed"] else "미달성")
+        k[2].metric("달성 여부", "달성" if r["passed"] else "미달성")
         k[3].metric("수행 건수", r["n"], help="AI3은 질의 수 × 반복 횟수")
         if sp.get("cmd"):
             k[4].metric("오류 건수", int((~r["cases"]["정상수행"]).sum()) if r["n"] else 0, help="의도·파라미터·실행 중 하나라도 불일치")
-        else:
-            k[4].metric("응답 오류", errs, help="통신 오류·시간 초과 (판단불가로 집계)")
+        elif errs:                                                    # 응답 오류는 발생했을 때만 표시
+            k[4].metric("응답 오류", errs, help="통신 오류·시간 초과·응답 중단(판정 없이 끝난 응답) — 모두 판단불가로 집계, "
+                                                "'이어서 실행'을 누르면 이 건만 다시 질의")
         aux = r.get("aux") or {}
         if aux:
             a = st.columns(max(len(aux), 2))
@@ -317,7 +351,8 @@ def render(item, area, help_fn=None):
         if sp.get("cmd"):
             env = [x for x in env if x[0] not in ("대상 시스템", "시스템 빌드 / 계약 버전")]
             env.insert(1, ("실행 결과 파일 SHA-256", f"{meta.get('result_sha256') or '-'}  ({meta.get('result_file') or '-'})"))
-        st.dataframe(pd.DataFrame(env, columns=["항목", "값"]), hide_index=True, width="stretch")
+        _env = pd.DataFrame(env, columns=["항목", "값"])
+        show_table(_env)
         changed = [p for p, h, h0 in cur if h and h0 and h != h0]
         if changed:
             st.warning("실행 이후 바뀐 파일로 채점 중이에요: " + ", ".join(changed) + " → 해시가 실행 당시와 달라요.")
@@ -326,32 +361,80 @@ def render(item, area, help_fn=None):
                 st.markdown("\n".join(f"- {x}" for x in NOT_PROVIDED))
 
     # ---- 결과 표
+    def pct_view(df):                          # 화면 표시용: '(%)' 컬럼 → '60.00 %' (헤더의 '(%)'는 뺌, 값 없음은 '-')
+        dec = sp.get("dec", 2)
+        df = df.copy()
+        for c in [c for c in df.columns if isinstance(c, str) and "(%)" in c]:
+            df[c] = df[c].map(lambda v: "-" if v is None or (isinstance(v, float) and pd.isna(v)) or v == ""
+                              else f"{float(v):.{dec}f} %" if isinstance(v, (int, float)) else str(v))
+            df = df.rename(columns={c: c.replace("(%)", "").strip()})
+        return df
+
     with area("box_spec_tables"):
         st.markdown("#### 결과")
         if isinstance(r.get("confusion"), pd.DataFrame) and not r["confusion"].empty:
-            cc = st.columns([1, 2])
+            cc = st.columns([1, 1.25], gap="medium")                 # 왼쪽 혼동행렬 · 오른쪽 판단 유형별 결과
             cc[0].markdown("**혼동행렬** (행 = 정답, 열 = 예측)")
-            cc[0].dataframe(r["confusion"], width="stretch")
+            conf = r["confusion"]
+            cs = r.get("cases")
+            gcol = next((c for c in ("정답_판단유형", "정답_판정결과") if isinstance(cs, pd.DataFrame) and c in cs), None)
+            if err_rows and gcol and key_col in cs:                       # 판단불가 열 = 응답 오류 → 정답 유형별 오류원인
+                kind_of = {str(e[key_col]): e["오류 종류"].split(" — ")[0] for e in err_rows}
+                ec = cs[cs[key_col].astype(str).isin(kind_of)]
+                cause = {g: " · ".join(f"{k} {v}" for k, v in                   # 칸이 좁으면 · 에서 줄바꿈
+                                       ec[ec[gcol] == g][key_col].astype(str).map(kind_of).value_counts().items())
+                         for g in conf.index}
+                conf = conf.copy()
+                conf["오류원인"] = [cause.get(g) or "-" for g in conf.index]
+            ct = conf.reset_index().rename(columns={"index": "정답_판단유형"})   # 행마다 글자 양만큼만 높이 (일반 표)
+            show_table(ct, cc[0])
+            if err_rows:
+                cc[0].caption("판단불가 = 응답 오류 (시스템 판정을 받지 못해 오답으로 집계)")
             first = list(r["tables"].items())[0]
+            ftab = pct_view(first[1])
+            if err_rows:                                                 # 응답 오류 = 혼동행렬의 '판단불가' 열
+                gcol = next((c for c in ("정답_판단유형", "정답_판정결과") if isinstance(cs, pd.DataFrame) and c in cs), None)
+                tcol = next((c for c in ("판단유형", "판정결과") if c in ftab), None)
+                if gcol and tcol and key_col in cs:
+                    ek = {str(e[key_col]) for e in err_rows}
+                    per = cs[cs[key_col].astype(str).isin(ek)][gcol].value_counts()
+                    ftab = ftab.copy()
+                    ecnt = [int(per.sum()) if t == "계" else int(per.get(t, 0)) for t in ftab[tcol]]
+                    if "불일치" in ftab:                         # 불일치 = 오판 + 응답 오류 → 일치 + 오판 + 응답 오류 = 정답건수
+                        i = list(ftab.columns).index("불일치")
+                        ftab.insert(i, "불일치(오판)", [int(n) - e for n, e in zip(ftab["불일치"], ecnt)])
+                        ftab["불일치(응답 오류)"] = ecnt                  # 맨 끝 (일치율 다음)
+                        ftab = ftab.drop(columns=["불일치"])
+                    else:
+                        ftab["응답 오류"] = ecnt
             cc[1].markdown(f"**{first[0]}**")
-            cc[1].dataframe(first[1], hide_index=True, width="stretch")
+            show_table(ftab, cc[1])
+            if "불일치(오판)" in ftab:
+                cc[1].caption("정답건수 = 일치 + 불일치(오판: 판정이 정답과 다름) + 불일치(응답 오류: 판정을 받지 못함)")
             rest = list(r["tables"].items())[1:]
         else:
             rest = list(r["tables"].items())
+        rest = [(name, pct_view(df) if isinstance(df, pd.DataFrame) else df) for name, df in rest]
         for name, df in rest:
-            st.markdown(f"**{name}**")
+            st.markdown(f":orange[⚠️ **{name}**] — 시스템 판정을 받지 못해 판단불가(오답)로 집계된 건"
+                        if name.startswith("응답 오류") else f"**{name}**")
             if "O 일치" in name and not df.empty:
                 st.dataframe(df.style.map(lambda v: "background-color: rgba(239,68,68,.18)" if v == "X" else "",
                                           subset=[c for c in df.columns if c != "사례ID"]), hide_index=True, width="stretch")
+            elif name.startswith("응답 오류"):                        # 건수가 적은 표 → 행마다 글자 양만큼만 높이
+                show_table(df)
             else:
-                st.dataframe(df, hide_index=True, width="stretch")
-        with st.expander("규격서 시험 기준"):
+                show_table(df)
+            if name.startswith("응답 오류"):
+                st.caption("왼쪽 사이드바의 '이어서 실행'을 누르면 이 건만 다시 질의합니다. 연결 끊김·응답 중단은 시스템(AIPS) 쪽 문제라 "
+                           "같은 시간대 서버 재배포·과부하 여부를 개발팀에 확인하세요.")
+        with st.expander("성과지표 시험 기준"):
             st.markdown(f"- 지표: {sp['metric']} (목표 {target_txt(item)})\n- 산정식: {sp['formula']}\n"
                         f"- 시험 데이터: {sp['data']}\n\n{CRITERIA[item]}")
 
     # ---- 사례별
     with area("box_spec_cases"):
-        st.markdown("#### 사례별 결과")
+        st.markdown("#### 질의별 결과")
         cases = r["cases"]
         flag = {"AI1": "판단_일치", "AI2": "일치", "AI3": "일치", "AI4": "적합", "AI5": "환각",
                 "AI6": "정상수행", "AI7": "정상수행"}[item]
@@ -360,7 +443,16 @@ def render(item, area, help_fn=None):
         if only and flag in cases:
             view = cases[cases[flag] == (item == "AI5")] if item == "AI5" else cases[~cases[flag].astype(bool)]
         view = view.drop(columns=[c for c in HIDE_CASE_COLS if c in view])      # 화면에서만 숨김 (result.xlsx엔 유지)
-        st.dataframe(view, hide_index=True, width="stretch", height=min(420, 38 + 35 * max(len(view), 1)))
+        if "참조_오류" in view:                  # 룰엔진(8777) 참조 정보 조회 실패 여부 — AIPS 응답 오류와는 무관
+            view = view.copy()
+            view["참조_오류"] = view["참조_오류"].map(lambda v: v if isinstance(v, str) and v.strip() else "없음 (조회 정상)")
+            view = view.rename(columns={"참조_오류": "참조_조회오류"})
+        if err_rows and key_col in view:                                          # 응답 오류 칸: 판단유형 바로 옆
+            emap = {str(e[key_col]): f"{e['오류 종류'].split(' — ')[0]} · {e['발생 위치']}" for e in err_rows}
+            view = view.copy()
+            pos = list(view.columns).index("판단유형") + 1 if "판단유형" in view else len(view.columns)
+            view.insert(pos, "응답 오류", view[key_col].astype(str).map(emap).fillna(""))
+        show_table(view, height=rows_height(len(view), cap=560))
         d1, d2 = st.columns(2)
         rx = os.path.join(run_dir, "result.xlsx")
         if os.path.exists(rx):
@@ -372,10 +464,14 @@ def render(item, area, help_fn=None):
 
     # ---- 상세
     with area("box_spec_detail"):
-        st.markdown("#### 사례 상세 · 판단 프로세스 로그" if item == "AI3" else "#### 사례 상세")
+        st.markdown("#### 질의별 상세 결과 · 판단 프로세스 로그" if item == "AI3" else "#### 질의별 상세 결과")
         key = "질의ID" if item == "AI2" else "사례ID"
         ids = list(dict.fromkeys(log[key].astype(str)))
-        cid = st.selectbox("사례", ids, key=f"spec_case_{item}")
+        qcol = next((c for c in ("질의문", "명령문") if c in log.columns), None)
+        qtext = dict(zip(log[key].astype(str), log[qcol].astype(str))) if qcol else {}
+        cid = st.selectbox("상세 결과를 볼 질의를 선택하세요 ▼", ids, key=f"spec_case_{item}",
+                           format_func=lambda i: f"{i}  ·  {qtext[i][:70]}" if qtext.get(i) else i,
+                           help="목록을 펼쳐 질의를 고르면 아래에 시스템 출력 항목(판단 유형·근거 법령·근거 조문 등)이 나옵니다.")
         recs = log[log[key].astype(str) == cid].sort_values("회차")
         rec = recs.iloc[0]
         if sp.get("cmd"):
@@ -385,24 +481,34 @@ def render(item, area, help_fn=None):
                    ("실행 대상 기능", rec.get("실행대상기능")), ("실행 결과(지도·3D 상태)", rec.get("실행결과")),
                    ("실행 상태", rec.get("실행상태")), ("판정", "정상 수행" if c.get("정상수행") else f"오류 — {c.get('오류원인', '')}"),
                    ("불일치 내용", c.get("불일치 내용") or "-"), ("캡처 파일", rec.get("캡처파일") or "-")]
-            st.dataframe(pd.DataFrame(out, columns=["항목", "값"]).astype(str), hide_index=True, width="stretch")
+            _o = pd.DataFrame(out, columns=["항목", "값"]).astype(str)
+            show_table(_o)
             cap = str(rec.get("캡처파일") or "")
             for cp in (cap, os.path.join(run_dir, cap), os.path.join(DATA, "captures", cap)):
                 if cap and os.path.isfile(cp):
                     st.image(cp, caption=f"화면 캡처 · {cap}")
                     break
             return
-        st.markdown(f"**질의문** {rec.get('질의문')}")
-        out = [("판단 유형", rec.get("판단유형")), ("시스템 원 판정", rec.get("원판정")),
+        raw_v = str(rec.get("원판정") or "")
+
+        def none_why(what):                     # 값이 없는 이유: 불가 판정이면 시스템이 이 단계를 진행하지 않음
+            if S.error_text(rec):
+                return f"없음 — 응답 오류로 {what} 받지 못함"
+            if rec.get("판단유형") == "허가 불가능":
+                return f"없음 — 허가 불가 판정이라 시스템이 {what} 제시하지 않음"
+            return f"없음 — 시스템이 {what} 제시하지 않음"
+        out = [("판단 유형", rec.get("판단유형")),
+               ("시스템 원 판정", f"{RAW_VERDICT[raw_v]} ({raw_v})" if raw_v in RAW_VERDICT else raw_v or "-"),
                ("근거 법령", "; ".join(rec.get("적용법령") or []) or "-"),
                ("근거 조문 (법령ID.조.항)", "; ".join(rec.get("근거조문") or []) or "-"),
                ("적용 룰셋", "; ".join(rec.get("적용룰셋") or []) or "미제공"),
                ("단서 조건 근거 조문", "; ".join(rec.get("단서조건근거조문") or []) or "-"),
-               ("보완사항", rec.get("보완사항") or "-"),
-               ("필요 행정절차", "; ".join(rec.get("필요행정절차") or []) or "-"),
+               ("보완사항", rec.get("보완사항") or none_why("보완 제안을")),
+               ("필요 행정절차", "; ".join(rec.get("필요행정절차") or []) or none_why("인허가 절차 안내를")),
                ("설명문", rec.get("설명문") or "-"), ("추적 ID", rec.get("trace_id") or "-"),
-               ("소요(초)", rec.get("소요초")), ("오류", rec.get("오류") or "-")]
-        st.dataframe(pd.DataFrame(out, columns=["출력 항목", "값"]).astype(str), hide_index=True, width="stretch")
+               ("소요(초)", rec.get("소요초")), ("오류", " · ".join(x for x in S.error_detail(rec, run_dir) if x) or "없음 (정상 응답)")]
+        _o = pd.DataFrame(out, columns=["출력 항목", "값"]).astype(str)
+        show_table(_o)
         steps = rec.get("단계로그") or []
         if item == "AI3" and len(recs) > 1:
             st.markdown("**8단계 로그 회차별 비교** (기준 = 1회차, 다르면 붉게)")
@@ -430,7 +536,7 @@ def render(item, area, help_fn=None):
                 sdf[c] = sdf[c].map(lambda x: "; ".join(x) if isinstance(x, list) else x)
             sdf.insert(0, "회차", int(rec["회차"]))
             sdf.insert(0, "사례ID", cid)
-            st.dataframe(sdf.astype(str), hide_index=True, width="stretch")
+            show_table(sdf.astype(str))
         rp = os.path.join(run_dir, "raw", f"{cid}_{int(rec['회차'])}.json")
         if os.path.exists(rp):
             with st.expander("응답 원문 (JSON)"):

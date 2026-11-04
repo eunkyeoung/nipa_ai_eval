@@ -1,5 +1,5 @@
 """
-규격서(의뢰자 제시 기준/규격서 v.13) 시험항목 2-1 ~ 2-5 산정 로직
+성과지표(의뢰자 제시 기준, 시험의뢰서 v.13) 시험항목 2-1 ~ 2-5 산정 로직
 -------------------------------------------------------------------
 [AI 1] 사전 진단 판단 정확도        목표 ≥ 95 %
 [AI 2] 사전 진단 판단 F1 스코어      목표 ≥ 95 %  (유의어·유사 표현 질의, 2종 가중평균 F1)
@@ -7,7 +7,7 @@
 [AI 4] 조건부 가능 판단 정확도      목표 ≥ 95 %  (판정 결과 + 단서 조건 근거 조문 집합)
 [AI 5] 환각 발생률                  목표 ≤ 3 %   (환각 유형 ①~④)
 
-모든 결과 수치는 규격서대로 실수(%, 소수점 셋째자리 이하 버림 = 소수 둘째자리까지) 표기.
+모든 결과 수치는 성과지표 기준대로 실수(%, 소수점 셋째자리 이하 버림 = 소수 둘째자리까지) 표기.
 """
 import hashlib
 import json
@@ -23,33 +23,33 @@ from qa_eval import LAW_ALIAS, classify_permits, norm_law
 SPEC = {
     "AI1": dict(no="2-1", name="[AI 1] 인허가 질의에 대한 사전 진단 판단 결과 도출 기능", metric="사전 진단 판단 정확도",
                 target=95.0, cmp=">=", log="diagnose_log_ai1.jsonl",
-                formula="정확도(%) = 맞힌 예측 수 ÷ 전체 테스트 데이터 수 × 100",
+                formula="[AI 1] 사전 진단 판단 정확도(%) = AI 판단 결과 일치 건수 / 전체 테스트 건수 × 100",
                 data="표준 질의문 50건 (허가 가능 25 / 허가 불가능 25)"),
     "AI2": dict(no="2-2", name="[AI 2] 유의어·유사 표현 질의에 대한 동일 사전 진단 결과 재현 기능", metric="사전 진단 판단 F1 스코어",
                 target=95.0, cmp=">=", log="diagnose_log_ai2.jsonl",
-                formula="가중평균 F1(%) = Σ(판단 유형별 F1 × 판단 유형별 정답 질의 수) ÷ 전체 질의 수",
+                formula="종합 F1 Score(%) = 판단 유형별 F1 Score의 가중평균  (가중치 = 판단 유형별 정답 질의 수, F1 = 2 × Precision × Recall / (Precision + Recall))",
                 data="시나리오 10건 × 질의 5건(원문 1 + 변형 4) = 50 질의"),
     "AI3": dict(no="2-3", name="[AI 3] 사전 진단 추론·데이터 조회 과정의 동일 프로세스 수행 및 로그 기록 기능", metric="사전 진단 판단 일관성",
                 target=98.0, cmp=">=", log="diagnose_log_ai3.jsonl",
-                formula="일관성(%) = 일치 수행 횟수 ÷ 전체 수행 횟수 × 100 (1회차 = 기준, 기준 회차도 일치에 포함)",
+                formula="[AI 3] 사전 진단 판단 일관성(%) = 동일 결과 도출 횟수 / 전체 반복 수행 횟수 × 100  (1회차 = 기준, 기준 회차도 동일 결과에 포함)",
                 data="질의 10건 × 반복 5회 = 50회 수행"),
     "AI4": dict(no="2-4", name="[AI 4] 예외·단서 규정 적용 사례의 허가 가능/허가 불가능 판정 및 단서 조건 제시 기능", metric="조건부 가능 판단 정확도",
                 target=95.0, cmp=">=", log="diagnose_log_ai4.jsonl",
-                formula="정확도(%) = 맞힌 예측 수 ÷ 전체 테스트 데이터 수 × 100 (판정 결과 AND 단서 조건 근거 조문 집합 일치)",
+                formula="[AI 4] 조건부 가능 판단 정확도(%) = 조건부 판단 및 제시 조건이 모두 적합한 건수 / 전체 조건부 테스트 건수 × 100  (제시 조건 = 단서 조건 근거 조문, 보완사항·행정절차는 보조 지표)",
                 data="표준 질의문 50건 (허가 가능 40 / 허가 불가능 10)"),
     "AI5": dict(no="2-5", name="[AI 5] 법령·조례 근거의 정확성이 확보된 사전 진단 응답 생성 기능", metric="환각 발생률",
                 target=3.0, cmp="<=", log="diagnose_log_ai5.jsonl",
-                formula="환각 발생률(%) = 환각 사례로 판정된 응답 건수 ÷ 전체 테스트 응답 건수 × 100",
+                formula="환각 발생률(%) = ( 환각 사례로 판정된 응답 건수 / 전체 테스트 응답 건수 ) × 100",
                 data="질의문 50건 + 정답 조문셋 50건 + 법령·조례 조문 DB"),
     "AI6": dict(no="2-6", name="[AI 6] 자연어 기반 지도 제어 기능", metric="자연어 기반 지도 제어 정확도",
                 target=90.0, cmp=">=", log="command_log_ai6.jsonl", dec=1, cmd=True,
-                formula="정확도(%) = 정상 수행 건수 ÷ 전체 테스트 건수 × 100 (① 의도 ② 파라미터 ③ 지도 제어 모두 일치)",
+                formula="명령 실행 정확도(%) = 정상 수행 건수 / 전체 테스트 건수 × 100  (정상 수행 = ① 의도 ② 파라미터 ③ 지도 제어 모두 일치)",
                 data="자연어 지도 제어 명령 50건 (공간규제 분석 15 / 도로 접근성 분석 15 / 산지ㆍ농지 규제 분석 20)",
                 types=["공간규제 분석", "도로 접근성 분석", "산지ㆍ농지 규제 분석"],
                 causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "GIS 지도 제어 실행 오류"]),
     "AI7": dict(no="2-7", name="[AI 7] 자연어 기반 3D 시뮬레이션 명령 처리 기능", metric="자연어 기반 3D 시뮬레이션 명령 정확도",
                 target=90.0, cmp=">=", log="command_log_ai7.jsonl", dec=1, cmd=True,
-                formula="정확도(%) = 정상 수행 건수 ÷ 전체 테스트 건수 × 100 (① 의도 ② 파라미터 ③ 3D 실행 모두 일치)",
+                formula="3D 생성 및 분석 정확도(%) = 기준 충족 건수 / 전체 평가 건수 × 100  (기준 충족 = ① 의도 ② 파라미터 ③ 3D 생성·실행 모두 일치)",
                 data="자연어 3D 시뮬레이션 명령 50건 (기본 제어 15 / 경사도 5 / 토공량 5 / 지형 생성 5 / 가상건물 5 / 일조 7 / 조망 8)",
                 types=["3D 지도 기본 제어", "필지 경사도 분석", "필지 토공량 산출", "지형 생성", "가상건물 생성",
                        "일조 시뮬레이션 실행", "조망 시뮬레이션 실행"],
@@ -228,7 +228,7 @@ def cite_overlap(ai, gold):
     return any(cite_match(a, g) for a in ai for g in gold)
 
 
-# ---------------------------------------------------------------- AIPS 응답 → 규격서 출력 필드
+# ---------------------------------------------------------------- AIPS 응답 → 성과지표 출력 필드
 def _events_dict(events):
     st = {"start": {}, "stages": {}, "diag": None, "parcel": None, "intent": None, "reply": "", "end": {}}
     for ev, d in events:
@@ -267,7 +267,7 @@ def rulesets(diag):
 
 
 def map_response(events, base=None):
-    """규격서 출력 형식: 판단유형·근거조문·적용법령·적용룰셋·보완사항·필요행정절차·설명문 + 8단계 로그"""
+    """성과지표 출력 형식: 판단유형·근거조문·적용법령·적용룰셋·보완사항·필요행정절차·설명문 + 8단계 로그"""
     from qa_runner import extract                                           # 지연 import (순환 방지)
     base = base or extract(events)
     st = _events_dict(events)
@@ -304,7 +304,7 @@ def map_response(events, base=None):
     }
 
 
-# 8단계 판단 프로세스 (규격서 2-3)
+# 8단계 판단 프로세스 (성과지표 2-3)
 STEPS = ["① 질의 파싱", "② 대상 필지(PNU) 조회", "③ 토지특성 조회", "④ 용도지역 판정",
          "⑤ 규제구역 조회", "⑥ 적용 법령·조례 검색", "⑦ 룰셋 적용", "⑧ 최종 판단 도출"]
 STEP_FIELDS = ["실행", "데이터소스", "조회키", "결과건수", "적용룰셋", "검색법령", "중간판정값"]
@@ -431,7 +431,53 @@ def read_log(run_dir, item):
     key = "질의ID" if "질의ID" in df.columns else "사례ID"
     df[key] = df[key].astype(str)
     df["회차"] = df["회차"].astype(int)
+    for c in LIST_FIELDS:                        # 오류 행(연결 끊김 등)은 목록 필드가 없음 → 빈 목록으로
+        if c in df.columns:
+            df[c] = df[c].map(lambda v: v if isinstance(v, list) else [])
     return df.drop_duplicates([key, "회차"], keep="last").reset_index(drop=True)   # 이어서 실행 중복 제거
+
+
+CUT_OFF = "응답 중단 (최종 판정 없이 응답이 끝남)"
+
+
+def error_text(rec):
+    """로그 1행의 오류 설명: 통신 오류 메시지, 또는 판정 없이 끝난 응답 → '응답 중단', 정상이면 ''"""
+    e = rec.get("오류")
+    if isinstance(e, str) and e.strip():
+        return e
+    if str(rec.get("원판정") or "") == "응답없음" or (rec.get("판단유형") == UNDECIDED and "원판정" not in rec):
+        return CUT_OFF
+    return ""
+
+
+def error_detail(rec, run_dir=None):
+    """오류 설명 + 발생 위치: (종류, 위치) — 정상이면 ('', '')
+    통신 오류는 예외 종류로, 응답 중단은 저장된 응답 원문의 마지막 진행 단계·메시지로 위치를 찾음"""
+    e = error_text(rec)
+    if not e:
+        return "", ""
+    if e != CUT_OFF:
+        kind = ("연결 끊김 — 서버가 연결을 끊음" if "Connection" in e else
+                "시간 초과 — 제한 시간 안에 응답 없음" if "Timeout" in e or "timed out" in e else
+                "서버 오류 — " + e[:60] if "HTTPError" in e else "통신 오류 — " + e[:60])
+        return kind, "질의 전송 직후 (응답을 받기 전)"
+    raw = os.path.join(run_dir, "raw", f"{rec.get('사례ID') or rec.get('질의ID')}_{int(rec.get('회차') or 1)}.json") if run_dir else ""
+    if not raw or not os.path.exists(raw):
+        return "응답 중단 — 최종 판정 없이 응답이 끝남", "-"
+    with open(raw, encoding="utf-8") as fh:
+        events = json.load(fh)
+    stage, msg = "", ""
+    for ev in events:
+        d = ev.get("data") or {}
+        if ev.get("event") == "orc.trace" and d.get("message"):
+            msg = d["message"]
+        elif ev.get("event") == "orc.response" and d.get("event") == "stage":
+            s = d.get("data") or {}
+            stage = str(s.get("title") or "").replace("…", "").strip()
+    return "응답 중단 — 최종 판정 없이 응답이 끝남", f"{stage or '-'} 단계에서 끊김 (마지막 메시지: {msg or '-'})"
+
+
+LIST_FIELDS = ["근거조문", "단서조건근거조문", "적용법령", "적용룰셋", "필요행정절차", "불허사유", "위반조건", "단계로그"]
 
 
 def gold_cites(v):
@@ -498,14 +544,35 @@ def version_table(log, run_dir=None):
             with open(f, encoding="utf-8") as fh:
                 for k, v in versions_in(fh.read()).items():
                     found[k] |= set(v)
-    miss = "미제공 (시스템 응답에 해당 값 없음)"
+    meta = {}
+    if run_dir and os.path.exists(os.path.join(run_dir, "meta.json")):
+        with open(os.path.join(run_dir, "meta.json"), encoding="utf-8") as fh:
+            meta = json.load(fh)
+    found["모델명"] = {meta.get("모델명") or MODEL_NAME_DEFAULT}             # 응답에 없음 → 실행 시작 때 콘솔 조회값(없으면 기본값)
+    found["법령DB"] = set()                                                   # 응답·운영 사이트 모두 확정 버전 없음 → '-'
     rows = [("시스템 빌드 번호", "build", ""), ("응답 규격 버전", "contract_version", ""),
-            ("AI 사전진단 엔진 모델 버전", None, "LLM 모델명·버전이 응답에 없음"),
+            ("AI 사전진단 엔진 모델 버전", "모델명", f"{meta.get('모델명출처') or '기본값'} — 시스템 응답 값 아님"),
             ("룰셋(룰엔진) 버전", "룰엔진버전", "룰엔진 버전(engine_version) — 룰셋 자체 버전 필드는 없음"),
-            ("법령·조례 DB 버전", None, "법령·조례 DB 시행일·버전이 응답에 없음"),
+            ("법령·조례 DB 버전", "법령DB", "시스템 응답에 없음"),
             ("공간정보 기준일", "공간정보기준일", "용도지역·지구 지도 데이터 기준일(stdVer)")]
-    return pd.DataFrame([{"항목": k, "값": "; ".join(sorted(found[c])) if c and found[c] else miss, "비고": note}
+    return pd.DataFrame([{"항목": k, "값": "; ".join(sorted(found[c])) if found.get(c) else "-", "비고": note}
                          for k, c, note in rows])
+
+
+MODEL_NAME_DEFAULT = "gpt-oss-120b"                                           # 시험의뢰서 시험환경 'LLM 추론 환경 (gpt-oss-120b)'
+MODEL_CONSOLE = "http://192.168.200.115:18800/api/models"                     # 공간정보 에이전트·MCP 콘솔 (조회만)
+
+
+def current_model():
+    """실행 시작 때 에이전트 콘솔에서 지금 쓰는 모델명 조회 → (모델명, 출처). 실패하면 기본값"""
+    try:
+        import collections
+        import requests
+        ag = requests.get(MODEL_CONSOLE, timeout=5).json().get("agents") or []
+        name = collections.Counter(a.get("model") for a in ag if a.get("model")).most_common(1)[0][0]
+        return name, "에이전트 콘솔(115:18800) 조회값"
+    except Exception:                                                         # noqa: BLE001
+        return MODEL_NAME_DEFAULT, "기본값(시험의뢰서 시험환경)"
 
 
 # ---------------------------------------------------------------- [AI 2]
@@ -751,7 +818,32 @@ def score(item, run_dir, answer_path=None, testset_path=None, lawdb_path=None):
     r["item"] = item
     if not SPEC[item].get("cmd"):                                   # AI1~5: 동결 버전 확인 (시험방법 (2))
         r["tables"]["버전 정보"] = version_table(log, run_dir)
+        et = error_table(log, r.get("cases"), run_dir)
+        if not et.empty:                                            # 응답 오류 표는 첫 결과 표 바로 다음에
+            items = list(r["tables"].items())
+            r["tables"] = dict(items[:1] + [(f"응답 오류 ({len(et)}건)", et)] + items[1:])
     return drop_pred_prefix(r)
+
+
+def error_table(log, cases=None, run_dir=None):
+    """응답 오류(통신 오류·응답 중단) 목록: 사례·질의·정답·오류 종류·발생 위치 — 판단불가로 집계된 건의 원인"""
+    key = "질의ID" if "질의ID" in log.columns else "사례ID"
+    gold = {}
+    if isinstance(cases, pd.DataFrame) and key in cases:
+        gcol = next((c for c in ("정답_판단유형", "정답_판정결과") if c in cases), None)
+        if gcol:
+            gold = dict(zip(cases[key].astype(str), cases[gcol]))
+    rows = []
+    for _, rr in log.iterrows():
+        kind, where = error_detail(rr, run_dir)
+        if kind:
+            rows.append({key: rr[key], "회차": rr.get("회차"), "질의문": rr.get("질의문"), "정답": gold.get(str(rr[key]), "-"),
+                         "오류 종류": kind.split(" — ")[0], "원인": kind.split(" — ")[-1], "발생 위치": where,
+                         "소요(초)": rr.get("소요초")})
+    df = pd.DataFrame(rows)
+    if not df.empty and (df["회차"].fillna(1).astype(int) == 1).all():          # 반복 없는 항목은 회차 칸 생략
+        df = df.drop(columns=["회차"])
+    return df
 
 
 def drop_pred_prefix(r):
@@ -897,7 +989,7 @@ def fetch_ref(addr, facility, base=REF_BASE, timeout=60):
 
 # ---------------------------------------------------------------- [AI 6] 지도 제어 · [AI 7] 3D 시뮬레이션
 # 실행 결과(시스템 응답)는 결과 파일(result_ai6.csv / result_ai7.csv)을 가져와 채점합니다.
-# 정답·결과의 파라미터와 시나리오는 "키=값; 키=값" 형식 (규격서 예시의 "위치 ○○ / 분석대상 ○○"도 읽음)
+# 정답·결과의 파라미터와 시나리오는 "키=값; 키=값" 형식 (성과지표 예시의 "위치 ○○ / 분석대상 ○○"도 읽음)
 def _norm_tok(v):
     s = re.sub(r"[\s·ㆍ・,]", "", str(v or "")).lower()
     return re.sub(r"번지|번$", "", s)

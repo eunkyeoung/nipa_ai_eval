@@ -1,5 +1,5 @@
 """
-규격서 시험 실행기 (AI 1 ~ AI 5)
+성과지표 시험 실행기 (AI 1 ~ AI 5)
 --------------------------------
 시험셋(CSV/XLSX)의 질의를 AIPS에 보내고, 항목별 로그(diagnose_log_aiN.jsonl)와 결과(result.xlsx)를 만듭니다.
 
@@ -100,7 +100,7 @@ def main():
                     d = json.loads(ln)
                 except json.JSONDecodeError:
                     continue
-                if not d.get("오류"):
+                if not S.error_text(d):                              # 통신 오류·응답 중단 건은 버리고 다시 질의
                     keep.append(ln if ln.endswith("\n") else ln + "\n")
                     done_keys.add((str(d[key]), int(d["회차"])))
         with open(log_path, "w", encoding="utf-8") as f:
@@ -112,6 +112,7 @@ def main():
                 testset=a.testset, testset_sha256=S.sha256(a.testset),
                 answer=a.answer, answer_sha256=S.sha256(a.answer),
                 lawdb=a.lawdb, lawdb_sha256=S.sha256(a.lawdb), started=time.strftime("%Y-%m-%d %H:%M:%S"))
+    meta["모델명"], meta["모델명출처"] = S.current_model()                 # 응답에 없는 모델명 → 실행 시작 때 콘솔 조회
     mp = os.path.join(run_dir, "meta.json")
     if a.resume and os.path.exists(mp):
         with open(mp, encoding="utf-8") as f:
@@ -124,7 +125,7 @@ def main():
         argv += ["--run-dir", run_dir]
     total = len(plan) + len(done_keys)
     status = dict(state="running", pid=os.getpid(), started=time.time(), script="spec_runner.py",
-                  mode=f"규격서 {item}", run_dir=run_dir, out=os.path.join(run_dir, "progress.xlsx"),
+                  mode=f"성과지표 {item}", run_dir=run_dir, out=os.path.join(run_dir, "progress.xlsx"),
                   total=total, done=len(done_keys), current=None,
                   message="이어서 실행" if a.resume else "", argv=argv)
     qa_runner.write_status(a.status_file, status)
@@ -158,6 +159,7 @@ def main():
                 base = qa_runner.extract(events)
                 rec.update(S.map_response(events, base), 단계로그=S.step_log(events, base),
                            session_id=sid, 오류="")
+                rec["오류"] = S.error_text(rec)              # 판정 없이 끝난 응답 → '응답 중단' (이어서 실행 때 다시 질의)
             except Exception as e:                                  # noqa: BLE001
                 rec.update(판단유형=S.UNDECIDED, 단계로그=[], 오류=f"{type(e).__name__}: {str(e)[:300]}")
             rec["소요초"] = round(time.time() - t0, 1)

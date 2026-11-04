@@ -365,7 +365,7 @@ def find_col(cols, key, override=None):
     return None
 
 
-# QA 대시보드 결과는 dashboard/ 아래 (규격서 시험 결과는 spec/ 아래)
+# QA 대시보드 결과는 dashboard/ 아래 (성과지표 시험 결과는 spec/ 아래)
 DASH = "dashboard"
 RAW_DIR = os.path.join(DASH, "raw")                     # [정확도] 응답 원문
 PRED = os.path.join(DASH, "pred.xlsx")                  # [정확도] 추출 결과
