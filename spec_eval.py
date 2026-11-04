@@ -310,6 +310,15 @@ STEPS = ["① 질의 파싱", "② 대상 필지(PNU) 조회", "③ 토지특성
 STEP_FIELDS = ["실행", "데이터소스", "조회키", "결과건수", "적용룰셋", "검색법령", "중간판정값"]
 
 
+TOOL_LABEL = {                                   # AIPS 도구 호출(작업 이름) → 한국어 설명 (8단계 로그 '근거' 표시용)
+    "INTEGRATED_LOCATION_SEARCH": "주소 위치 검색", "SELECT": "지도에서 필지 선택",
+    "ATTR": "토지 속성 조회(지목·면적·용도지역)", "VALUE": "경사도 분석",
+    "CONTACT_SUMMARY": "도로 접도 분석", "ROAD_PLAN_GEOM": "계획도로 조회",
+    "FOREST_CONVERSION": "산지전용 규제 검토", "FARMLAND_CONVERSION": "농지전용 규제 검토",
+    "AREA": "면적 계산", "LAYER_FIND": "걸친 지역·지구 조회",
+}
+
+
 def _env_steps(parcel):
     """parcel.envelopes(도구 호출 기록) → 단계 분류"""
     out = {2: [], 3: [], 5: []}
@@ -324,7 +333,7 @@ def _env_steps(parcel):
         facts = rs.get("facts") or {}
         src = f"{en.get('callee')}/{tool}:{op}".rstrip(":")
         key = pa.get("query") or pa.get("pnu") or pa.get("featureRef") or ""
-        rec = dict(src=src, key=str(key), status=en.get("status"), facts=facts, op=str(op).upper())
+        rec = dict(src=src, key=str(key), status=en.get("status"), facts=facts, op=str(op).upper(), cid=en.get("call_id") or "")
         if rec["op"] in ("INTEGRATED_LOCATION_SEARCH", "SELECT"):
             out[2].append(rec)
         elif rec["op"] in ("FOREST_CONVERSION", "FARMLAND_CONVERSION", "LAYER_FIND") or "regulation" in src:
@@ -342,8 +351,24 @@ def _count(facts):
 
 
 def step_log(events, base=None):
-    """응답 → 8단계 로그 [{단계번호, 단계명, 실행, 데이터소스, 조회키, 결과건수, 적용룰셋, 검색법령, 중간판정값}]"""
+    """응답 → 8단계 로그 [{단계번호, 단계명, 실행, 데이터소스, 조회키, 결과건수, 적용룰셋, 검색법령, 중간판정값, 근거}]
+    값은 모두 AIPS 응답 스트림(SSE)에 실려 온 시스템 처리 기록에서 가져옴 — 근거 = 응답 원문(raw)의 이벤트 번호·필드"""
     st = _events_dict(events)
+    at = {"intent": None, "parcel": None, "diagnosis": None, "laws": []}       # 근거 이벤트 번호 (0부터, raw 순서)
+    for i, (ev, d) in enumerate(events):
+        k = (d or {}).get("event") if ev == "orc.response" else None
+        if k in ("intent", "parcel", "diagnosis"):
+            at[k] = i if k != "intent" or at[k] is None else at[k]
+        if k == "stage" and ((d.get("data") or {}).get("detail") or {}).get("laws"):
+            at["laws"].append(i)
+    def ev_(i, what):                          # "응답 원문 26번 항목(최종 진단 결과) › 최종 판정" — 번호 = 원문 JSON 왼쪽 번호
+        return f"응답 원문 {i}번 항목({what})" if i is not None else ""
+
+    def tools(recs):                           # 도구 호출을 한국어 이름으로, 같은 종류는 묶고 [ ] 안에 원문의 call_id
+        g = {}
+        for r in recs:
+            g.setdefault(TOOL_LABEL.get(r["op"], r["src"].split("/")[-1]), []).append(r.get("cid") or "?")
+        return ", ".join(f"{k}[{', '.join(v)}]" for k, v in g.items())
     diag = st["diag"] or {}
     j = diag.get("judgment") or {}
     env = _env_steps(st["parcel"])
@@ -387,7 +412,15 @@ def step_log(events, base=None):
         dict(실행=bool(j.get("verdict")), 데이터소스="judgment.verdict", 조회키="", 결과건수=1 if j.get("verdict") else 0,
              적용룰셋=[], 검색법령=[], 중간판정값=type2(j.get("verdict")) if j.get("verdict") else UNDECIDED),
     ]
-    return [dict(단계번호=i + 1, 단계명=STEPS[i], **r) for i, r in enumerate(rows)]
+    basis = [ev_(at["intent"], "질의 해석 결과"),
+             ev_(at["parcel"], "필지 조회 결과") + f" › {tools(env[2])}" if env[2] else "",
+             ev_(at["parcel"], "필지 조회 결과") + f" › {tools(env[3])}" if env[3] else "",
+             ev_(at["diagnosis"], "최종 진단 결과") + " › 용도지역 허용 판정" if at["diagnosis"] is not None else "",
+             ev_(at["parcel"], "필지 조회 결과") + f" › {tools(env[5])}" if env[5] else "",
+             (f"응답 원문 {', '.join(map(str, sorted(set(at['laws']))))}번 항목(단계별 검토 결과) › 관련 법령" if at["laws"] else ""),
+             ev_(at["diagnosis"], "최종 진단 결과") + " › 적용 규칙·용도지역 허용 판정" if at["diagnosis"] is not None else "",
+             ev_(at["diagnosis"], "최종 진단 결과") + " › 최종 판정" if at["diagnosis"] is not None else ""]
+    return [dict(단계번호=i + 1, 단계명=STEPS[i], **r, 근거=basis[i]) for i, r in enumerate(rows)]
 
 
 def compare_steps(base, other):
@@ -549,11 +582,12 @@ def version_table(log, run_dir=None):
         with open(os.path.join(run_dir, "meta.json"), encoding="utf-8") as fh:
             meta = json.load(fh)
     found["모델명"] = {meta.get("모델명") or MODEL_NAME_DEFAULT}             # 응답에 없음 → 실행 시작 때 콘솔 조회값(없으면 기본값)
-    found["법령DB"] = set()                                                   # 응답·운영 사이트 모두 확정 버전 없음 → '-'
+    found["법령DB"] = {meta["법령DB"]} if meta.get("법령DB") else set()       # 응답에 없음 → 실행 시작 때 법령 수집 관리자 조회값
     rows = [("시스템 빌드 번호", "build", ""), ("응답 규격 버전", "contract_version", ""),
             ("AI 사전진단 엔진 모델 버전", "모델명", f"{meta.get('모델명출처') or '기본값'} — 시스템 응답 값 아님"),
             ("룰셋(룰엔진) 버전", "룰엔진버전", "룰엔진 버전(engine_version) — 룰셋 자체 버전 필드는 없음"),
-            ("법령·조례 DB 버전", "법령DB", "시스템 응답에 없음"),
+            ("법령·조례 DB 버전", "법령DB", f"{meta['법령DB출처']} — 시스템 응답 값 아님" if meta.get("법령DB")
+             else "시스템 응답에 없음 (다음 실행부터 법령 수집 관리자 조회값을 기록)"),
             ("공간정보 기준일", "공간정보기준일", "용도지역·지구 지도 데이터 기준일(stdVer)")]
     return pd.DataFrame([{"항목": k, "값": "; ".join(sorted(found[c])) if found.get(c) else "-", "비고": note}
                          for k, c, note in rows])
@@ -561,6 +595,23 @@ def version_table(log, run_dir=None):
 
 MODEL_NAME_DEFAULT = "gpt-oss-120b"                                           # 시험의뢰서 시험환경 'LLM 추론 환경 (gpt-oss-120b)'
 MODEL_CONSOLE = "http://192.168.200.115:18800/api/models"                     # 공간정보 에이전트·MCP 콘솔 (조회만)
+
+
+LAW_STATS = "http://192.168.200.116:17801/api/stats"                          # 법령 수집·적재 관리자 (조회만)
+
+
+def current_law_db():
+    """실행 시작 때 법령 수집·적재 관리자에서 마지막 수집일·건수 조회 → (값, 출처). 실패하면 ('', '')"""
+    try:
+        import datetime as dt
+        import requests
+        s = requests.get(LAW_STATS, timeout=5).json()
+        at = (s.get("collection") or {}).get("last_collected_at") or ""
+        day = (dt.datetime.fromisoformat(at.replace("Z", "+00:00")) + dt.timedelta(hours=9)).strftime("%Y-%m-%d") if at else "-"
+        return (f"수집 기준 {day} (법령 {s['law']['total']:,} · 문서 {s['document']['total']:,} · 조문 {s['article']['total']:,})",
+                "법령 수집·적재 관리자(116:17801) 조회값")
+    except Exception:                                                         # noqa: BLE001
+        return "", ""
 
 
 def current_model():

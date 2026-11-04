@@ -113,6 +113,7 @@ def main():
                 answer=a.answer, answer_sha256=S.sha256(a.answer),
                 lawdb=a.lawdb, lawdb_sha256=S.sha256(a.lawdb), started=time.strftime("%Y-%m-%d %H:%M:%S"))
     meta["모델명"], meta["모델명출처"] = S.current_model()                 # 응답에 없는 모델명 → 실행 시작 때 콘솔 조회
+    meta["법령DB"], meta["법령DB출처"] = S.current_law_db()               # 응답에 없는 법령 DB 기준 → 법령 수집 관리자 조회
     mp = os.path.join(run_dir, "meta.json")
     if a.resume and os.path.exists(mp):
         with open(mp, encoding="utf-8") as f:

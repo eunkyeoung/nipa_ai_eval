@@ -185,6 +185,9 @@ div[class*="st-key-warn_"] { background: rgba(245, 158, 11, 0.10); }
 div[class*="st-key-kpi_runend"] { background: rgba(34, 197, 94, 0.09); }
 div[class*="st-key-"] h4 { margin-top: 0; padding-top: 0; font-size: 1.15rem; }
 div[data-testid="stMetric"] { background: transparent; }
+/* 펼침 영역(시험 기준·미제공 항목 등) 내용은 흰 바탕 */
+div[data-testid="stExpander"] details { background: #ffffff; border-radius: 8px; }
+div[data-testid="stExpanderDetails"] { background: #ffffff; }
 /* 회색 영역 안의 선택 상자는 배경과 같은 색이라 안 보임 → 연한 파랑 바탕 + 파란 테두리
    (Streamlit 1.66 구조: stSelectbox > div > div 가 입력 상자) */
 div[class*="st-key-box_"] div[data-testid="stSelectbox"] > div > div,
