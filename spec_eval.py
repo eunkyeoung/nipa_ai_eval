@@ -308,7 +308,7 @@ def map_response(events, base=None):
 STEPS = ["① 질의 파싱", "② 대상 필지(PNU) 조회", "③ 토지특성 조회", "④ 용도지역 판정",
          "⑤ 규제구역 조회", "⑥ 적용 법령·조례 검색", "⑦ 룰셋 적용", "⑧ 최종 판단 도출",
          "⑨ 후속 기능모듈 분기 및 기록"]          # ①~⑧ 시험의뢰서 표, ⑨ 수행계획서 9단계의 마지막 단계 (본문 '9단계'에 맞춤)
-CORE_STAGES = {"zone_use", "development_permit", "land_conversion"}   # 판정용 검토 단계 — 이 밖의 단계는 ⑨ 후속 기능
+CORE_STAGES = {"zone_use", "development_permit", "land_conversion", "building_permit"}   # 판정용 검토 단계 (수행계획서 5단계: 허가기준·수치기준 판정) — 이 밖의 단계(민원절차 안내 등)는 ⑨ 후속 기능
 STEP_FIELDS = ["실행", "데이터소스", "조회키", "결과건수", "적용룰셋", "검색법령", "중간판정값"]
 
 
@@ -419,12 +419,12 @@ def step_log(events, base=None):
              결과건수=int(j.get("rules_applied") or 0), 적용룰셋=rulesets(diag), 검색법령=[], 중간판정값=""),
         dict(실행=bool(j.get("verdict")), 데이터소스="judgment.verdict", 조회키="", 결과건수=1 if j.get("verdict") else 0,
              적용룰셋=[], 검색법령=[], 중간판정값=type2(j.get("verdict")) if j.get("verdict") else UNDECIDED),
-        dict(실행=bool(follow or recs9 or rep9),                         # ⑨ 후속 기능(건축허가 검토·민원절차 안내)·보완 제안·결과 보고서
+        dict(실행=bool(follow or recs9 or rep9),                         # ⑨ 후속 기능(민원절차 안내)·조건부 대안·사전진단 결과 보고서
              데이터소스=";".join([f"stage:{k}" for k in sorted(follow)] + (["diagnosis.recommendations"] if recs9 else [])
                              + (["diagnosis.report"] if rep9 else [])),
              조회키="", 결과건수=len(follow) + len(recs9), 적용룰셋=[], 검색법령=[],
-             중간판정값="; ".join([t for _, t in sorted(follow.values())] + ([f"보완 제안 {len(recs9)}건"] if recs9 else [])
-                               + (["결과 보고서 기록"] if rep9 else [])) or "후속 없음"),
+             중간판정값="; ".join([t for _, t in sorted(follow.values())] + ([f"조건부 대안 {len(recs9)}건"] if recs9 else [])
+                               + (["사전진단 결과 보고서 기록"] if rep9 else [])) or "후속 없음"),
     ]
     basis = [ev_(at["intent"], "질의 해석 결과"),
              ev_(at["parcel"], "필지 조회 결과") + f" › {tools(env[2])}" if env[2] else "",
@@ -437,57 +437,83 @@ def step_log(events, base=None):
              " · ".join(([f"응답 원문 {', '.join(str(i) for i, _ in sorted(follow.values()))}번 항목(단계별 검토 결과) › "
                           + ", ".join(t for _, t in sorted(follow.values()))] if follow else [])
                         + ([ev_(at["diagnosis"], "최종 진단 결과") + " › " + ", ".join(
-                            (["보완 제안"] if recs9 else []) + (["결과 보고서"] if rep9 else []))] if (recs9 or rep9) else []))]
+                            (["조건부 대안"] if recs9 else []) + (["사전진단 결과 보고서"] if rep9 else []))] if (recs9 or rep9) else []))]
     return [dict(단계번호=i + 1, 단계명=STEPS[i], **r, 근거=basis[i]) for i, r in enumerate(rows)]
 
 
 EVENT_KIND = {"intent": "질의 해석 결과", "parcel": "필지 조회 결과", "stage": "단계별 검토 결과",
               "diagnosis": "최종 진단 결과", "reply": "답변 문장"}
 STAGE_STATUS = {"pending": "대기", "running": "진행 중", "done": "완료"}
-INTENT_LABEL = {"permit_review": "인허가 가능 여부 검토", "map_control": "지도 제어", "map3d_analysis": "3D 분석",
-                "land_characteristics": "토지 정보 조회", "law_text": "법령 조문 조회"}
+PLAN_VERDICT = {"possible": "승인 가능", "conditional": "조건부 가능", "impossible": "부적합",   # 수행계획서 4종 판단 유형
+                "needs_review": "검토 필요", "unknown": "검토 필요"}
+PLAN_STEP = {1: "1. 행위·위치·규모·용도 추출", 2: "2. PNU 기준 토지특성·용도지역·규제구역·지형 조회",
+             3: "3. 적용 법령·조례·지침·고시 후보 검색", 5: "5. Rule Engine 기반 필수 허가기준 충족 판정",
+             8: "8. 4종 최종 분류", 9: "9. 후속 기능모듈 분기 및 기록"}       # 수행계획서 167~168쪽 처리 흐름
+PLAN_NAME = [("토지 규제 · 분할 에이전트", "공간분석 모듈(산지·농지 규제)"), ("도로 분석 에이전트", "공간분석 모듈(도로 접근성)"),
+             ("공간 오케스트레이터", "지도제어·공간분석 Sub 오케스트레이터"), ("지도 이동 에이전트", "지도제어 모듈"),
+             ("토지 정보 에이전트", "토지특성 통합수집 모듈"), ("공간 분석 에이전트", "공간분석 모듈"),
+             ("3D 에이전트", "3D 시뮬레이션 모듈"), ("에이전트", "모듈")]            # 진행 메시지 속 이름 → 수행계획서 명칭
+PLAN_SUB = {"spatial": "지도제어·공간분석", "permit_review": "사전진단 추론", "OK": "정상"}
+INTENT_LABEL = {"permit_review": "사전진단(인허가 가능 여부 판단)", "map_control": "지도제어", "map3d_analysis": "3D 시뮬레이션",
+                "land_characteristics": "토지특성 조회", "law_text": "법령 조문 조회"}
+TRACE_STEP = [("행위제한", 5), ("가능한지 확인", 5), ("건폐율", 5), ("관계 법령", 3), ("설명을 쓰고", 9),
+              ("건축 가능 여부를 검토", 1), ("질문을 이해", 1), ("에이전트", 2), ("답을 정리", 2)]
+
+
+def plan_terms(text):
+    for a, b in PLAN_NAME:
+        text = text.replace(a, b)
+    return text
 
 
 def event_rows(raw):
-    """응답 원문(raw: [{event, data}, …]) → 번호별 요약 [{번호, 종류, 내용}] — 원문 JSON 의 0, 1, 2 … 번호와 같음"""
+    """응답 원문(raw: [{event, data}, …]) → 번호별 요약 [{번호, 종류, 수행계획서 단계, 내용}] — 번호는 원문 JSON 의 0, 1, 2 …
+    이름·판단 유형은 수행계획서 용어로 바꿔 표시 (원문은 그대로)"""
     rows = []
     for i, e in enumerate(raw or []):
         ev, d = e.get("event"), e.get("data") or {}
+        step = None
         if ev == "orc.start":
-            kind, txt = "시작", f"질의 처리 시작 · 시스템 빌드 {d.get('build', '-')} · 응답 규격 {d.get('contract_version', '-')}"
+            kind, txt = "처리 시작", f"시스템 빌드 {d.get('build', '-')} · 응답 규격 {d.get('contract_version', '-')}"
         elif ev == "orc.end":
             st = d.get("sub_status") or {}
-            kind, txt = "종료", "질의 처리 끝 · " + (", ".join(f"{k} {v}" for k, v in st.items()) or "-")
+            kind, txt = "처리 종료", ", ".join(f"{PLAN_SUB.get(k, k)} {PLAN_SUB.get(v, v)}" for k, v in st.items()) or "-"
         elif ev == "orc.trace":
-            kind, txt = "진행 메시지", str(d.get("message") or "-")
+            msg = str(d.get("message") or "-")
+            kind, txt = "진행 메시지", plan_terms(msg)
+            step = next((n for k, n in TRACE_STEP if k in msg), None)
         elif ev == "orc.response":
             k, x = d.get("event"), d.get("data") or {}
             kind = EVENT_KIND.get(k, f"결과 ({k})")
             if k == "intent":
                 it = x.get("intent", "-")
-                txt = f"질의를 '{INTENT_LABEL.get(it, it)}'(으)로 이해 ({it})"
+                step, txt = 1, f"질의를 '{INTENT_LABEL.get(it, it)}'(으)로 이해"
             elif k == "parcel":
                 ens = x.get("envelopes") or []
-                names = []
+                g = {}
                 for en in ens:
                     plan = (((en.get("args") or {}).get("_metadata") or {}).get("plan") or [{}])[0]
                     op = str((plan.get("args") or {}).get("action") or (plan.get("args") or {}).get("operation") or "").upper()
-                    names.append(f"{TOOL_LABEL.get(op, op or en.get('tool'))}[{en.get('call_id', '?')}]")
-                txt = f"도구 호출 {len(ens)}건: " + ", ".join(names)
+                    g.setdefault(TOOL_LABEL.get(op, op or en.get("tool")), []).append(en.get("call_id", "?"))
+                step, txt = 2, f"조회 {len(ens)}건: " + ", ".join(f"{n}[{', '.join(c)}]" for n, c in g.items())
             elif k == "stage":
                 v = x.get("verdict")
+                step = 5 if x.get("id") in CORE_STAGES else 9
                 txt = (f"{str(x.get('title') or x.get('id')).replace(' 대기', '').replace(' 중…', '').replace(' 완료', '')} "
-                       f"— {STAGE_STATUS.get(x.get('status'), x.get('status'))}" + (f" (판정: {type2(v)})" if v else ""))
+                       f"— {STAGE_STATUS.get(x.get('status'), x.get('status'))}" + (f" (판정: {PLAN_VERDICT.get(v, v)})" if v else ""))
             elif k == "diagnosis":
                 v = (x.get("judgment") or {}).get("verdict")
-                txt = f"최종 판정 {type2(v) if v else '-'} · 근거·적용 규칙·보완 제안·결과 보고서 포함"
+                recs = [r for r in x.get("recommendations") or [] if isinstance(r, dict)]
+                step = 8
+                txt = (f"4종 최종 분류: {PLAN_VERDICT.get(v, v) if v else '-'} · 근거 법령·적용 규칙"
+                       + (f" · 조건부 대안 {len(recs)}건" if recs else "") + (" · 사전진단 결과 보고서" if x.get("report") else ""))
             elif k == "reply":
                 txt = str(x.get("reply") or "")[:80]
             else:
                 txt = ", ".join(list(x.keys())[:5])
         else:
             kind, txt = ev or "-", ""
-        rows.append({"번호": i, "종류": kind, "내용": txt})
+        rows.append({"번호": i, "종류": kind, "수행계획서 단계": PLAN_STEP.get(step, "–"), "내용": txt})
     return rows
 
 
