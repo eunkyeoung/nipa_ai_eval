@@ -556,8 +556,7 @@ def render(item, area, help_fn=None):
             with st.expander("응답 원문 (JSON)"):
                 raw = read_json(rp)
                 raw = raw if isinstance(raw, list) else []
-                st.markdown("**응답 흐름 요약** — AIPS 응답은 조각 여러 개가 차례로 옵니다. 번호는 받은 순서(0부터)이고, 아래 원문의 번호와 같습니다. "
-                            "에이전트 이름·판단 유형은 **수행계획서 용어**로 바꿔 표시하고, 원문은 그대로 둡니다.")
+                st.markdown("**응답 흐름 요약** — AIPS 응답은 조각 여러 개가 차례로 옵니다. 번호는 받은 순서(0부터)이고, 아래 원문의 번호와 같습니다.")
                 show_table(pd.DataFrame(S.event_rows(raw)), height=rows_height(len(raw), cap=360))
                 st.markdown("**원문** — 번호 옆 이름이 조각의 종류입니다. ▶를 누르면 내용이 펼쳐집니다.")
                 st.json(S.labeled_raw(raw), expanded=1)          # 번호·종류 목록만 펼치고 내용은 접음

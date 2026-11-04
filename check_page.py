@@ -147,7 +147,7 @@ def render(area):
                 with open(rp, encoding="utf-8") as f:
                     raw = json.load(f)
                 if isinstance(raw, list) and raw and isinstance(raw[0], dict) and "event" in raw[0]:
-                    st.markdown("**응답 흐름 요약** — 번호는 받은 순서(0부터)이고, 아래 원문의 번호와 같습니다. 에이전트 이름·판단 유형은 수행계획서 용어로 표시합니다.")
+                    st.markdown("**응답 흐름 요약** — 번호는 받은 순서(0부터)이고, 아래 원문의 번호와 같습니다.")
                     show_table(pd.DataFrame(S.event_rows(raw)), height=rows_height(len(raw), cap=360))
                     st.markdown("**원문** — 번호 옆 이름이 조각의 종류입니다. ▶를 누르면 내용이 펼쳐집니다.")
                     st.json(S.labeled_raw(raw), expanded=1)          # 번호·종류 목록만 펼치고 내용은 접음
