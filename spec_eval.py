@@ -441,6 +441,61 @@ def step_log(events, base=None):
     return [dict(단계번호=i + 1, 단계명=STEPS[i], **r, 근거=basis[i]) for i, r in enumerate(rows)]
 
 
+EVENT_KIND = {"intent": "질의 해석 결과", "parcel": "필지 조회 결과", "stage": "단계별 검토 결과",
+              "diagnosis": "최종 진단 결과", "reply": "답변 문장"}
+STAGE_STATUS = {"pending": "대기", "running": "진행 중", "done": "완료"}
+INTENT_LABEL = {"permit_review": "인허가 가능 여부 검토", "map_control": "지도 제어", "map3d_analysis": "3D 분석",
+                "land_characteristics": "토지 정보 조회", "law_text": "법령 조문 조회"}
+
+
+def event_rows(raw):
+    """응답 원문(raw: [{event, data}, …]) → 번호별 요약 [{번호, 종류, 내용}] — 원문 JSON 의 0, 1, 2 … 번호와 같음"""
+    rows = []
+    for i, e in enumerate(raw or []):
+        ev, d = e.get("event"), e.get("data") or {}
+        if ev == "orc.start":
+            kind, txt = "시작", f"질의 처리 시작 · 시스템 빌드 {d.get('build', '-')} · 응답 규격 {d.get('contract_version', '-')}"
+        elif ev == "orc.end":
+            st = d.get("sub_status") or {}
+            kind, txt = "종료", "질의 처리 끝 · " + (", ".join(f"{k} {v}" for k, v in st.items()) or "-")
+        elif ev == "orc.trace":
+            kind, txt = "진행 메시지", str(d.get("message") or "-")
+        elif ev == "orc.response":
+            k, x = d.get("event"), d.get("data") or {}
+            kind = EVENT_KIND.get(k, f"결과 ({k})")
+            if k == "intent":
+                it = x.get("intent", "-")
+                txt = f"질의를 '{INTENT_LABEL.get(it, it)}'(으)로 이해 ({it})"
+            elif k == "parcel":
+                ens = x.get("envelopes") or []
+                names = []
+                for en in ens:
+                    plan = (((en.get("args") or {}).get("_metadata") or {}).get("plan") or [{}])[0]
+                    op = str((plan.get("args") or {}).get("action") or (plan.get("args") or {}).get("operation") or "").upper()
+                    names.append(f"{TOOL_LABEL.get(op, op or en.get('tool'))}[{en.get('call_id', '?')}]")
+                txt = f"도구 호출 {len(ens)}건: " + ", ".join(names)
+            elif k == "stage":
+                v = x.get("verdict")
+                txt = (f"{str(x.get('title') or x.get('id')).replace(' 대기', '').replace(' 중…', '').replace(' 완료', '')} "
+                       f"— {STAGE_STATUS.get(x.get('status'), x.get('status'))}" + (f" (판정: {type2(v)})" if v else ""))
+            elif k == "diagnosis":
+                v = (x.get("judgment") or {}).get("verdict")
+                txt = f"최종 판정 {type2(v) if v else '-'} · 근거·적용 규칙·보완 제안·결과 보고서 포함"
+            elif k == "reply":
+                txt = str(x.get("reply") or "")[:80]
+            else:
+                txt = ", ".join(list(x.keys())[:5])
+        else:
+            kind, txt = ev or "-", ""
+        rows.append({"번호": i, "종류": kind, "내용": txt})
+    return rows
+
+
+def labeled_raw(raw):
+    """원문 JSON 의 번호 옆에 종류 이름을 붙임: {'0 · 시작': {...}, '14 · 필지 조회 결과': {...}}"""
+    return {f"{r['번호']} · {r['종류']}": e for r, e in zip(event_rows(raw), raw or [])}
+
+
 def compare_steps(base, other):
     """두 회차 9단계 로그 비교 → 불일치 단계 목록 [(단계명, 필드)]
     비교 대상: 단계 실행 여부·순서, 조회 데이터소스, 조회 키·결과 건수, 적용 룰셋 ID 집합(⑦), 검색 법령 집합(⑥),

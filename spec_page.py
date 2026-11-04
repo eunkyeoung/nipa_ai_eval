@@ -554,4 +554,9 @@ def render(item, area, help_fn=None):
         rp = os.path.join(run_dir, "raw", f"{cid}_{int(rec['회차'])}.json")
         if os.path.exists(rp):
             with st.expander("응답 원문 (JSON)"):
-                st.json(read_json(rp), expanded=False)
+                raw = read_json(rp)
+                raw = raw if isinstance(raw, list) else []
+                st.markdown("**응답 흐름 요약** — AIPS 응답은 조각 여러 개가 차례로 옵니다. 번호는 받은 순서(0부터)이고, 아래 원문의 번호와 같습니다.")
+                show_table(pd.DataFrame(S.event_rows(raw)), height=rows_height(len(raw), cap=360))
+                st.markdown("**원문** — 번호 옆 이름이 조각의 종류입니다. ▶를 누르면 내용이 펼쳐집니다.")
+                st.json(S.labeled_raw(raw), expanded=1)          # 번호·종류 목록만 펼치고 내용은 접음
