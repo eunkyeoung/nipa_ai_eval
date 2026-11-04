@@ -419,12 +419,12 @@ def step_log(events, base=None):
              결과건수=int(j.get("rules_applied") or 0), 적용룰셋=rulesets(diag), 검색법령=[], 중간판정값=""),
         dict(실행=bool(j.get("verdict")), 데이터소스="judgment.verdict", 조회키="", 결과건수=1 if j.get("verdict") else 0,
              적용룰셋=[], 검색법령=[], 중간판정값=type2(j.get("verdict")) if j.get("verdict") else UNDECIDED),
-        dict(실행=bool(follow or recs9 or rep9),                         # ⑨ 후속 기능(민원절차 안내)·조건부 대안·사전진단 결과 보고서
+        dict(실행=bool(follow or recs9 or rep9),                         # ⑨ 후속 기능(민원절차 안내)·조건부 대안·사전진단 보고서
              데이터소스=";".join([f"stage:{k}" for k in sorted(follow)] + (["diagnosis.recommendations"] if recs9 else [])
                              + (["diagnosis.report"] if rep9 else [])),
              조회키="", 결과건수=len(follow) + len(recs9), 적용룰셋=[], 검색법령=[],
              중간판정값="; ".join([t for _, t in sorted(follow.values())] + ([f"조건부 대안 {len(recs9)}건"] if recs9 else [])
-                               + (["사전진단 결과 보고서 기록"] if rep9 else [])) or "후속 없음"),
+                               + (["사전진단 보고서 기록"] if rep9 else [])) or "후속 없음"),
     ]
     basis = [ev_(at["intent"], "질의 해석 결과"),
              ev_(at["parcel"], "필지 조회 결과") + f" › {tools(env[2])}" if env[2] else "",
@@ -437,7 +437,7 @@ def step_log(events, base=None):
              " · ".join(([f"응답 원문 {', '.join(str(i) for i, _ in sorted(follow.values()))}번 항목(단계별 검토 결과) › "
                           + ", ".join(t for _, t in sorted(follow.values()))] if follow else [])
                         + ([ev_(at["diagnosis"], "최종 진단 결과") + " › " + ", ".join(
-                            (["조건부 대안"] if recs9 else []) + (["사전진단 결과 보고서"] if rep9 else []))] if (recs9 or rep9) else []))]
+                            (["조건부 대안"] if recs9 else []) + (["사전진단 보고서"] if rep9 else []))] if (recs9 or rep9) else []))]
     return [dict(단계번호=i + 1, 단계명=STEPS[i], **r, 근거=basis[i]) for i, r in enumerate(rows)]
 
 
@@ -449,11 +449,11 @@ PLAN_VERDICT = {"possible": "승인 가능", "conditional": "조건부 가능", 
 PLAN_STEP = {1: "1. 행위·위치·규모·용도 추출", 2: "2. PNU 기준 토지특성·용도지역·규제구역·지형 조회",
              3: "3. 적용 법령·조례·지침·고시 후보 검색", 5: "5. Rule Engine 기반 필수 허가기준 충족 판정",
              8: "8. 4종 최종 분류", 9: "9. 후속 기능모듈 분기 및 기록"}       # 수행계획서 167~168쪽 처리 흐름
-PLAN_NAME = [("토지 규제 · 분할 에이전트", "공간분석 모듈(산지·농지 규제)"), ("도로 분석 에이전트", "공간분석 모듈(도로 접근성)"),
-             ("공간 오케스트레이터", "지도제어·공간분석 Sub 오케스트레이터"), ("지도 이동 에이전트", "지도제어 모듈"),
-             ("토지 정보 에이전트", "토지특성 통합수집 모듈"), ("공간 분석 에이전트", "공간분석 모듈"),
-             ("3D 에이전트", "3D 시뮬레이션 모듈"), ("에이전트", "모듈")]            # 진행 메시지 속 이름 → 수행계획서 명칭
-PLAN_SUB = {"spatial": "지도제어·공간분석", "permit_review": "사전진단 추론", "OK": "정상"}
+PLAN_NAME = [("토지 규제 · 분할 에이전트", "토지특성 통합수집 에이전트"), ("도로 분석 에이전트", "공간분석 Vision 에이전트"),
+             ("공간 오케스트레이터", "통합 오케스트레이터"), ("지도 이동 에이전트", "지도제어 에이전트"),
+             ("토지 정보 에이전트", "토지특성 통합수집 에이전트"), ("공간 분석 에이전트", "공간분석 Vision 에이전트"),
+             ("3D 에이전트", "3D 시뮬레이션 에이전트")]   # 진행 메시지 속 이름 → 수행계획서 명칭 (179쪽 A0~A5)
+PLAN_SUB = {"spatial": "지도제어·공간분석 에이전트", "permit_review": "사전진단 추론 에이전트", "OK": "정상"}
 INTENT_LABEL = {"permit_review": "사전진단(인허가 가능 여부 판단)", "map_control": "지도제어", "map3d_analysis": "3D 시뮬레이션",
                 "land_characteristics": "토지특성 조회", "law_text": "법령 조문 조회"}
 TRACE_STEP = [("행위제한", 5), ("가능한지 확인", 5), ("건폐율", 5), ("관계 법령", 3), ("설명을 쓰고", 9),
@@ -506,7 +506,7 @@ def event_rows(raw):
                 recs = [r for r in x.get("recommendations") or [] if isinstance(r, dict)]
                 step = 8
                 txt = (f"4종 최종 분류: {PLAN_VERDICT.get(v, v) if v else '-'} · 근거 법령·적용 규칙"
-                       + (f" · 조건부 대안 {len(recs)}건" if recs else "") + (" · 사전진단 결과 보고서" if x.get("report") else ""))
+                       + (f" · 조건부 대안 {len(recs)}건" if recs else "") + (" · 사전진단 보고서" if x.get("report") else ""))
             elif k == "reply":
                 txt = str(x.get("reply") or "")[:80]
             else:
@@ -693,7 +693,7 @@ def version_table(log, run_dir=None):
 
 
 MODEL_NAME_DEFAULT = "gpt-oss-120b"                                           # 시험의뢰서 시험환경 'LLM 추론 환경 (gpt-oss-120b)'
-MODEL_CONSOLE = "http://192.168.200.115:18800/api/models"                     # 공간정보 모듈·MCP 콘솔 (조회만)
+MODEL_CONSOLE = "http://192.168.200.115:18800/api/models"                     # 공간정보 에이전트·MCP 콘솔 (조회만)
 
 
 LAW_STATS = "http://192.168.200.116:17801/api/stats"                          # 법령 수집·적재 관리자 (조회만)
@@ -714,13 +714,13 @@ def current_law_db():
 
 
 def current_model():
-    """실행 시작 때 모듈 콘솔에서 지금 쓰는 모델명 조회 → (모델명, 출처). 실패하면 기본값"""
+    """실행 시작 때 에이전트·MCP 콘솔에서 지금 쓰는 모델명 조회 → (모델명, 출처). 실패하면 기본값"""
     try:
         import collections
         import requests
         ag = requests.get(MODEL_CONSOLE, timeout=5).json().get("agents") or []
         name = collections.Counter(a.get("model") for a in ag if a.get("model")).most_common(1)[0][0]
-        return name, "모듈 콘솔(115:18800) 조회값"
+        return name, "에이전트·MCP 콘솔(115:18800) 조회값"
     except Exception:                                                         # noqa: BLE001
         return MODEL_NAME_DEFAULT, "기본값(시험의뢰서 시험환경)"
 
