@@ -690,6 +690,11 @@ def version_table(log, run_dir=None):
             ("법령·조례 DB 버전", "법령DB", f"{meta['법령DB출처']} — 시스템 응답 값 아님" if meta.get("법령DB")
              else "시스템 응답에 없음 (다음 실행부터 법령 수집 관리자 조회값을 기록)"),
             ("공간정보 기준일", "공간정보기준일", "용도지역·지구 지도 데이터 기준일(stdVer)")]
+    infra = meta.get("인프라") or {}
+    for k, v0 in INSTALL_DOC.items():                                    # 인프라 버전: 실행 당시 조회값, 없으면 설치정보 v1.1
+        v, src = (infra.get(k) or ["", ""])
+        found[k] = {v or v0}
+        rows.append((k, k, f"{src} — 시스템 응답 값 아님" if v else "설치정보 v1.1 기준 (실행 당시 조회값 아님)"))
     return pd.DataFrame([{"항목": k, "값": "; ".join(sorted(found[c])) if found.get(c) else "-", "비고": note}
                          for k, c, note in rows])
 
@@ -713,6 +718,25 @@ def current_law_db():
                 "법령 수집·적재 관리자(116:17801) 조회값")
     except Exception:                                                         # noqa: BLE001
         return "", ""
+
+
+INSTALL_DOC = {"LLM 서빙(vLLM)": "0.24.0", "그래프 DB(Fuseki)": "6.1.0", "벡터 DB(Milvus)": "2.6.18"}   # 설치정보 v1.1
+INFRA_URL = {"LLM 서빙(vLLM)": "http://192.168.200.128:8003/version",            # 인증 없이 버전만 주는 주소
+             "그래프 DB(Fuseki)": "http://192.168.200.116:3030/$/server"}
+
+
+def infra_versions():
+    """실행 시작 때 인프라 버전 조회 (vLLM·Fuseki는 서버에서 직접, Milvus는 조회 경로가 없어 설치정보 v1.1 값)"""
+    import requests
+    out = {}
+    for k, url in INFRA_URL.items():
+        try:
+            m = re.search(r'"version"\s*:\s*"([^"]+)"', requests.get(url, timeout=5).text)
+            out[k] = (m.group(1), "서버 조회값") if m else ("", "")
+        except Exception:                                                     # noqa: BLE001
+            out[k] = ("", "")
+    out["벡터 DB(Milvus)"] = (INSTALL_DOC["벡터 DB(Milvus)"], "설치정보 v1.1")
+    return {k: list(v) for k, v in out.items()}
 
 
 def current_model():
