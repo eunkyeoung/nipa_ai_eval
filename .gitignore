@@ -26,3 +26,6 @@ _variants_run.txt
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 기준 문서 원본(규격서·시험의뢰서·수행계획서 PDF) — 기관 문서라 저장소(GitHub)에 올리지 않음. 서버 이관 압축 파일로만 옮김
+참고문서/

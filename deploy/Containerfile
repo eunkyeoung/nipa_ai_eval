@@ -1,0 +1,20 @@
+# AIPS 사전진단 성능테스트 (QA) — podman 이미지
+# 이미지에는 Python과 패키지만 넣고, 프로그램·시험 데이터·실행 결과는 서버 폴더(/opt/bi/nipa_ai_eval)를 /app 에 연결해서 씁니다.
+# → 파일만 바꿔 넣으면 이미지를 다시 만들지 않아도 됩니다.
+FROM docker.io/library/python:3.12-slim
+
+ENV TZ=Asia/Seoul \
+    LANG=C.UTF-8 \
+    PYTHONIOENCODING=utf-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
+
+WORKDIR /app
+EXPOSE 8501
+
+# 컨테이너 안은 8501, 서버 포트(16850)는 실행할 때 -p 16850:8501 로 연결
+CMD ["python", "-m", "streamlit", "run", "qa_app.py", \
+     "--server.headless", "true", "--server.address", "0.0.0.0", "--server.port", "8501"]

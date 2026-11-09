@@ -1170,7 +1170,7 @@ def gold_to_ai1(gold_df, addr_col, fac_col, folder):
 
 # AI1 참조 정보 — 시험셋에는 주소·시설물만 두고, PNU·용도지역·규제구역·토지특성은 룰엔진 실측 서버에서 가져옴.
 # 시스템 입력은 여전히 질의문뿐이고, 이 값들은 정답 대조·원인 분석용 참조로만 결과에 붙음 (정확도 산정 미포함)
-REF_BASE = "http://192.168.200.29:8777"
+REF_BASE = os.environ.get("AIPS_REF_BASE", "http://192.168.200.29:8777")    # 참조 룰엔진 (개발자 PC)
 REF_COLS = ["참조_PNU", "참조_용도지역", "참조_규제구역", "참조_토지특성", "참조_룰엔진판정", "참조_룰엔진사유", "참조_오류"]
 REF_DECISION = {"APPROVED": "허가 가능", "CONDITIONAL": "허가 가능", "DENIED": "허가 불가능"}
 

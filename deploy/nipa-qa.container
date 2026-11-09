@@ -1,0 +1,20 @@
+# podman Quadlet 파일 — 서버 재부팅·로그아웃 후에도 QA 화면이 계속 떠 있게 systemd 서비스로 등록
+# 놓는 위치 (rootless, 배포 계정): ~/.config/containers/systemd/nipa-qa.container
+# 등록:  systemctl --user daemon-reload && systemctl --user start nipa-qa
+# 로그아웃 후에도 유지:  loginctl enable-linger <배포 계정>
+[Unit]
+Description=AIPS 사전진단 성능테스트 (QA 화면, 16850)
+
+[Container]
+Image=localhost/nipa-qa:latest
+ContainerName=nipa-qa
+PublishPort=16850:8501
+Volume=/opt/bi/nipa_ai_eval:/app
+Environment=AIPS_BASE=http://192.168.200.115:17000/api
+Environment=AIPS_REF_BASE=http://192.168.200.29:8777
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

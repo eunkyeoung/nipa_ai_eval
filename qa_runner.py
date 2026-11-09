@@ -25,7 +25,7 @@ import uuid
 import pandas as pd
 import requests
 
-BASE = "http://aips.iptime.org:17000/api"
+BASE = os.environ.get("AIPS_BASE", "http://aips.iptime.org:17000/api")      # 서버(컨테이너)에서는 환경변수로 지정
 DEVICE_ID = "qa-runner"                     # 시스템에서 QA 질의를 구분하기 위한 기기 ID
 TIMEOUT = 300                               # 질의 1건 최대 대기(초)
 QUESTION_TMPL = "{주소} {시설물} 건축 가능한가요?"
