@@ -867,7 +867,17 @@ def score_ai3(log):
     val = pct(runs["일치"].sum(), n) if n else None
     cases = pd.DataFrame(case_ok)
     case_val = pct(cases["5회 모두 일치"].sum(), len(cases)) if len(cases) else None
-    stages = pd.DataFrame([{"단계": s, "불일치 발생 건수": stage_cnt.get(s, 0)} for s in STEPS + ["단계 실행 순서"] + sorted(set(stage_cnt) - set(STEPS) - {"단계 실행 순서"})])
+    base_f = "실행 여부 · 조회 데이터소스 · 조회 키 · 조회 결과 건수"
+    fields = {1: base_f, 2: base_f, 3: base_f, 4: base_f + " · 검색 법령 집합(순서 무시)",
+              5: base_f + " · 적용 룰셋 ID 집합(순서 무시)", 6: base_f + " · 최종 판단 유형"}
+    comp_n = int((runs["기준"] != "기준 (1회차)").sum()) if n else 0          # 2~5회차를 1회차와 비교한 횟수
+    stage_rows = []
+    for i_, s in enumerate(STEPS + ["단계 실행 순서"] + sorted(set(stage_cnt) - set(STEPS) - {"단계 실행 순서"}), 1):
+        bad = stage_cnt.get(s, 0)
+        stage_rows.append({"단계": s, "비교한 필드": fields.get(i_, "①~⑥ 단계의 실행 순서와 실행 여부" if s == "단계 실행 순서" else "응답 오류 등"),
+                           "비교 횟수": comp_n, "일치": comp_n - bad, "불일치 발생 건수": bad,
+                           "일치율(%)": pct(comp_n - bad, comp_n) if comp_n else None})
+    stages = pd.DataFrame(stage_rows)
     pivot = runs.pivot_table(index="사례ID", columns="회차", values="일치", aggfunc="first").map(
         lambda x: "O" if x is True else ("X" if x is False else "")) if n else pd.DataFrame()
     if n:                                                           # 회차 열 이름을 "1회" … 로, 사례별 질의문을 앞에
