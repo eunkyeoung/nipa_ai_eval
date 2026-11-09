@@ -820,10 +820,11 @@ def score_ai2(log, answer, testset=None):
         ok = int((vs["예측_판단유형"] == ov).sum()) if ov else 0
         var_n += len(vs)
         var_ok += ok
-        rep_rows.append({"시나리오ID": sid, "정답 판단유형": g["정답_판단유형"].iloc[0], "원문 결과": ov or "-",
+        rep_rows.append({"시나리오ID": sid, "원문 질의문": orig["질의문"].iloc[0] if len(orig) and "질의문" in orig else "",
+                         "정답 판단유형": g["정답_판단유형"].iloc[0], "원문 결과": ov or "-",
                          "변형 질의 수": len(vs), "원문과 동일": ok, "재현 일치율(%)": pct(ok, len(vs)),
                          "정답 일치 질의": int(g["일치"].sum())})
-    rep_rows.append({"시나리오ID": "전체", "정답 판단유형": "", "원문 결과": "", "변형 질의 수": var_n,
+    rep_rows.append({"시나리오ID": "전체", "원문 질의문": f"시나리오 {log['시나리오ID'].nunique()}건 합계", "정답 판단유형": "-", "원문 결과": "-", "변형 질의 수": var_n,
                      "원문과 동일": var_ok, "재현 일치율(%)": pct(var_ok, var_n), "정답 일치 질의": int(log["일치"].sum())})
     return dict(value=wf1, n=n, confusion=cm,
                 tables={"판단 유형별 Precision·Recall·F1": pd.DataFrame(rows),
@@ -854,11 +855,12 @@ def score_ai3(log):
             all_ok &= ok
             for st_, _f in {d[0]: d[1] for d in diffs}.items():
                 stage_cnt[st_] = stage_cnt.get(st_, 0) + 1
-            run_rows.append({"사례ID": cid, "회차": int(r["회차"]), "기준": "기준" if int(r["회차"]) == int(g.iloc[0]["회차"]) else "",
-                             "일치": ok, "불일치 단계": "; ".join(sorted({d[0] for d in diffs})),
-                             "불일치 필드": "; ".join(f"{d[0][:1]}{d[1]}" for d in diffs),
+            run_rows.append({"사례ID": cid, "질의문": r.get("질의문", ""), "회차": int(r["회차"]),
+                             "기준": "기준 (1회차)" if int(r["회차"]) == int(g.iloc[0]["회차"]) else "1회차와 비교",
+                             "일치": ok, "불일치 단계": "; ".join(sorted({d[0] for d in diffs})) or "없음",
+                             "불일치 필드": "; ".join(f"{d[0][:1]}{d[1]}" for d in diffs) or "없음",
                              "최종 판단": next((s["중간판정값"] for s in r["단계로그"] if s["단계번호"] == 6), "")})
-        case_ok.append({"사례ID": cid, "수행 횟수": len(g), "일치 수행": sum(x["일치"] for x in run_rows if x["사례ID"] == cid),
+        case_ok.append({"사례ID": cid, "질의문": g.iloc[0].get("질의문", ""), "수행 횟수": len(g), "일치 수행": sum(x["일치"] for x in run_rows if x["사례ID"] == cid),
                         "5회 모두 일치": all_ok})
     runs = pd.DataFrame(run_rows)
     n = len(runs)
@@ -868,6 +870,9 @@ def score_ai3(log):
     stages = pd.DataFrame([{"단계": s, "불일치 발생 건수": stage_cnt.get(s, 0)} for s in STEPS + ["단계 실행 순서"] + sorted(set(stage_cnt) - set(STEPS) - {"단계 실행 순서"})])
     pivot = runs.pivot_table(index="사례ID", columns="회차", values="일치", aggfunc="first").map(
         lambda x: "O" if x is True else ("X" if x is False else "")) if n else pd.DataFrame()
+    if n:                                                           # 회차 열 이름을 "1회" … 로, 사례별 질의문을 앞에
+        pivot.columns = [f"{c}회" for c in pivot.columns]
+        pivot.insert(0, "질의문", runs.groupby("사례ID", sort=False)["질의문"].first().reindex(pivot.index))
     steplog = pd.DataFrame([{"사례ID": cid, "회차": int(r["회차"]), "단계번호": s_["단계번호"], "단계명": s_["단계명"],
                              "실행": "예" if s_.get("실행") else "아니오", "조회 데이터소스": s_.get("데이터소스", ""),
                              "조회 키": s_.get("조회키", ""), "조회 결과 건수": s_.get("결과건수", ""),
@@ -1001,6 +1006,7 @@ def score_ai5(log, answer, law_db=None):
         h4 = bool(gl) and gl != pl                     # ④ 규격서 v1.51: 응답의 적용 법령이 정답 적용 법령과 일치(집합 일치, 순서 무시)해야 정상
         missing = [fmt_cite(c) for c in pc if law_db is not None and not exists(c)]
         rows.append(dict(사례ID=cid, 질의문=r.get("질의문"), 판단유형=r.get("판단유형"),
+                         설명문=str(r.get("설명문") or ""),                 # 규격서 출력: 판단 결과·설명문·인용 조문·적용 법령
                          인용조문="; ".join(r.get("근거조문") or []), 정답조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          적용법령="; ".join(r.get("적용법령") or []), 정답_적용법령="; ".join(split_list(g.get("적용법령")) if g is not None else []),
                          **{"① 인용 조문 미존재": h1, "② 근거 조문 부재": h2, "③ 근거 오인용": h3, "④ 법령·조례 근거 불일치": h4},
@@ -1127,7 +1133,9 @@ TEMPLATES = {
         "answer_ai2.csv": (["시나리오ID", "판단유형"], [["S-001", "허가 가능"]]),
     },
     "AI3": {
-        "testset_ai3.csv": (["사례ID", "질의문"], [["AI3-0001", "경상북도 영천시 과전동 91에 단독주택 지을 수 있어?"]]),
+        "testset_ai3.csv": (["사례ID", "질의문", "주소", "시설물", "행위유형", "PNU"],
+                            [["AI3-0001", "경상북도 영천시 과전동 91에 단독주택 지을 수 있어?", "경상북도 영천시 과전동 91", "단독주택",
+                              "건축(신축)", "4723010800100910000"]]),
     },
     "AI4": {
         "testset_ai4.csv": (["사례ID", "질의문", "예외유형"],

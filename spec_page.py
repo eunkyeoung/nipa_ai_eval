@@ -556,7 +556,6 @@ def render(item, area, help_fn=None):
                                  "적용 룰셋 ID": "; ".join(s_.get("적용룰셋") or []),
                                  "검색 법령": "; ".join(s_.get("검색법령") or []),
                                  "최종 판단 유형": s_.get("중간판정값", "") if s_["단계번호"] == n_last else "",
-                                 "참고값 (비교 안 함)": s_.get("중간판정값", "") if s_["단계번호"] != n_last else "",
                                  "근거": s_.get("근거", "")} for s_ in steps])
             show_table(sdf.astype(str))
         rp = os.path.join(run_dir, "raw", f"{cid}_{int(rec['회차'])}.json")
