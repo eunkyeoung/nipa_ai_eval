@@ -1,0 +1,4 @@
+# 서버(리눅스)에서 쓰는 파일은 줄바꿈을 LF로 유지
+deploy/Containerfile text eol=lf
+deploy/*.container text eol=lf
+*.sh text eol=lf
