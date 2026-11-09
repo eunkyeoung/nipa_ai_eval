@@ -979,6 +979,14 @@ def logic_conflict(r):
 def score_ai5(log, answer, law_db=None):
     """환각 ①~④ 자동 판정 (하나라도 해당하면 환각 1건, 중복 계수 안 함), ⑤ 논리 불일치는 보조"""
     a = answer.set_index("사례ID")
+    arts, hangs = set(), {}
+    for l_, j_, h_ in law_db or ():                  # ① 조문 DB 색인: 조 단위 + 조별 항 목록
+        arts.add((l_, j_))
+        if h_:
+            hangs.setdefault((l_, j_), set()).add(h_)
+
+    def exists(c):                                   # 조가 있어야 하고, 항을 인용했으면 DB에 그 항이 있어야 함 (예: 국토계획법 제58조 제7항 → 6항까지라 미존재)
+        return (c[0], c[1]) in arts and (not c[2] or (c[0], c[1]) not in hangs or c[2] in hangs[(c[0], c[1])])
     rows = []
     for _, r in log.iterrows():
         cid = str(r["사례ID"])
@@ -987,11 +995,11 @@ def score_ai5(log, answer, law_db=None):
         gc = gold_cites(g.get("근거조문")) if g is not None else set()
         gl = {norm_law(x) for x in split_list(g.get("적용법령"))} if g is not None else set()
         pl = {norm_law(x) for x in r.get("적용법령") or []}
-        h1 = None if law_db is None else any(not any(cite_match(c, d) or cite_match(d, c) for d in law_db) for c in pc)
+        h1 = None if law_db is None else any(not exists(c) for c in pc)
         h2 = not pc
         h3 = bool(pc) and bool(gc) and not cite_overlap(pc, gc)
-        h4 = bool(gl) and not (gl <= pl)
-        missing = [fmt_cite(c) for c in pc if law_db is not None and not any(cite_match(c, d) or cite_match(d, c) for d in law_db)]
+        h4 = bool(gl) and gl != pl                     # ④ 규격서 v1.51: 응답의 적용 법령이 정답 적용 법령과 일치(집합 일치, 순서 무시)해야 정상
+        missing = [fmt_cite(c) for c in pc if law_db is not None and not exists(c)]
         rows.append(dict(사례ID=cid, 질의문=r.get("질의문"), 판단유형=r.get("판단유형"),
                          인용조문="; ".join(r.get("근거조문") or []), 정답조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          적용법령="; ".join(r.get("적용법령") or []), 정답_적용법령="; ".join(split_list(g.get("적용법령")) if g is not None else []),
@@ -1129,11 +1137,13 @@ TEMPLATES = {
                              "도로 폭 4 m 이상 확보 또는 건축법 제45조에 따른 도로 지정", "개발행위허가; 도로 지정 협의"]]),
     },
     "AI5": {
-        "testset_ai5.csv": (["사례ID", "질의문"], [["AI5-0001", "경상북도 영천시 과전동 91에 단독주택 지을 수 있어?"]]),
+        "testset_ai5.csv": (["사례ID", "질의문", "주소", "시설물", "행위유형", "PNU", "용도지역_자료", "규제구역_자료", "지목", "면적"],
+                            [["AI5-0001", "경상북도 영천시 과전동 91에 단독주택 지을 수 있어?", "경상북도 영천시 과전동 91", "단독주택",
+                              "건축(신축)", "4723010800100910000", "일반상업지역; 역사문화환경 보존지역", "가축사육제한구역", "대", "599"]]),
         "answer_ai5.csv": (["사례ID", "적용법령", "근거조문"],
                            [["AI5-0001", "영천시도시계획조례", "영천시도시계획조례.33; 영천시도시계획조례.별표8"]]),
-        "law_article_db.csv": (["조문ID", "법령명", "조", "항"],
-                               [["건축법.44.1", "건축법", "44", "1"], ["건축법.2.1", "건축법", "2", "1"]]),
+        "law_article_db.csv": (["조문ID", "법령명", "구분", "조", "항", "시행일"],          # 법령 수집·적재 관리자(116:17801) 적재분에서 생성
+                               [["건축법.44", "건축법", "law", "44", "", "20260101"], ["건축법.44.1", "건축법", "law", "44", "1", "20260101"]]),
     },
 }
 
