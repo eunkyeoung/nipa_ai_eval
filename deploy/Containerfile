@@ -9,8 +9,9 @@ ENV TZ=Asia/Seoul \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
+# PC에서 검증한 버전으로 고정
+COPY deploy/requirements-lock.txt /tmp/requirements.txt
+RUN pip install --root-user-action=ignore -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
 WORKDIR /app
 EXPOSE 8501

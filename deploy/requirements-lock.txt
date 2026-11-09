@@ -1,0 +1,6 @@
+# 서버 이미지용 고정 버전 — PC(.venv)에서 검증한 버전과 같게 맞춤 (2026-11-09)
+streamlit==1.66.1
+pandas==3.1.0
+openpyxl==3.1.5
+requests==2.34.2
+scikit-learn==1.9.1

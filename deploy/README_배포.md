@@ -6,7 +6,7 @@
 | 배포 위치 | `/opt/bi/nipa_ai_eval` (BI 배정) |
 | 포트 | **16850** (BI 배정 16000~16999 중 빈 포트, 2026-11-09 확인) |
 | 접속 주소 | **http://192.168.200.115:16850** |
-| 이미지 | `localhost/nipa-qa:latest` = Python 3.12 + `requirements.txt` 패키지 |
+| 이미지 | `localhost/nipa-qa:latest` = Python 3.12 + `deploy/requirements-lock.txt` 고정 버전 (PC에서 검증한 streamlit 1.66.1, pandas 3.1.0 등) |
 
 이미지에는 Python과 패키지만 들어 있습니다. 프로그램, 시험 데이터(`spec_data/`), 실행 결과(`spec/`)는 서버 폴더 `/opt/bi/nipa_ai_eval`에 두고 컨테이너의 `/app`에 연결해서 씁니다. 파일을 바꿀 때는 서버 폴더에 덮어쓰고 컨테이너만 다시 시작하면 되고, 이미지를 다시 만들 필요는 없습니다.
 
