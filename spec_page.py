@@ -548,11 +548,16 @@ def render(item, area, help_fn=None):
                        "**근거 읽는 법** — '응답 원문 14번 항목'은 아래 '응답 원문 (JSON)'을 펼쳤을 때 왼쪽에 보이는 14번이고, "
                        "괄호 안은 그 항목의 내용, '›' 뒤는 그 안에서 값을 가져온 부분입니다. "
                        "[c1] 같은 표시는 그 항목 안 도구 호출 번호(원문의 call_id)입니다.")
-            sdf = pd.DataFrame(steps)
-            for c in ("적용룰셋", "검색법령"):
-                sdf[c] = sdf[c].map(lambda x: "; ".join(x) if isinstance(x, list) else x)
-            sdf.insert(0, "회차", int(rec["회차"]))
-            sdf.insert(0, "사례ID", cid)
+            n_last = len(S.STEPS)                                  # 규격서 v1.51 저장 항목 이름·순서대로 표시
+            sdf = pd.DataFrame([{"사례 ID": cid, "회차 번호": int(rec["회차"]), "단계 번호": s_["단계번호"], "단계명": s_["단계명"],
+                                 "실행": "예" if s_.get("실행") else "아니오",
+                                 "조회 데이터소스": s_.get("데이터소스", ""), "조회 키": s_.get("조회키", ""),
+                                 "조회 결과 건수": s_.get("결과건수", ""),
+                                 "적용 룰셋 ID": "; ".join(s_.get("적용룰셋") or []),
+                                 "검색 법령": "; ".join(s_.get("검색법령") or []),
+                                 "최종 판단 유형": s_.get("중간판정값", "") if s_["단계번호"] == n_last else "",
+                                 "참고값 (비교 안 함)": s_.get("중간판정값", "") if s_["단계번호"] != n_last else "",
+                                 "근거": s_.get("근거", "")} for s_ in steps])
             show_table(sdf.astype(str))
         rp = os.path.join(run_dir, "raw", f"{cid}_{int(rec['회차'])}.json")
         if os.path.exists(rp):
