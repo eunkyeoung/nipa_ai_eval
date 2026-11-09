@@ -3,7 +3,7 @@
 -------------------------------------------------------------------
 [AI 1] 사전 진단 판단 정확도        목표 ≥ 95 %
 [AI 2] 사전 진단 판단 F1 스코어      목표 ≥ 95 %  (유의어·유사 표현 질의, 2종 가중평균 F1)
-[AI 3] 사전 진단 판단 일관성        목표 ≥ 98 %  (9단계 처리 로그 회차 간 일치)
+[AI 3] 사전 진단 판단 일관성        목표 ≥ 98 %  (6단계 처리 로그 회차 간 일치)
 [AI 4] 조건부 가능 판단 정확도      목표 ≥ 95 %  (판정 결과 + 단서 조건 근거 조문 집합)
 [AI 5] 환각 발생률                  목표 ≤ 3 %   (환각 유형 ①~④)
 
@@ -267,7 +267,7 @@ def rulesets(diag):
 
 
 def map_response(events, base=None):
-    """성과지표 출력 형식: 판단유형·근거조문·적용법령·적용룰셋·보완사항·필요행정절차·설명문 + 9단계 로그"""
+    """성과지표 출력 형식: 판단유형·근거조문·적용법령·적용룰셋·보완사항·필요행정절차·설명문 + 6단계 로그"""
     from qa_runner import extract                                           # 지연 import (순환 방지)
     base = base or extract(events)
     st = _events_dict(events)
@@ -304,10 +304,9 @@ def map_response(events, base=None):
     }
 
 
-# 9단계 판단 프로세스 (성과지표 2-3)
-STEPS = ["① 질의 파싱", "② 대상 필지(PNU) 조회", "③ 토지특성 조회", "④ 용도지역 판정",
-         "⑤ 규제구역 조회", "⑥ 적용 법령·조례 검색", "⑦ 룰셋 적용", "⑧ 최종 판단 도출",
-         "⑨ 후속 기능모듈 분기 및 기록"]          # ①~⑧ 시험의뢰서 표, ⑨ 수행계획서 9단계의 마지막 단계 (본문 '9단계'에 맞춤)
+# 6단계 판단 프로세스 (성과지표 2-3, 의뢰자제시기준규격서 v1.51 32쪽)
+STEPS = ["① 질의 파싱", "② 대상 필지(PNU) 조회", "③ 토지특성(지목, 면적) 조회", "④ 적용 법령·조례 검색",
+         "⑤ 룰셋 적용", "⑥ 최종 판단 도출"]
 CORE_STAGES = {"zone_use", "development_permit", "land_conversion", "building_permit"}   # 판정용 검토 단계 (수행계획서 5단계: 허가기준·수치기준 판정) — 이 밖의 단계(민원절차 안내 등)는 ⑨ 후속 기능
 STEP_FIELDS = ["실행", "데이터소스", "조회키", "결과건수", "적용룰셋", "검색법령", "중간판정값"]
 
@@ -353,7 +352,7 @@ def _count(facts):
 
 
 def step_log(events, base=None):
-    """응답 → 9단계 로그 [{단계번호, 단계명, 실행, 데이터소스, 조회키, 결과건수, 적용룰셋, 검색법령, 중간판정값, 근거}]
+    """응답 → 6단계 로그 [{단계번호, 단계명, 실행, 데이터소스, 조회키, 결과건수, 적용룰셋, 검색법령, 중간판정값, 근거}]
     값은 모두 AIPS 응답 스트림(SSE)에 실려 온 시스템 처리 기록에서 가져옴 — 근거 = 응답 원문(raw)의 이벤트 번호·필드"""
     st = _events_dict(events)
     at = {"intent": None, "parcel": None, "diagnosis": None, "laws": []}       # 근거 이벤트 번호 (0부터, raw 순서)
@@ -361,9 +360,6 @@ def step_log(events, base=None):
         k = (d or {}).get("event") if ev == "orc.response" else None
         if k in ("intent", "parcel", "diagnosis"):
             at[k] = i if k != "intent" or at[k] is None else at[k]
-        sd = (d.get("data") or {}) if k == "stage" else {}
-        if sd.get("status") == "done" and sd.get("id") and sd.get("id") not in CORE_STAGES:
-            at.setdefault("follow", {})[sd["id"]] = (i, str(sd.get("title") or sd["id"]).replace(" 완료", ""))
         if k == "stage" and ((d.get("data") or {}).get("detail") or {}).get("laws"):
             at["laws"].append(i)
     def ev_(i, what):                          # "응답 원문 26번 항목(최종 진단 결과) › 최종 판정" — 번호 = 원문 JSON 왼쪽 번호
@@ -392,52 +388,32 @@ def step_log(events, base=None):
             regs.add(str(x))
     if attr:
         regs |= {str(x) for x in attr["facts"].get("용도지역지구") or []}
-    follow = at.get("follow") or {}
-    recs9 = [r for r in diag.get("recommendations") or [] if isinstance(r, dict)]
-    rep9 = bool(diag.get("report"))
+    land = env[3] + env[5]                     # ③ 토지특성 = 필지 정보(지목·면적·용도지역) + 규제 정보 조회
     rows = [
-        dict(실행=bool(st["intent"] or fm), 데이터소스="orchestrator:intent",
+        dict(실행=bool(st["intent"] or fm), 데이터소스="orchestrator:intent",                       # ① 질의 파싱
              조회키="", 결과건수=1 if st["intent"] else 0, 적용룰셋=[], 검색법령=[],
              중간판정값=f"{st['intent'] or ''}|{fm.get('item') or fm.get('asked') or ''}"),
-        dict(실행=bool(env[2]), 데이터소스=";".join(sorted({r["src"] for r in env[2]})),
+        dict(실행=bool(env[2]), 데이터소스=";".join(sorted({r["src"] for r in env[2]})),               # ② PNU 조회
              조회키=(loc or {}).get("key", ""), 결과건수=_count((loc or {}).get("facts", {})),
              적용룰셋=[], 검색법령=[], 중간판정값=str((loc or {}).get("facts", {}).get("PNU", ""))),
-        dict(실행=bool(env[3]), 데이터소스=";".join(sorted({r["src"] for r in env[3]})),
-             조회키=";".join(sorted({r["key"] for r in env[3]})), 결과건수=len(env[3]),
+        dict(실행=bool(land), 데이터소스=";".join(sorted({r["src"] for r in land})),                   # ③ 토지특성 조회
+             조회키=";".join(sorted({r["key"] for r in land})), 결과건수=len(land),
              적용룰셋=[], 검색법령=[],
-             중간판정값=f"지목={(attr or {}).get('facts', {}).get('지목', '')}"),
-        dict(실행=bool(mg), 데이터소스=f"matrix_gate:{mg.get('source', '')}" if mg else "",
-             조회키=f"{mg.get('user_facility', '')}|{mg.get('user_activity', '')}", 결과건수=len(mg.get("zone_results") or []),
-             적용룰셋=[], 검색법령=[],
-             중간판정값=";".join(f"{z.get('zone')}:{z.get('sym')}" for z in mg.get("zone_results") or []) + f"|final={mg.get('final_effective', mg.get('final', ''))}"),
-        dict(실행=bool(env[5]) or bool(regs), 데이터소스=";".join(sorted({r["src"] for r in env[5]})),
-             조회키=";".join(sorted({r["key"] for r in env[5]})), 결과건수=len(regs),
-             적용룰셋=[], 검색법령=[], 중간판정값=";".join(sorted(regs))),
-        dict(실행=bool(laws), 데이터소스="stage.detail.laws", 조회키="", 결과건수=len(laws),
+             중간판정값=f"지목={(attr or {}).get('facts', {}).get('지목', '')}|지역지구={';'.join(sorted(regs))}"),
+        dict(실행=bool(laws), 데이터소스="stage.detail.laws", 조회키="", 결과건수=len(laws),            # ④ 법령·조례 검색
              적용룰셋=[], 검색법령=sorted(fmt_cite(c) for c in laws), 중간판정값=""),
-        dict(실행=bool(j), 데이터소스="judgment.conditions;matrix_gate", 조회키="",
-             결과건수=int(j.get("rules_applied") or 0), 적용룰셋=rulesets(diag), 검색법령=[], 중간판정값=""),
+        dict(실행=bool(j) or bool(mg), 데이터소스="judgment.conditions;matrix_gate", 조회키="",       # ⑤ 룰셋 적용 (용도지역 허용 판정 포함)
+             결과건수=int(j.get("rules_applied") or 0), 적용룰셋=rulesets(diag), 검색법령=[],
+             중간판정값=";".join(f"{z.get('zone')}:{z.get('sym')}" for z in mg.get("zone_results") or [])),
         dict(실행=bool(j.get("verdict")), 데이터소스="judgment.verdict", 조회키="", 결과건수=1 if j.get("verdict") else 0,
-             적용룰셋=[], 검색법령=[], 중간판정값=type2(j.get("verdict")) if j.get("verdict") else UNDECIDED),
-        dict(실행=bool(follow or recs9 or rep9),                         # ⑨ 후속 기능(민원절차 안내)·조건부 대안·사전진단 보고서
-             데이터소스=";".join([f"stage:{k}" for k in sorted(follow)] + (["diagnosis.recommendations"] if recs9 else [])
-                             + (["diagnosis.report"] if rep9 else [])),
-             조회키="", 결과건수=len(follow) + len(recs9), 적용룰셋=[], 검색법령=[],
-             중간판정값="; ".join([t for _, t in sorted(follow.values())] + ([f"조건부 대안 {len(recs9)}건"] if recs9 else [])
-                               + (["사전진단 보고서 기록"] if rep9 else [])) or "후속 없음"),
+             적용룰셋=[], 검색법령=[], 중간판정값=type2(j.get("verdict")) if j.get("verdict") else UNDECIDED),   # ⑥ 최종 판단
     ]
     basis = [ev_(at["intent"], "질의 해석 결과"),
              ev_(at["parcel"], "필지 조회 결과") + f" › {tools(env[2])}" if env[2] else "",
-             ev_(at["parcel"], "필지 조회 결과") + f" › {tools(env[3])}" if env[3] else "",
-             ev_(at["diagnosis"], "최종 진단 결과") + " › 용도지역 허용 판정" if at["diagnosis"] is not None else "",
-             ev_(at["parcel"], "필지 조회 결과") + f" › {tools(env[5])}" if env[5] else "",
+             ev_(at["parcel"], "필지 조회 결과") + f" › {tools(land)}" if land else "",
              (f"응답 원문 {', '.join(map(str, sorted(set(at['laws']))))}번 항목(단계별 검토 결과) › 관련 법령" if at["laws"] else ""),
              ev_(at["diagnosis"], "최종 진단 결과") + " › 적용 규칙·용도지역 허용 판정" if at["diagnosis"] is not None else "",
-             ev_(at["diagnosis"], "최종 진단 결과") + " › 최종 판정" if at["diagnosis"] is not None else "",
-             " · ".join(([f"응답 원문 {', '.join(str(i) for i, _ in sorted(follow.values()))}번 항목(단계별 검토 결과) › "
-                          + ", ".join(t for _, t in sorted(follow.values()))] if follow else [])
-                        + ([ev_(at["diagnosis"], "최종 진단 결과") + " › " + ", ".join(
-                            (["조건부 대안"] if recs9 else []) + (["사전진단 보고서"] if rep9 else []))] if (recs9 or rep9) else []))]
+             ev_(at["diagnosis"], "최종 진단 결과") + " › 최종 판정" if at["diagnosis"] is not None else ""]
     return [dict(단계번호=i + 1, 단계명=STEPS[i], **r, 근거=basis[i]) for i, r in enumerate(rows)]
 
 
@@ -525,21 +501,21 @@ def labeled_raw(raw):
 
 
 def compare_steps(base, other):
-    """두 회차 9단계 로그 비교 → 불일치 단계 목록 [(단계명, 필드)]
-    비교 대상: 단계 실행 여부·순서, 조회 데이터소스, 조회 키·결과 건수, 적용 룰셋 ID 집합(⑦), 검색 법령 집합(⑥),
-    단계별 중간 판정값(④ 용도지역, ⑤ 규제구역, ⑧ 최종 판단) — 타임스탬프·소요시간·요청ID 등은 제외"""
+    """두 회차 6단계 로그 비교 → 불일치 단계 목록 [(단계명, 필드)]  (규격서 v1.51 비교 대상 필드만)
+    단계 실행 순서(①~⑥ 실행 여부·순서), 조회 데이터소스, 조회 키·결과 건수, 적용 룰셋 ID 집합(⑤),
+    검색 법령 집합(④), 최종 판단 유형(⑥) — 타임스탬프·소요시간·요청 ID·로그 시퀀스 번호는 제외"""
     diffs = []
     for a, b in zip(base, other):
         n = a["단계번호"]
         for f in ("실행", "데이터소스", "조회키", "결과건수"):
             if str(a.get(f)) != str(b.get(f)):
                 diffs.append((a["단계명"], f))
-        if n == 7 and set(a["적용룰셋"]) != set(b["적용룰셋"]):
+        if n == 5 and set(a["적용룰셋"]) != set(b["적용룰셋"]):
             diffs.append((a["단계명"], "적용룰셋"))
-        if n == 6 and set(a["검색법령"]) != set(b["검색법령"]):
+        if n == 4 and set(a["검색법령"]) != set(b["검색법령"]):
             diffs.append((a["단계명"], "검색법령"))
-        if n in (4, 5, 8) and str(a.get("중간판정값")) != str(b.get("중간판정값")):
-            diffs.append((a["단계명"], "중간판정값"))
+        if n == 6 and str(a.get("중간판정값")) != str(b.get("중간판정값")):
+            diffs.append((a["단계명"], "최종판단"))
     if [x["단계번호"] for x in base if x["실행"]] != [x["단계번호"] for x in other if x["실행"]]:
         diffs.append(("단계 실행 순서", "실행순서"))
     return diffs
@@ -881,7 +857,7 @@ def score_ai3(log):
             run_rows.append({"사례ID": cid, "회차": int(r["회차"]), "기준": "기준" if int(r["회차"]) == int(g.iloc[0]["회차"]) else "",
                              "일치": ok, "불일치 단계": "; ".join(sorted({d[0] for d in diffs})),
                              "불일치 필드": "; ".join(f"{d[0][:1]}{d[1]}" for d in diffs),
-                             "최종 판단": next((s["중간판정값"] for s in r["단계로그"] if s["단계번호"] == 8), "")})
+                             "최종 판단": next((s["중간판정값"] for s in r["단계로그"] if s["단계번호"] == 6), "")})
         case_ok.append({"사례ID": cid, "수행 횟수": len(g), "일치 수행": sum(x["일치"] for x in run_rows if x["사례ID"] == cid),
                         "5회 모두 일치": all_ok})
     runs = pd.DataFrame(run_rows)
