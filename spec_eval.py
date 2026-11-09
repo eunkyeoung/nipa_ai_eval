@@ -868,7 +868,15 @@ def score_ai3(log):
     stages = pd.DataFrame([{"단계": s, "불일치 발생 건수": stage_cnt.get(s, 0)} for s in STEPS + ["단계 실행 순서"] + sorted(set(stage_cnt) - set(STEPS) - {"단계 실행 순서"})])
     pivot = runs.pivot_table(index="사례ID", columns="회차", values="일치", aggfunc="first").map(
         lambda x: "O" if x is True else ("X" if x is False else "")) if n else pd.DataFrame()
-    return dict(value=val, n=n, tables={"사례별·회차별 비교 (O 일치 / X 불일치)": pivot.reset_index() if n else pivot,
+    steplog = pd.DataFrame([{"사례ID": cid, "회차": int(r["회차"]), "단계번호": s_["단계번호"], "단계명": s_["단계명"],
+                             "실행": "예" if s_.get("실행") else "아니오", "조회 데이터소스": s_.get("데이터소스", ""),
+                             "조회 키": s_.get("조회키", ""), "조회 결과 건수": s_.get("결과건수", ""),
+                             "적용 룰셋 ID": "; ".join(s_.get("적용룰셋") or []), "검색 법령": "; ".join(s_.get("검색법령") or []),
+                             "최종 판단 유형": s_.get("중간판정값", "") if s_["단계번호"] == len(STEPS) else "",
+                             "근거": s_.get("근거", "")}
+                            for cid, g in log.groupby("사례ID", sort=False) for _, r in g.sort_values("회차").iterrows()
+                            for s_ in (r.get("단계로그") or [])])
+    return dict(steplog=steplog, value=val, n=n, tables={"사례별·회차별 비교 (O 일치 / X 불일치)": pivot.reset_index() if n else pivot,
                                         "불일치 발생 단계별 건수": stages,
                                         "사례 단위 일관성 (보조)": cases},
                 aux={"사례 단위 일관성(%)": case_val}, cases=runs)
@@ -1087,6 +1095,8 @@ def save_result(r, path):
             if isinstance(df, pd.DataFrame) and not df.empty:
                 df.to_excel(w, sheet_name=re.sub(r"[\[\]:*?/\\()·]", "", name)[:28] or f"표{i}", index=False)
         r["cases"].to_excel(w, sheet_name="사례별", index=False)
+        if isinstance(r.get("steplog"), pd.DataFrame) and not r["steplog"].empty:   # AI3: 회차별 6단계 처리 로그 (규격서 저장 항목)
+            r["steplog"].to_excel(w, sheet_name="6단계 처리 로그", index=False)
 
 
 # ---------------------------------------------------------------- 데이터 양식 (템플릿)
