@@ -29,3 +29,6 @@ desktop.ini
 
 # 기준 문서 원본(규격서·시험의뢰서·수행계획서 PDF) — 기관 문서라 저장소(GitHub)에 올리지 않음. 서버 이관 압축 파일로만 옮김
 참고문서/
+
+# 법령·조례 조문 DB (약 42MB, tools/build_law_article_db.py 로 생성) — 서버에는 파일로 복사
+spec_data/law_article_db.csv

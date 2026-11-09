@@ -187,7 +187,7 @@ def parse_citations(text):
     for it in items:
         s = str(it)
         m = re.fullmatch(r"\s*([^.\s][^.]*?)\.([0-9]+(?:의[0-9]+)?|별표[0-9]+)(?:\.([0-9]+))?\s*", s)
-        if m and "제" not in s:                                             # 이미 정규화된 표기
+        if m and not re.search(r"제\s*\d", s):                            # 이미 정규화된 표기 ("개발제한구역법.12.1"처럼 법령명에 '제'가 있어도 인식)
             out.add((norm_law(m.group(1)), m.group(2), m.group(3)))
             continue
         chunks = re.findall(r"\[([^\]]+)\]", s) or [s]
