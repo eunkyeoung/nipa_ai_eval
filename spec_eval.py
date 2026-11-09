@@ -1116,8 +1116,10 @@ def save_result(r, path):
 # ---------------------------------------------------------------- 데이터 양식 (템플릿)
 TEMPLATES = {
     "AI1": {
-        "testset_ai1.csv": (["사례ID", "질의문", "주소", "시설물"],
-                            [["AI1-0001", "경상북도 영천시 과전동 91에 단독주택 지을 수 있어?", "경상북도 영천시 과전동 91", "단독주택"]]),
+        "testset_ai1.csv": (["사례ID", "질의문", "주소", "시설물", "행위유형",               # AIPS에는 질의문만 입력
+                             "PNU", "용도지역_자료", "규제구역_자료", "지목", "면적"],      # 정답 대조용 참조 정보 (규격서 v1.51)
+                            [["AI1-0001", "경상북도 영천시 과전동 91에 단독주택 지을 수 있어?", "경상북도 영천시 과전동 91", "단독주택",
+                              "건축(신축)", "4723010800100910000", "일반상업지역; 역사문화환경 보존지역", "가축사육제한구역", "대", "599"]]),
         "answer_ai1.csv": (["사례ID", "판단유형", "적용법령", "근거조문"],
                            [["AI1-0001", "허가 가능", "영천시도시계획조례", "영천시도시계획조례.33; 영천시도시계획조례.별표8"]]),
     },
@@ -1169,7 +1171,7 @@ def gold_to_ai1(gold_df, addr_col, fac_col, folder):
         cid = f"AI1-{int(float(g['case_id'])):04d}" if str(g["case_id"]).replace(".0", "").isdigit() else str(g["case_id"])
         q = g["질의문"] if "질의문" in g and str(g.get("질의문", "")).strip() else f"{g[addr_col]}에 {g[fac_col]} 지을 수 있어?"
         cites = parse_citations(str(g.get("근거", "")))
-        ts.append([cid, q, str(g[addr_col]).strip(), str(g[fac_col]).strip()])
+        ts.append([cid, q, str(g[addr_col]).strip(), str(g[fac_col]).strip()] + [""] * 6)   # 참조 정보는 비워 둠
         an.append([cid, "허가 불가능" if type2(g.get("정답판정")) == "허가 불가능" else "허가 가능",
                    "; ".join(sorted({law_id(c[0]) for c in cites})), "; ".join(sorted(fmt_cite(c) for c in cites))])
     os.makedirs(folder, exist_ok=True)
