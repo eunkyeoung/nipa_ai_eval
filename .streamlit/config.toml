@@ -3,6 +3,7 @@
 showEmailPrompt = false     # 처음 실행 시 이메일 입력 질문 안 함
 headless = false            # 실행하면 브라우저 자동으로 열기
 port = 8501
+address = "192.168.0.4"     # 사무실 무선망(192.168.0.x)에서만 접속 — 이 PC에서도 http://192.168.0.4:8501 로 접속 (localhost 안 됨)
 
 [client]
 toolbarMode = "viewer"      # 오른쪽 상단 개발자 메뉴·Deploy 버튼 숨김
