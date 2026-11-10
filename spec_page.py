@@ -103,7 +103,7 @@ def data_path(stem):
 
 def runs(item):
     return sorted([d for d in glob.glob(os.path.join("spec", item, "*")) if os.path.isdir(d)],
-                  key=os.path.getmtime, reverse=True)
+                  key=os.path.basename, reverse=True)          # 폴더 이름(실행 시각) 순 — 수정 시각은 재채점하면 바뀌므로 쓰지 않음
 
 
 def read_json(p):
