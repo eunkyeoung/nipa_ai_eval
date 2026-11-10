@@ -32,3 +32,6 @@ desktop.ini
 
 # 법령·조례 조문 DB (약 42MB, tools/build_law_article_db.py 로 생성) — 서버에는 파일로 복사
 spec_data/law_article_db.csv
+
+# 중지된 실행 보관 (실행 결과와 같은 이유로 git 제외)
+backup/중지된_실행/
