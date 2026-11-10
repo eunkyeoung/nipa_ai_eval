@@ -137,7 +137,7 @@ def score_run(item, run_dir):
 
     def pick(key, stem):                      # 실행 폴더의 사본(data/) → meta 경로 → 현재 spec_data 순
         p = meta.get(key)
-        snap = os.path.join(run_dir, "data", os.path.basename(p)) if p else None
+        snap = os.path.join(run_dir, "data", os.path.basename(p.replace("\\", "/"))) if p else None   # PC(윈도)에서 실행한 결과의 '\' 경로도 서버(리눅스)에서 찾도록
         if snap and os.path.exists(snap):
             return snap
         return p if p and os.path.exists(p) else data_path(stem)
@@ -280,7 +280,7 @@ def overview():
                      "진단 결과": fmt_pct(sm.get("value"), it) if sm else "미실행",
                      "목표": target_txt(it),
                      "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
-                     "대상": sm.get("n", "-"), "실행": os.path.basename(rs[0]) if rs else "-"})
+                     "대상": sm.get("n"), "실행": os.path.basename(rs[0]) if rs else "-"})
     return pd.DataFrame(rows)
 
 

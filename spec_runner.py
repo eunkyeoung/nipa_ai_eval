@@ -186,7 +186,7 @@ def main():
             status.update(done=status["done"] + 1, current=None)
             qa_runner.write_status(a.status_file, status)
         if status["state"] == "running":
-            snap_of = lambda p: os.path.join(snap, os.path.basename(p)) if p and os.path.exists(os.path.join(snap, os.path.basename(p))) else p
+            snap_of = lambda p: os.path.join(snap, os.path.basename(p.replace("\\", "/"))) if p and os.path.exists(os.path.join(snap, os.path.basename(p.replace("\\", "/")))) else p
             r = run_score(item, run_dir, snap_of(a.answer), snap_of(a.testset), snap_of(a.lawdb))   # 실행 중 원본이 바뀌어도 시작 당시 사본으로 채점
             msg = f"완료 ({status['done']}/{total}건)"
             if r is not None and r["value"] is not None:
