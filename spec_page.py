@@ -281,7 +281,7 @@ def overview():
                      "진단 결과": fmt_pct(sm.get("value"), it) if sm else "미실행",
                      "목표": target_txt(it),
                      "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
-                     "대상": sm.get("n"), "실행": os.path.basename(rs[0]) if rs else "-"})
+                     "대상": str(sm["n"]) if sm.get("n") is not None else "-", "실행": os.path.basename(rs[0]) if rs else "-"})
     return pd.DataFrame(rows)
 
 
