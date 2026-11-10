@@ -973,27 +973,8 @@ def load_law_db(path):
     return parse_citations(df[col].tolist())
 
 
-def logic_conflict(r):
-    """⑤ 판단 사유와 최종 결정 간 논리 불일치 (보조) — 사전 정의 규칙
-    R1 허가 가능인데 위반 조건 또는 불허 사유가 있음 / R2 허가 불가능인데 위반 조건·불허 사유가 없음
-    R3 결론 문장이 판단과 반대 (가능 판정 + '불가' 문장, 불가 판정 + '가능합니다' 문장)"""
-    v = r.get("판단유형")
-    viol = r.get("위반조건") or []
-    deny = r.get("불허사유") or []
-    line = str(r.get("결론문") or "")
-    if v == "허가 가능" and (viol or deny):
-        return "R1 가능 판정인데 위반·불허 사유 존재"
-    if v == "허가 불가능" and not (viol or deny):
-        return "R2 불가 판정인데 위반·불허 사유 없음"
-    if v == "허가 가능" and "불가" in line:
-        return "R3 결론 문장과 판정 반대"
-    if v == "허가 불가능" and re.search(r"가능합니다", line) and "불가" not in line:
-        return "R3 결론 문장과 판정 반대"
-    return ""
-
-
 def score_ai5(log, answer, law_db=None):
-    """환각 ①~④ 자동 판정 (하나라도 해당하면 환각 1건, 중복 계수 안 함), ⑤ 논리 불일치는 보조"""
+    """환각 ①~④ 자동 판정 (하나라도 해당하면 환각 1건, 중복 계수 안 함). ⑤ 논리 불일치는 시험항목에서 제외(2026-11-10)"""
     a = answer.set_index("사례ID")
     arts, hangs = set(), {}
     for l_, j_, h_ in law_db or ():                  # ① 조문 DB 색인: 조 단위 + 조별 항 목록
@@ -1021,31 +1002,24 @@ def score_ai5(log, answer, law_db=None):
                          인용조문="; ".join(r.get("근거조문") or []), 정답조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          적용법령="; ".join(r.get("적용법령") or []), 정답_적용법령="; ".join(split_list(g.get("적용법령")) if g is not None else []),
                          **{"① 인용 조문 미존재": h1, "② 근거 조문 부재": h2, "③ 근거 오인용": h3, "④ 법령·조례 근거 불일치": h4},
-                         환각=bool(h1) or h2 or h3 or h4, DB미존재조문="; ".join(missing),
-                         **{"⑤ 논리 불일치(보조)": logic_conflict(r)}))
+                         환각=bool(h1) or h2 or h3 or h4, DB미존재조문="; ".join(missing)))
     res = pd.DataFrame(rows)
     n = len(res)
     val = pct(res["환각"].sum(), n) if n else None
     how = {"① 인용 조문 미존재": "응답의 인용 조문이 법령·조례 조문 DB에 존재하지 않음",       # 규격서 v1.51 40쪽 표 그대로
            "② 근거 조문 부재": "응답에 근거 조문 항목이 없거나 값이 비어 있음",
            "③ 근거 오인용": "인용 조문이 실재하나 정답 조문셋과 교집합이 없음",
-           "④ 법령·조례 근거 불일치": "응답의 적용 법령이 정답 적용 법령과 다름",
-           "⑤ 판단 사유와 최종 결정 간 논리 불일치": "사전 정의된 논리 불일치 검출 규칙(R1~R3)에 해당"}
+           "④ 법령·조례 근거 불일치": "응답의 적용 법령이 정답 적용 법령과 다름"}       # ⑤ 논리 불일치는 시험항목에서 제외(2026-11-10)
     types = []
     for k in how:
-        col = "⑤ 논리 불일치(보조)" if k.startswith("⑤") else k
-        s = res[col] if n else pd.Series(dtype=object)
-        cnt = int((s != "").sum()) if k.startswith("⑤") and n else (int(s.fillna(False).astype(bool).sum()) if n else 0)
-        types.append({"환각 유형": k, "판정 방법": how[k], "검출 건수": cnt,
-                      "산정": "보조 지표 (환각 발생률에 미포함)" if k.startswith("⑤") else
-                              ("산정 대상 — 조문 DB 미제공으로 판정 보류" if k.startswith("①") and law_db is None else "산정 대상")})
+        s = res[k] if n else pd.Series(dtype=object)
+        types.append({"환각 유형": k, "판정 방법": how[k], "검출 건수": int(s.fillna(False).astype(bool).sum()) if n else 0,
+                      "산정": "산정 대상 — 조문 DB 미제공으로 판정 보류" if k.startswith("①") and law_db is None else "산정 대상"})
     summ = pd.DataFrame([{"구분": "정상 응답", "건수": int((~res["환각"]).sum()) if n else 0},
                          {"구분": "환각 응답", "건수": int(res["환각"].sum()) if n else 0},
                          {"구분": "전체", "건수": n}])
-    logic = int((res["⑤ 논리 불일치(보조)"] != "").sum()) if n else 0
-    return dict(value=val, n=n, tables={"환각 유형별 검출 건수 (①~④ 산정 대상, ⑤ 보조 지표)": pd.DataFrame(types), "정상·환각 응답 건수": summ,
-                                        "보조 지표: ⑤ 판단 사유와 최종 결정 간 논리 불일치 검출 건수": pd.DataFrame([{"검출 건수": logic, "대상": n}])},
-                aux={"⑤ 논리 불일치 검출 건수": logic}, cases=res)
+    return dict(value=val, n=n, tables={"환각 유형 ①~④별 검출 건수": pd.DataFrame(types), "정상·환각 응답 건수": summ},
+                aux={}, cases=res)
 
 
 SCORERS = {"AI1": score_ai1, "AI2": score_ai2, "AI3": score_ai3, "AI4": score_ai4, "AI5": score_ai5}
