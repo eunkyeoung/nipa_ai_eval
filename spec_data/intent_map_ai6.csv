@@ -1,0 +1,17 @@
+﻿정답의도,근거,값,비고
+지도 이동,호출,map_navigation_b:INTEGRATED_LOCATION_SEARCH|map_navigation_b:SELECT|map_navigation_b:MOVE_TO|map_navigation_b:CENTER|map_navigation_b:MOVE_AND_ZOOM|map_navigation_b:FIT_BOUNDS|map_navigation_b:HIGHLIGHT,주소가 있으면 공간오케가 위치 확정(검색 → SELECT)을 자동으로 붙임. 대상 필지 강조(SELECT_FEATURE → HIGHLIGHT)도 여기에 흡수
+지도 이동,동작,SELECT|MOVE_TO|CENTER|MOVE_AND_ZOOM|FIT_BOUNDS,화면 이동 명령
+지도 확대/축소,호출,map_navigation_b:SET_ZOOM|map_navigation_b:ZOOM_IN|map_navigation_b:ZOOM_OUT,
+지도 확대/축소,동작,SET_ZOOM|ZOOM_IN|ZOOM_OUT,
+규제 저촉 분석,호출,land_attr_b:OVERLAP_GEOMETRY|land_attr_b:OVERLAP_PLAN|spatial_regulation:INTERSECTIONLAYER,용도지역·지구 중첩 · 지구단위계획구역 · 규제 레이어 저촉
+주변 규제 분석,호출,spatial_regulation:LAYER_NEARBY,반경 안 규제 레이어 잘라 보기
+버퍼 분석,호출,spatial_regulation:BUFFER,
+도로 접근성 분석,호출,road_access:CONTACT_SUMMARY|road_access:CONTACT_GEOM,
+규제도로 분석,호출,road_access:REGULATION|road_access:ROAD_PLAN_GEOM,REGULATION 은 도형 없음. 운영 연결표의 road_plan 갈래(ROAD_PLAN_GEOM)도 같은 의도로 인정
+산지전용 검토,호출,land_regulation:FOREST_CONVERSION,도형 = 입력 필지 윤곽
+개발가능지 추출,호출,land_regulation:DEVELOPABLE_AREA,개발가능 영역 0이면 도형 없음
+분석 결과 표출,표출,ANALYSIS,위치 확정이 아닌 분석 호출을 계획·실행함 — 도형이 실제로 왔는지는 ③에서 봄
+분석 결과 표출,동작,SHOW_LAYER,레이어 켜기
+(무시),호출,spatial_regulation:LAYER_FIND,레이어 id 찾기 — 교차·반경 분석의 앞 단계
+(무시),호출,land_attr_b:ATTR|map_navigation_b:PNU_RESOLVE,보조 호출 — 토지이용계획 조회(규격 Function 예시 '토지이용계획 조회') · PNU 확정. 의도로 세지 않음
+(무시),동작,UI.FOCUS|ADD_MARKER|HIGHLIGHT,검색 1건일 때 붙는 마커 등 — 지도 이동에 흡수

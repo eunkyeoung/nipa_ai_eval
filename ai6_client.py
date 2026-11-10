@@ -1,0 +1,355 @@
+"""
+[AI 6] 지도제어·공간분석 Sub 오케스트레이터(공간오케) 호출기
+---------------------------------------------------------
+자연어 지도 제어 명령 1건을 공간오케에 보내고 응답(SSE)을 모읍니다. 화면(spec_page)·실행기(spec_runner_ai6)가 함께 씁니다.
+
+  POST {AI6_BASE}/api/chat   {"message": 명령문, "thread_id": 사례마다 새 값}
+  Accept: text/event-stream  →  turn.started · call.started · call.finished · actions · ask · answer.delta
+                                · receipts · workflow · answer_check · turn.finished · error
+
+- 사례마다 새 thread_id → 앞 사례의 대화 상태(마지막 필지 등)가 섞이지 않음
+- 사례당 총 대기 상한(deadline) — requests 의 timeout 은 '읽기 사이 공백' 제한이라 총시간을 못 막으므로
+  타이머가 연결을 끊음. 끊으면 공간오케도 그 턴을 취소함(SSE 연결 종료 = 취소). 넘긴 사례는 '응답 오류'
+- turn.finished(또는 error)에서 읽기를 멈춤 — workflow·receipts·answer_check 는 turn.finished 앞에 옴
+- gather() 는 공간오케 plugin/coreplug/jsonapi.py 의 gather() 와 같은 모양으로 이벤트를 한 덩어리로 묶음
+  (그쪽 코드는 서버 의존성이 있어 가져오지 않고 같은 규칙으로 다시 씀)
+
+이 파일은 표준 라이브러리 + requests 만 씁니다(pandas 없이 시험 가능).
+"""
+import json
+import os
+import threading
+import time
+import uuid
+
+BASE = os.environ.get("AI6_BASE", "http://192.168.200.115:17006").rstrip("/")   # 공간오케 (시험 때 설정 화면·실행 인자로 바꿈)
+DEADLINE = float(os.environ.get("AI6_DEADLINE", "300"))          # 사례당 응답 대기 상한(초) — 규격서 시험조건 '○○○초' (회의 확정 전 기본값)
+ORIGIN = os.environ.get("AI6_ORIGIN", "qa-ai6")                   # X-Request-Origin — 공간오케 모니터 기록에서 QA 질의를 따로 모으는 표지 (빈 값이면 안 보냄)
+# 사전 점검 '주소 검색 1건' — 시험셋에 없는 필지(AI1-0037). 시험 문장이 시험 전에 공간오케 기록에 남지 않게
+PROBE_MESSAGE = os.environ.get("AI6_PROBE", "충청남도 아산시 둔포면 신남리 201-3번지로 지도 이동해줘")
+CONNECT_TIMEOUT = 10
+
+# 사전 점검 대상 (실행 전 확인 — 하나라도 실패하면 실행을 막음). 값은 환경변수로 바꿀 수 있음
+CHECKS = {
+    "공간오케 (/health)": os.environ.get("AI6_HEALTH_URL", BASE + "/health"),
+    "공간오케 준비 상태 (/ready)": os.environ.get("AI6_READY_URL", BASE + "/ready"),
+    "LLM (GPT-OSS 120B)": os.environ.get("AI6_LLM_URL", "http://192.168.200.128:8003/v1/models"),
+    "공간분석 API (GIS API Server)": os.environ.get("AI6_GIS_URL", "http://192.168.200.116:17002/v3/api-docs"),
+}
+
+END_EVENTS = ("turn.finished", "error")
+
+
+def new_thread_id(case_id=""):
+    tag = "".join(ch for ch in str(case_id) if ch.isalnum() or ch in "-_")[:24]
+    return f"qa-ai6-{tag}-{uuid.uuid4().hex[:8]}" if tag else f"qa-ai6-{uuid.uuid4().hex[:12]}"
+
+
+# ---------------------------------------------------------------- SSE 읽기
+def iter_lines(chunks):
+    """바이트 조각 → 줄. '\\r\\n' 이 조각 경계에서 갈려도 빈 줄이 하나 더 생기지 않게 직접 자름"""
+    buf = b""
+    for chunk in chunks:
+        if not chunk:
+            continue
+        buf += chunk if isinstance(chunk, bytes) else str(chunk).encode("utf-8")
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            yield line.rstrip(b"\r").decode("utf-8", "replace")
+    if buf:
+        yield buf.rstrip(b"\r").decode("utf-8", "replace")
+
+
+def iter_sse(lines):
+    """줄 → (이벤트 이름, 데이터). 빈 줄에서 이벤트를 닫고, 주석(': ping')은 버림.
+    데이터가 JSON 이 아니면 {'_raw': 문자열}"""
+    event, data = None, []
+    for line in lines:
+        if line.startswith(":"):
+            continue
+        if line == "":
+            if event or data:
+                yield _event(event, data)
+            event, data = None, []
+            continue
+        field, _, value = line.partition(":")
+        value = value[1:] if value.startswith(" ") else value
+        if field == "event":
+            event = value.strip()
+        elif field == "data":
+            data.append(value)
+    if event or data:
+        yield _event(event, data)
+
+
+def _event(event, data):
+    raw = "\n".join(data)
+    try:
+        obj = json.loads(raw) if raw else {}
+    except ValueError:
+        obj = {"_raw": raw}
+    if not isinstance(obj, dict):
+        obj = {"value": obj}
+    return (event or "message"), obj
+
+
+# ---------------------------------------------------------------- 호출
+def stream_chat(message, thread_id=None, base=None, deadline=None, origin=ORIGIN, cancel_on_deadline=True):
+    """명령 1건을 보내고 이벤트를 모음. 예외를 밖으로 던지지 않고 결과 dict 에 적음.
+
+    돌려주는 값: {url, request, thread_id, http_status, events: [(이벤트, 데이터)], ended_by, error,
+                 t_first_event, elapsed}
+      ended_by: turn.finished · error(SSE error 이벤트) · eof(끝 이벤트 없이 연결 종료) · deadline(대기 상한 초과)
+                · http(200 아님) · exception(연결 실패 등)"""
+    import queue
+
+    import requests
+
+    base = (base or BASE).rstrip("/")
+    limit = float(deadline or DEADLINE)
+    tid = thread_id or new_thread_id()
+    out = dict(url=f"{base}/api/chat", request={"message": message, "thread_id": tid}, thread_id=tid,
+               http_status=None, events=[], ended_by=None, error="", t_first_event=None, elapsed=None,
+               deadline=limit)
+    t0 = time.monotonic()
+    r = None
+    try:
+        r = requests.post(out["url"], json=out["request"], stream=True,
+                          headers={"Accept": "text/event-stream", **({"X-Request-Origin": origin} if origin else {})},
+                          timeout=(CONNECT_TIMEOUT, limit))
+        out["http_status"] = r.status_code
+        if r.status_code != 200:
+            out["ended_by"] = "http"
+            out["error"] = f"HTTP {r.status_code}: {r.text[:300]}"
+            return out
+        # 읽기는 따로 돌리고 여기서 남은 시간만큼만 기다림 — 서버가 결산 중 한동안 아무것도 안 보내도(keepalive 없음) 상한을 지킴
+        q = queue.Queue()
+
+        def reader(resp):
+            try:
+                for item in iter_sse(iter_lines(resp.iter_content(chunk_size=None))):
+                    q.put(("ev", item))
+                    if item[0] in END_EVENTS:
+                        return
+                q.put(("eof", None))
+            except Exception as e:                                  # noqa: BLE001
+                q.put(("exc", e))
+
+        threading.Thread(target=reader, args=(r,), daemon=True).start()
+        while out["ended_by"] is None:
+            left = limit - (time.monotonic() - t0)
+            if left <= 0:
+                out["ended_by"] = "deadline"
+                break
+            try:
+                kind, val = q.get(timeout=left)
+            except queue.Empty:
+                out["ended_by"] = "deadline"
+                break
+            if kind == "ev":
+                if out["t_first_event"] is None:
+                    out["t_first_event"] = round(time.monotonic() - t0, 3)
+                out["events"].append(val)
+                if val[0] in END_EVENTS:
+                    out["ended_by"] = val[0]
+            elif kind == "eof":
+                out["ended_by"] = "eof"
+            else:
+                out["ended_by"] = "exception"
+                out["error"] = f"{type(val).__name__}: {str(val)[:300]}"
+    except requests.exceptions.ReadTimeout:                         # 응답 머리도 상한 안에 안 옴
+        out["ended_by"] = "deadline"
+    except Exception as e:                                          # noqa: BLE001
+        out["ended_by"] = "exception"
+        out["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+    finally:
+        if r is not None:
+            _shutdown(r)                                           # 읽는 스레드를 먼저 풀어 줌 — 안 그러면 close 가 스트림 끝까지 막힘
+            try:
+                r.close()                                          # 연결을 닫으면 서버도 그 턴을 취소
+            except Exception:                                      # noqa: BLE001
+                pass
+        out["elapsed"] = round(time.monotonic() - t0, 3)
+    if out["ended_by"] == "deadline":
+        out["error"] = f"응답 대기 상한 {limit:g}초 초과"
+        if cancel_on_deadline:
+            out["cancel"] = cancel(tid, base)
+    return out
+
+
+def _shutdown(r):
+    """다른 스레드가 읽고 있는 응답 소켓을 끊음. 서버가 이벤트를 계속 보내는 중이면 r.close() 는 읽는 스레드가 쥔
+    버퍼 잠금 때문에 스트림이 끝날 때까지 기다리므로, 소켓을 먼저 shutdown 해서 읽기를 끝냄 (urllib3 2.3+ 는 shutdown())"""
+    import socket
+    raw = getattr(r, "raw", None)
+    try:
+        if hasattr(raw, "shutdown"):
+            raw.shutdown()
+            return
+    except Exception:                                              # noqa: BLE001
+        pass
+    for get in (lambda: raw._connection.sock, lambda: raw._fp.fp.raw._sock):
+        try:
+            s = get()
+            if s is not None:
+                s.shutdown(socket.SHUT_RDWR)
+                return
+        except Exception:                                          # noqa: BLE001
+            continue
+
+
+def cancel(thread_id, base=None, timeout=5, retries=1):
+    """대기 상한을 넘긴 턴을 서버에서도 멈춤(연결 종료로 이미 취소되지만 한 번 더). 실패하면 1초 뒤 한 번 더 — 결과는 로그에 남김"""
+    import requests
+    out = None
+    for i in range(retries + 1):
+        try:
+            r = requests.post(f"{(base or BASE).rstrip('/')}/api/chat/cancel", json={"thread_id": thread_id}, timeout=timeout)
+            out = r.status_code
+            if r.status_code < 400:
+                return out
+        except Exception as e:                                      # noqa: BLE001
+            out = f"{type(e).__name__}"
+        if i < retries:
+            time.sleep(1)
+    return out
+
+
+# ---------------------------------------------------------------- 이벤트 묶기 (공간오케 jsonapi.gather 와 같은 규칙)
+def gather(events):
+    """이벤트 흐름 → 한 덩어리. 호출은 시작 순서를 지키고, 끝난 호출에 원본 payload 가 붙음.
+
+    {thread_id, status, answer, stop_reason, usage, finished(bool), asks, calls, actions, workflow,
+     receipts, answer_check, errors}
+      calls[]  = {call_id, callee, tool, args, status, reason_code, elapsed_ms, payload, error, replayed}
+      actions  = 'actions' 이벤트(items) 를 받은 순서대로 — 없으면 각 호출 payload.actions 로 채움"""
+    calls, order, asks, errors, answer = {}, [], [], [], []
+    finished, workflow, receipts, answer_check = {}, {}, None, None
+    action_events = []
+    for name, data in events:
+        if not isinstance(data, dict):
+            continue
+        call_id = str(data.get("call_id") or "")
+        if name == "call.started" and call_id:
+            if call_id not in calls:
+                order.append(call_id)
+            calls[call_id] = {"call_id": call_id, "callee": data.get("callee"), "tool": data.get("tool"),
+                              "args": data.get("args") or {}, "status": "in_flight", "payload": None}
+        elif name == "call.finished" and call_id:
+            if call_id not in calls:
+                order.append(call_id)
+                calls[call_id] = {"call_id": call_id}
+            calls[call_id].update({k: data.get(k) for k in
+                                   ("callee", "tool", "status", "reason_code", "elapsed_ms", "payload", "error", "replayed")
+                                   if k in data or k not in calls[call_id]})
+            calls[call_id].setdefault("args", data.get("args") or {})
+        elif name == "actions":
+            for item in data.get("items") or []:
+                if isinstance(item, dict):
+                    action_events.append({**item, "_call_id": data.get("call_id")})
+        elif name == "ask":
+            asks.append(data)
+        elif name == "answer.delta":
+            answer.append(str(data.get("delta") or data.get("text") or ""))
+        elif name == "workflow":
+            workflow = data
+        elif name == "receipts":
+            receipts = data
+        elif name == "answer_check":
+            answer_check = data
+        elif name == "turn.finished":
+            finished = data
+        elif name == "error":
+            errors.append(data)
+    rows = [calls[c] for c in order]
+    actions = action_events
+    if not actions:                                                # actions 이벤트가 없는 배포 → 호출별 payload.actions
+        for row in rows:
+            pay = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            for item in pay.get("actions") or []:
+                if isinstance(item, dict) and item not in actions:
+                    actions.append({**item, "_call_id": row.get("call_id")})
+    return {
+        "thread_id": finished.get("thread_id"),
+        "status": finished.get("status"),
+        "answer": finished.get("answer") or "".join(answer),
+        "stop_reason": finished.get("stop_reason") or "",
+        "usage": finished.get("usage") or {},
+        "finished": bool(finished),
+        "asks": asks,
+        "calls": rows,
+        "actions": actions,
+        "workflow": workflow,
+        "receipts": receipts,
+        "answer_check": answer_check,
+        "errors": errors,
+    }
+
+
+# ---------------------------------------------------------------- 사전 점검 · 버전
+def _get(url, timeout=8, headers=None):
+    import requests
+    t0 = time.monotonic()
+    try:
+        r = requests.get(url, timeout=timeout, headers=headers or {})
+        ms = round((time.monotonic() - t0) * 1000)
+        body = None
+        try:
+            body = r.json()
+        except ValueError:
+            body = r.text[:200]
+        return dict(ok=r.status_code == 200, status=r.status_code, ms=ms, body=body)
+    except Exception as e:                                          # noqa: BLE001
+        return dict(ok=False, status=None, ms=round((time.monotonic() - t0) * 1000), body=f"{type(e).__name__}: {str(e)[:200]}")
+
+
+def precheck(base=None, checks=None, probe_message=None, deadline=120):
+    """실행 전 점검 — [{항목, 주소, 결과(정상/실패), 응답(ms), 내용}].
+    probe_message 를 주면 공간오케에 실제 명령 1건을 보내 V-World 주소 검색까지 확인(위치 확정 호출이 성공했는지)"""
+    base = (base or BASE).rstrip("/")
+    items = dict(checks or CHECKS)
+    if base != BASE:                                               # 화면에서 공간오케 주소를 바꾼 경우
+        items["공간오케 (/health)"] = base + "/health"
+        items["공간오케 준비 상태 (/ready)"] = base + "/ready"
+    rows = []
+    llm_key = os.environ.get("AI6_LLM_KEY", "")
+    for name, url in items.items():
+        r = _get(url, headers={"Authorization": f"Bearer {llm_key}"} if name.startswith("LLM") and llm_key else None)
+        detail = ""
+        if name.startswith("LLM") and r["status"] in (401, 403):   # 키가 있어야 목록을 주는 vLLM — 서버는 응답했으므로 정상으로 보고 표시
+            r["ok"] = True
+            detail = f"서버 응답 {r['status']}(인증 필요 — AI6_LLM_KEY 를 주면 모델 목록까지 확인)"
+        elif r["ok"] and isinstance(r["body"], dict):
+            if name.startswith("공간오케 (/health"):
+                detail = json.dumps(r["body"], ensure_ascii=False)[:120]
+                r["ok"] = str(r["body"].get("status", "")).lower() in ("ok", "healthy", "up")
+            elif "준비" in name:
+                diag = r["body"].get("vllm_diag") or {}
+                detail = f"ready={r['body'].get('ready')} · 모델={diag.get('model', '')}"
+                r["ok"] = bool(r["body"].get("ready", True))
+            elif name.startswith("LLM"):
+                ids = [m.get("id") for m in r["body"].get("data") or [] if isinstance(m, dict)]
+                detail = "모델: " + ", ".join(map(str, ids))
+        elif not r["ok"]:
+            detail = str(r["body"])[:200]
+        rows.append({"항목": name, "주소": url, "결과": "정상" if r["ok"] else "실패", "응답(ms)": r["ms"], "내용": detail})
+    if probe_message:
+        res = stream_chat(probe_message, base=base, deadline=deadline)
+        turn = gather(res["events"])
+        loc = [c for c in turn["calls"] if c.get("callee") == "map_navigation_b"]
+        ok = res["ended_by"] == "turn.finished" and any(c.get("status") == "ok" for c in loc)
+        rows.append({"항목": "주소 검색 1건 (V-World 경유)", "주소": res["url"], "결과": "정상" if ok else "실패",
+                     "응답(ms)": round((res["elapsed"] or 0) * 1000),
+                     "내용": (res["error"] or f"위치 확정 호출 {len(loc)}건 · 상태 {turn['status']}")[:200]})
+    return rows
+
+
+def ready_info(base=None):
+    """공간오케 /ready 에서 읽을 수 있는 실행 환경(LLM 주소·모델명·연결된 에이전트) — 버전 표에 '조회값'으로 씀"""
+    r = _get((base or BASE).rstrip("/") + "/ready")
+    if not (r["ok"] and isinstance(r["body"], dict)):
+        return {}
+    b = r["body"]
+    diag = b.get("vllm_diag") or {}
+    callees = [c.get("name") for c in b.get("callees") or [] if isinstance(c, dict)]
+    return {"LLM 주소": diag.get("base"), "LLM 모델": diag.get("model"), "연결 에이전트": ", ".join(map(str, callees))}

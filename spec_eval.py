@@ -42,11 +42,14 @@ SPEC = {
                 formula="[AI 5] 환각 발생률(%) = 환각 사례로 판정된 응답 건수 / 전체 테스트 응답 건수 × 100",                          # 수행계획서 문구
                 data="질의문 50건 + 정답 조문셋 50건 + 법령·조례 조문 DB"),
     "AI6": dict(no="2-6", name="[AI 6] 자연어 기반 지도 제어 기능", metric="자연어 기반 지도 제어 정확도",
-                target=90.0, cmp=">=", log="command_log_ai6.jsonl", dec=1, cmd=True,
+                target=90.0, cmp=">=", log="gis_execution_log_ai6.jsonl", dec=2, cmd=True, auto=True,   # dec=2: 셋째자리 이하 버림 (회의 안건 6)
+                logs=["command_parse_log_ai6.jsonl", "gis_execution_log_ai6.jsonl"],   # 명령 해석 로그 · 실행 결과 로그 (규격서 2-6 시험방법)
+                legacy_log="command_log_ai6.jsonl",                                    # 결과 파일 가져오기(수동) 경로
+                runner="spec_runner_ai6.py",
                 formula="[AI 6] 명령 실행 정확도(%) = 정상 수행 건수 / 전체 테스트 건수 × 100  (정상 수행 = ① 의도 ② 파라미터 ③ 지도 제어 모두 일치)",
-                data="자연어 지도 제어 명령 50건 (공간규제 분석 15 / 도로 접근성 분석 15 / 산지ㆍ농지 규제 분석 20)",
-                types=["공간규제 분석", "도로 접근성 분석", "산지ㆍ농지 규제 분석"],
-                causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "GIS 지도 제어 실행 오류"]),
+                data="자연어 지도 제어 명령 50건 (공간규제 분석 15 / 도로 접근성 분석 15 / 산지·농지 규제 분석 20)",
+                types=["공간규제 분석", "도로 접근성 분석", "산지·농지 규제 분석"],
+                causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "GIS 지도 제어 실행 오류", "응답 오류"]),
     "AI7": dict(no="2-7", name="[AI 7] 자연어 기반 3D 시뮬레이션 명령 처리 기능", metric="자연어 기반 3D 시뮬레이션 명령 정확도",
                 target=90.0, cmp=">=", log="command_log_ai7.jsonl", dec=1, cmd=True,
                 formula="[AI 7] 3D 생성 및 분석 정확도(%) = 기준 충족 건수 / 전체 평가 건수 × 100  (기준 충족 = ① 의도 ② 파라미터 ③ 3D 생성·실행 모두 일치)",
@@ -522,8 +525,17 @@ def compare_steps(base, other):
 
 
 # ---------------------------------------------------------------- 로그 읽기
+def log_name(run_dir, item):
+    """이 실행 폴더에 실제로 있는 판정 로그 이름 — AI6: 자동 실행(gis_execution_log) 또는 결과 파일 가져오기(command_log)"""
+    sp = SPEC[item]
+    for name in (sp["log"], sp.get("legacy_log")):
+        if name and os.path.exists(os.path.join(run_dir, name)):
+            return name
+    return sp["log"]
+
+
 def read_log(run_dir, item):
-    p = os.path.join(run_dir, SPEC[item]["log"])
+    p = os.path.join(run_dir, log_name(run_dir, item))
     if not os.path.exists(p):
         return pd.DataFrame()
     rows = []
@@ -540,7 +552,7 @@ def read_log(run_dir, item):
         return df
     key = "질의ID" if "질의ID" in df.columns else "사례ID"
     df[key] = df[key].astype(str)
-    df["회차"] = df["회차"].astype(int)
+    df["회차"] = (df["회차"] if "회차" in df.columns else pd.Series(1, index=df.index)).fillna(1).astype(int)   # AI6 로그는 회차 없음(명령 1회 입력)
     for c in LIST_FIELDS:                        # 오류 행(연결 끊김 등)은 목록 필드가 없음 → 빈 목록으로
         if c in df.columns:
             df[c] = df[c].map(lambda v: v if isinstance(v, list) else [])
@@ -1025,7 +1037,45 @@ def score_ai5(log, answer, law_db=None):
 SCORERS = {"AI1": score_ai1, "AI2": score_ai2, "AI3": score_ai3, "AI4": score_ai4, "AI5": score_ai5}
 
 
+def score_ai6(run_dir, testset_path=None):
+    """[AI 6] 자동 실행 폴더 채점 — 판정은 실행 때 gis_execution_log 에 이미 적혀 있고(ai6_eval.judge), 여기서는 집계만.
+    시험셋에 있는데 결과가 없는 사례는 '미실행'(응답 오류)으로 분모에 넣음 (일부 ID만 실행했으면 그 ID만)"""
+    import ai6_eval as A6
+    rows = []
+    with open(os.path.join(run_dir, SPEC["AI6"]["log"]), encoding="utf-8") as f:
+        for ln in f:
+            try:
+                rows.append(json.loads(ln))
+            except json.JSONDecodeError:
+                pass
+    meta = {}
+    if os.path.exists(os.path.join(run_dir, "meta.json")):
+        with open(os.path.join(run_dir, "meta.json"), encoding="utf-8") as f:
+            meta = json.load(f)
+    ts = A6.read_rows(testset_path) if testset_path else []
+    planned = set(meta.get("cases") or [])
+    if planned:
+        ts = [t for t in ts if str(t.get("사례ID")) in planned]
+    if not ts:                                                      # 시험셋을 못 찾으면 실행한 사례만으로
+        ts = [{"사례ID": r.get("사례ID"), "명령유형": r.get("명령유형"), "명령문": r.get("명령문")} for r in rows]
+    s = A6.score(rows, ts, dec=SPEC["AI6"].get("dec", 2))
+    cases = pd.DataFrame(s["사례별"])
+    if not cases.empty:
+        cases.insert(cases.columns.get_loc("판정") + 1, "정상수행", cases["판정"] == "정상 수행")
+    total = pd.DataFrame(s["총괄"]).rename(columns={"자연어 기반 지도 제어 정확도(%)": "정확도(%)"})
+    return dict(value=s["value"], n=s["n"], cases=cases,
+                tables={"총괄 결과 (전체 테스트 건수·정상 수행 건수·오류 건수·정확도)": total,
+                        "명령 유형 3종별 세부 결과": pd.DataFrame(s["유형별"]),
+                        "오류 원인 유형별 건수 (의도 해석 / 핵심 파라미터 추출 / GIS 지도 제어 실행 / 응답 오류)": pd.DataFrame(s["오류원인별"])},
+                aux={"응답 오류": s["응답오류"], "되묻기": s["되묻기"]})
+
+
 def score(item, run_dir, answer_path=None, testset_path=None, lawdb_path=None):
+    if item == "AI6" and os.path.exists(os.path.join(run_dir, SPEC[item]["log"])):    # 자동 실행 결과
+        r = score_ai6(run_dir, testset_path)
+        r["passed"] = passed(item, r["value"])
+        r["item"] = item
+        return r
     log = read_log(run_dir, item)
     if log.empty:
         return None
@@ -1342,7 +1392,7 @@ def import_results(item, result_path, testset_path=None, answer_path=None, run_d
     tsi = ts.set_index("사례ID") if ts is not None and "사례ID" in ts else None
     run_dir = run_dir or os.path.join("spec", item, __import__("time").strftime("%Y%m%d_%H%M%S"))
     os.makedirs(run_dir, exist_ok=True)
-    with open(os.path.join(run_dir, SPEC[item]["log"]), "w", encoding="utf-8") as f:
+    with open(os.path.join(run_dir, SPEC[item].get("legacy_log") or SPEC[item]["log"]), "w", encoding="utf-8") as f:
         for _, r in df.iterrows():
             rec = {c: r.get(c, "") for c in df.columns}
             rec["회차"] = 1
@@ -1360,19 +1410,29 @@ def import_results(item, result_path, testset_path=None, answer_path=None, run_d
     return run_dir
 
 
-TEMPLATES["AI6"] = {
+TEMPLATES["AI6"] = {                                              # 양식 예시 — 실제 시험 문항과 섞이지 않게 ID·주소·PNU 는 가짜(T, ○○)
     "testset_ai6.csv": (["사례ID", "명령유형", "명령문"],
-                        [["AI6-0001", "공간규제 분석", "경산시 ○○읍 ○○리 263번지 필지에 저촉되는 용도지역ㆍ지구를 분석해서 지도에 보여줘"]]),
-    "answer_ai6.csv": (["사례ID", "명령유형", "정답의도", "정답파라미터", "정답시나리오"],
-                       [["AI6-0001", "공간규제 분석", "지도 이동; 규제 저촉 분석; 분석 결과 표출",
-                         "위치=경산시 ○○읍 ○○리 263번지; 분석대상=용도지역ㆍ지구",
-                         "이동위치=263번지 필지; 분석결과표출=저촉 용도지역ㆍ지구"]]),
+                        [["AI6-T001", "공간규제 분석", "경상북도 경산시 ○○읍 ○○리 263번지 필지에 걸쳐 있는 용도지역·지구를 분석해서 지도에 보여줘"],
+                         ["AI6-T002", "공간규제 분석", "경상북도 경산시 ○○읍 ○○리 263번지 반경 500m 안에 있는 개발제한구역 레이어 도형을 잘라서 지도에 보여줘"]]),
+    "answer_ai6.csv": (["사례ID", "명령유형", "정답의도", "정답파라미터", "정답시나리오", "참조PNU"],
+                       [["AI6-T001", "공간규제 분석", "지도 이동; 규제 저촉 분석; 분석 결과 표출",
+                         "위치=경상북도 경산시 ○○읍 ○○리 263; PNU=4729000000002630000; 분석대상=용도지역·지구",
+                         "표출대상=대상 필지 도형; 분석결과표출=용도지역·지구 중첩 도형", "4729000000002630000"],
+                        ["AI6-T002", "공간규제 분석", "지도 이동; 주변 규제 분석; 분석 결과 표출",
+                         "위치=경상북도 경산시 ○○읍 ○○리 263; PNU=4729000000002630000; 분석대상=개발제한구역; 반경=500m",
+                         "표출대상=대상 필지 도형; 분석결과표출=반경 500m 내 개발제한구역 도형", "4729000000002630000"]]),
+    "intent_map_ai6.csv": (["정답의도", "근거", "값", "비고"], []),     # 내용은 아래에서 ai6_eval.DEFAULT_RULES 로 채움
     "result_ai6.csv": (RESULT_COLS,
                        [["AI6-0001", "지도 이동; 규제 저촉 분석; 분석 결과 표출",
                          "위치=경산시 ○○읍 ○○리 263번지; 분석대상=용도지역ㆍ지구",
                          "공간규제 분석: 주소 지오코딩, 지도이동/확대, 토지이용계획 조회, 저촉/접합 분석, 지도 표출",
                          "이동위치=경산시 ○○읍 ○○리 263번지; 분석결과표출=저촉 용도지역ㆍ지구", "완료", "AI6-0001.png", ""]]),
 }
+try:                                                               # AI6 의도 대응표 양식 = 채점기 기본 대응표
+    import ai6_eval as _A6
+    TEMPLATES["AI6"]["intent_map_ai6.csv"] = (["정답의도", "근거", "값", "비고"], [list(x) for x in _A6.DEFAULT_RULES])
+except ImportError:                                                # noqa: PERF203
+    pass
 TEMPLATES["AI7"] = {
     "testset_ai7.csv": (["사례ID", "명령유형", "명령문", "선행상태"],
                         [["AI7-0001", "일조 시뮬레이션 실행", "경산시 ○○읍 ○○리 263번지에 3층 단독주택을 가상 건물로 세우고 일조 시뮬레이션 실행해줘", ""]]),
