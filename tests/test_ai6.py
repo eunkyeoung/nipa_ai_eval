@@ -523,6 +523,92 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+class _LlmHandler(http.server.BaseHTTPRequestHandler):            # vLLM /v1/models 흉내 — 키가 맞아야 목록을 줌
+    model = "gpt-oss-120b"
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        if self.headers.get("Authorization") != "Bearer good":
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error": "Unauthorized"}')
+            return
+        body = {"object": "list", "data": [{"id": _LlmHandler.model, "root": "openai/" + _LlmHandler.model, "max_model_len": 128000}]}
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode())
+
+
+class LlmCheck(unittest.TestCase):                                 # 사전 점검: LLM 서버가 띄운 모델 = 시험 조건(gpt-oss-120b)?
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _LlmHandler)
+        cls.srv.daemon_threads = True
+        cls.url = f"http://127.0.0.1:{cls.srv.server_address[1]}/v1/models"
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        _LlmHandler.model = "gpt-oss-120b"
+
+    def test_key_and_same_model(self):
+        ok, detail, info, _ = C.llm_check(self.url, "good", {"model": "gpt-oss-120b", "base": self.url.rsplit("/", 1)[0]})
+        self.assertTrue(ok, detail)
+        self.assertIn("openai/gpt-oss-120b", detail)
+        self.assertIn("시험 조건(gpt-oss-120b)과 같음", detail)
+        self.assertEqual(info["확인"], "키로 확인")
+        self.assertNotIn("good", json.dumps(info, ensure_ascii=False))          # 키는 기록에 안 남김
+
+    def test_other_model_fails(self):
+        _LlmHandler.model = "qwen3-32b"
+        ok, detail, _, _ = C.llm_check(self.url, "good")
+        self.assertFalse(ok)
+        self.assertIn("시험 조건 모델(gpt-oss-120b)이 목록에 없음", detail)
+
+    def test_no_key_only_checks_server(self):
+        ok, detail, info, _ = C.llm_check(self.url, "")
+        self.assertTrue(ok)
+        self.assertIn("확인 못 함", detail)
+        self.assertEqual(info["확인"], "키 없음")
+
+    def test_wrong_key_fails(self):
+        ok, detail, info, _ = C.llm_check(self.url, "bad")
+        self.assertFalse(ok)
+        self.assertEqual(info["확인"], "키 오류")
+
+    def test_suborc_uses_other_server_or_model(self):
+        ok, detail, _, _ = C.llm_check(self.url, "good", {"model": "gpt-oss-120b", "base": "http://10.0.0.9:8003/v1"})
+        self.assertFalse(ok)
+        self.assertIn("다른 LLM 서버", detail)
+        ok, detail, _, _ = C.llm_check(self.url, "good", {"model": "gpt-oss-20b"})
+        self.assertFalse(ok)
+        self.assertIn("공간오케 설정 모델(gpt-oss-20b)", detail)
+
+    def test_precheck_row_uses_ready_diag(self):                  # /ready 의 설정 모델과 LLM 서버 목록을 함께 대조
+        import unittest.mock as um
+        def fake_get(url, timeout=8, headers=None):
+            if url.endswith("/ready"):
+                return dict(ok=True, status=200, ms=1, body={"ready": True, "vllm_diag": {"model": "gpt-oss-120b"}})
+            return dict(ok=True, status=200, ms=1, body={"status": "ok"})
+        real = C._get
+        with um.patch.object(C, "_get", side_effect=lambda url, timeout=8, headers=None:
+                             real(url, timeout, headers) if url == self.url else fake_get(url, timeout, headers)):
+            rows = C.precheck("http://127.0.0.1:1", checks={"공간오케 (/health)": "http://127.0.0.1:1/health",
+                                                           "공간오케 준비 상태 (/ready)": "http://127.0.0.1:1/ready",
+                                                           "LLM (GPT-OSS 120B)": self.url}, llm_key="good")
+        llm = next(r for r in rows if r["항목"].startswith("LLM"))
+        self.assertEqual(llm["결과"], "정상", llm["내용"])
+        self.assertIn("공간오케 설정 모델과 같음", llm["내용"])
+
+
 class Rules(unittest.TestCase):
     def _csv(self, text):
         import tempfile

@@ -353,6 +353,7 @@ def main():
         if not a.no_precheck:
             fresh = meta["precheck"] = C.precheck(base, probe_message=a.probe)
             meta["ready"] = C.ready_info(base)
+            meta["llm"] = C.llm_info(base)                 # LLM 서버가 띄운 모델(키가 있을 때) — 키는 기록 안 함
     with open(mp, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1, default=str)
 

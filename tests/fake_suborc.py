@@ -45,6 +45,13 @@ def call(cid, callee, tool, args, resolve, actions=None, status="ok"):
 
 def events_for(message):
     g = next((v for k, v in GOLD.items() if v.get("_cmd") == message), None)
+    if g is None and "지도 이동" in message:                 # 사전 점검의 주소 검색 1건(시험셋 밖 필지) — 위치 확정까지만
+        pnu = "4420025030102010003"
+        return ([("turn.started", {"thread_id": "x"})]
+                + call("c1", "map_navigation_b", "locationSearch", {"action": "INTEGRATED_LOCATION_SEARCH", "query": message, "size": "20"},
+                       {"status": "ok", "result": {"results": [{"pnu": pnu}]}},
+                       [{"type": "map.MOVE_TO", "result": {"lng": 196150.0, "lat": 532750.0, "crs": "EPSG:5186"}}])
+                + [("turn.finished", {"status": "delivered", "answer": "지도를 이동했습니다.", "stop_reason": "model_completed"})]), 0
     if g is None:
         return [("turn.finished", {"status": "delivered", "answer": "모르는 명령", "stop_reason": "model_completed"})], 0
     n = int(g["사례ID"][-4:])

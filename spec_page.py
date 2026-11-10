@@ -404,11 +404,15 @@ def sidebar_ai6(side, launch, running, missing):
                                    help="규격서 시험조건의 응답 대기 상한 — 넘기면 연결을 끊고 '응답 오류'로 집계 (회의에서 값 확정, 동결 대상)")
         probe = st.checkbox("사전 점검에 주소 검색 1건 포함 (V-World 경유)", value=True, key="ai6_probe",
                             help=f"공간오케에 시험셋에 없는 명령 1건('{C6.PROBE_MESSAGE}')을 보내 위치 검색이 되는지 확인해요")
+        llm_key = st.text_input("LLM 키 (모델 확인용)", C6.llm_key_env(), type="password", key="ai6_llm_key",
+                                help=f"LLM 서버 /v1/models 로 지금 띄운 모델이 시험 조건({C6.LLM_MODEL})·공간오케 설정과 같은지 확인해요. "
+                                     "비우면 서버 응답만 확인해요. 키는 실행 기록에 남기지 않아요.")
     if side.button("사전 점검", width="stretch", disabled=running,
                    help="공간오케 /health·/ready, LLM, 공간분석 API 응답을 확인해요. 실행할 때도 다시 점검하고, 실패하면 실행하지 않아요."):
         with st.spinner("사전 점검 중…"):
             st.session_state["ai6_precheck"] = dict(at=time.strftime("%H:%M:%S"),
-                                                    rows=C6.precheck(base, probe_message=C6.PROBE_MESSAGE if probe else None))
+                                                    rows=C6.precheck(base, probe_message=C6.PROBE_MESSAGE if probe else None,
+                                                                     llm_key=llm_key))
     pc = st.session_state.get("ai6_precheck")
     if pc:
         bad = [r for r in pc["rows"] if r["결과"] != "정상"]
@@ -458,7 +462,7 @@ def sidebar_ai6(side, launch, running, missing):
         if probe:
             cmd += ["--probe", C6.PROBE_MESSAGE]
         st.session_state["spec_run_dir"] = None
-        launch(cmd, n)
+        launch(cmd, n, env={"AI6_LLM_KEY": llm_key, "VLLM_API_KEY": ""})  # 키는 러너 환경변수로만 넘김(명령줄·기록에 안 남김), 비우면 확인 안 함
     if data_path("result_ai6"):
         side.caption("ℹ️ result_ai6(수동 결과 파일)는 쓰지 않아요 — AI6 는 위 버튼으로 공간오케에 직접 보내 판정합니다.")
     return "AI6"
@@ -635,6 +639,7 @@ def render(item, area, help_fn=None):
             env = [env[0],
                    ("대상 시스템 (공간오케)", meta.get("endpoint") or meta.get("base") or "-"),
                    ("LLM 모델 (공간오케 /ready)", rd.get("LLM 모델") or "-"),
+                   ("LLM 모델 (LLM 서버 확인)", (meta.get("llm") or {}).get("내용") or "기록 없음 (사전 점검 생략 또는 이전 실행)"),
                    ("연결 에이전트", rd.get("연결 에이전트") or "-"),
                    ("사례당 응답 대기 상한", f"{meta.get('deadline_s', '-')}초 (넘기면 연결을 끊고 응답 오류)"),
                    ("실행 사례", f"선택 {len(meta['cases'])}건" if meta.get("cases") else "시험셋 전체"),

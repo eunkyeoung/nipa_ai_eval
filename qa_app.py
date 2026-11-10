@@ -310,8 +310,8 @@ def progress_panel():
 
 
 # ---------------- 실행 (백그라운드 프로세스) ----------------
-def launch(cmd, total, resume=False):
-    """qa_runner.py를 별도 프로세스로 시작하고 화면을 새로 그림"""
+def launch(cmd, total, resume=False, env=None):
+    """qa_runner.py를 별도 프로세스로 시작하고 화면을 새로 그림 (env: 러너에만 넘길 환경변수 — 예: AI6 LLM 키)"""
     if os.path.exists(qa_runner.STOP_FILE):
         os.remove(qa_runner.STOP_FILE)
     qa_runner.write_status(STATUS, dict(state="running", done=0, total=total, current=None, started=time.time(),
@@ -319,7 +319,7 @@ def launch(cmd, total, resume=False):
     log = open("run.log", "a" if resume else "w", encoding="utf-8")
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)   # Windows: 터미널 Ctrl+C와 분리
     subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, creationflags=flags,
-                     env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+                     env=dict(os.environ, PYTHONIOENCODING="utf-8", **(env or {})))
     st.session_state["was_running"] = True
     st.session_state.pop("dismissed", None)
     time.sleep(1.5)

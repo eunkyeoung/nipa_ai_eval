@@ -39,6 +39,58 @@ CHECKS = {
 
 END_EVENTS = ("turn.finished", "error")
 
+# 시험의뢰서 시험환경 'LLM 추론 환경 (GPT-OSS 120B)' — LLM 서버가 띄운 모델이 이것과 같은지 사전 점검에서 확인
+LLM_MODEL = os.environ.get("AI6_LLM_MODEL", "gpt-oss-120b")
+
+
+def llm_key_env():
+    """LLM 서버(vLLM) 키 — 화면에서 넣지 않았을 때 쓰는 환경변수 (AI6_LLM_KEY, 없으면 VLLM_API_KEY). 기록에는 남기지 않음"""
+    return os.environ.get("AI6_LLM_KEY") or os.environ.get("VLLM_API_KEY") or ""
+
+
+def _model_name(x):
+    """'openai/gpt-oss-120b' · 'GPT-OSS-120B' → 'gpt-oss-120b' (제공처 접두어·대소문자 차이는 같은 모델로 봄)"""
+    return str(x or "").strip().lower().rsplit("/", 1)[-1]
+
+
+def _host_port(url):
+    from urllib.parse import urlparse
+    u = urlparse(str(url or ""))
+    return (u.hostname or "", u.port or (443 if u.scheme == "https" else 80))
+
+
+def llm_check(url, key, ready_diag=None):
+    """LLM 서버 /v1/models 로 지금 띄운 모델을 확인 — (정상 여부, 내용, 기록용 정보).
+    키가 없어 401/403 이면 서버가 살아 있는 것만 확인(정상). 키를 줬는데 401/403 이면 키가 틀린 것(실패).
+    ready_diag(공간오케 /ready 의 vllm_diag)가 있으면 공간오케가 쓰는 LLM 주소·모델과도 맞춰 봄"""
+    r = _get(url, headers={"Authorization": f"Bearer {key}"} if key else None)
+    info = {"주소": url, "확인": "키 없음", "응답(ms)": r["ms"]}
+    if r["status"] in (401, 403):
+        if key:
+            info["확인"] = "키 오류"
+            return False, f"서버 응답 {r['status']} — LLM 키가 맞지 않아요(키를 고치거나 비우면 서버 응답만 확인)", info, r
+        return True, f"서버 응답 {r['status']} — 키가 없어 모델은 확인 못 함 (설정의 LLM 키 또는 AI6_LLM_KEY)", info, r
+    if not (r["ok"] and isinstance(r["body"], dict)):
+        info["확인"] = "응답 없음"
+        return False, str(r["body"])[:200], info, r
+    served = [m for m in r["body"].get("data") or [] if isinstance(m, dict)]
+    names = {_model_name(m.get(k)) for m in served for k in ("id", "root") if m.get(k)}
+    info.update(확인="키로 확인" if key else "인증 없이 확인", 모델=[m.get("id") for m in served],
+                원본=[m.get("root") for m in served], 최대길이=[m.get("max_model_len") for m in served], 시험조건=LLM_MODEL)
+    desc = ", ".join(f"{m.get('id')}" + (f" ({m.get('root')}" + (f" · 최대 {m.get('max_model_len'):,} 토큰" if isinstance(m.get("max_model_len"), int) else "") + ")"
+                                         if m.get("root") and m.get("root") != m.get("id") else "") for m in served) or "목록 비어 있음"
+    probs = []
+    if _model_name(LLM_MODEL) not in names:
+        probs.append(f"시험 조건 모델({LLM_MODEL})이 목록에 없음")
+    diag = ready_diag or {}
+    if diag.get("model") and _model_name(diag["model"]) not in names:
+        probs.append(f"공간오케 설정 모델({diag['model']})을 이 서버가 띄우지 않음")
+    if diag.get("base") and _host_port(diag["base"]) != _host_port(url):
+        probs.append(f"공간오케는 다른 LLM 서버({diag['base']})를 씀 — 점검 주소와 다름")
+    info["일치"] = not probs
+    tail = "; ".join(probs) if probs else (f"시험 조건({LLM_MODEL})과 같음" + (" · 공간오케 설정 모델과 같음" if diag.get("model") else ""))
+    return not probs, f"모델 {desc} — {tail}", info, r
+
 # 공간오케는 에이전트를 모니터 중계(17007) → 콘솔 /proxy(18800)로 부름 — 콘솔·중계가 내려가면 주소가 든 사례가 전부 실패(D-199)
 REQUIRED_SERVICES = [x.strip() for x in os.environ.get(
     "AI6_REQUIRED_SERVICES", "map_navigation_b,land_attr_b,road_access,spatial_regulation,land_regulation,"
@@ -314,9 +366,10 @@ def _get(url, timeout=8, headers=None):
         return dict(ok=False, status=None, ms=round((time.monotonic() - t0) * 1000), body=f"{type(e).__name__}: {str(e)[:200]}")
 
 
-def precheck(base=None, checks=None, probe_message=None, deadline=120):
+def precheck(base=None, checks=None, probe_message=None, deadline=120, llm_key=None):
     """실행 전 점검 — [{항목, 주소, 결과(정상/실패), 응답(ms), 내용}].
-    probe_message 를 주면 공간오케에 실제 명령 1건을 보내 V-World 주소 검색까지 확인(위치 확정 호출이 성공했는지)"""
+    probe_message 를 주면 공간오케에 실제 명령 1건을 보내 V-World 주소 검색까지 확인(위치 확정 호출이 성공했는지).
+    llm_key 를 주면(없으면 환경변수) LLM 서버가 띄운 모델이 시험 조건·공간오케 설정과 같은지 확인"""
     base = (base or BASE).rstrip("/")
     items = dict(checks or CHECKS)
     if base != BASE:                                               # 화면에서 공간오케 주소를 바꾼 경우
@@ -326,14 +379,16 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120):
         items["콘솔 서비스 (에이전트·MCP 가동)"] = os.environ.get("AI6_CONSOLE_URL") or _host_url(base, 18800, "/api/stack")
         items["모니터 중계 (공간오케 → 에이전트)"] = os.environ.get("AI6_RELAY_URL") or _host_url(base, 17007, "/api/status")
     rows = []
-    llm_key = os.environ.get("AI6_LLM_KEY", "")
+    key = llm_key_env() if llm_key is None else llm_key
+    diag = None
     for name, url in items.items():
-        r = _get(url, headers={"Authorization": f"Bearer {llm_key}"} if name.startswith("LLM") and llm_key else None)
+        if name.startswith("LLM"):                                 # 키가 있어야 목록을 주는 vLLM — 키가 없으면 서버 응답만 확인
+            ok, detail, _, r = llm_check(url, key, diag)
+            rows.append({"항목": name, "주소": url, "결과": "정상" if ok else "실패", "응답(ms)": r["ms"], "내용": detail})
+            continue
+        r = _get(url)
         detail = ""
-        if name.startswith("LLM") and r["status"] in (401, 403):   # 키가 있어야 목록을 주는 vLLM — 서버는 응답했으므로 정상으로 보고 표시
-            r["ok"] = True
-            detail = f"서버 응답 {r['status']}(인증 필요 — AI6_LLM_KEY 를 주면 모델 목록까지 확인)"
-        elif r["ok"] and isinstance(r["body"], dict):
+        if r["ok"] and isinstance(r["body"], dict):
             if name.startswith("공간오케 (/health"):
                 detail = json.dumps(r["body"], ensure_ascii=False)[:120]
                 r["ok"] = str(r["body"].get("status", "")).lower() in ("ok", "healthy", "up")
@@ -341,9 +396,6 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120):
                 diag = r["body"].get("vllm_diag") or {}
                 detail = f"ready={r['body'].get('ready')} · 모델={diag.get('model', '')}"
                 r["ok"] = bool(r["body"].get("ready", True))
-            elif name.startswith("LLM"):
-                ids = [m.get("id") for m in r["body"].get("data") or [] if isinstance(m, dict)]
-                detail = "모델: " + ", ".join(map(str, ids))
             elif name.startswith("콘솔"):
                 svc = {str(x.get("name")): x for x in r["body"].get("services") or [] if isinstance(x, dict)}
                 down = [n for n in REQUIRED_SERVICES if n in svc and not svc[n].get("up")]
@@ -372,6 +424,16 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120):
                      "응답(ms)": round((res["elapsed"] or 0) * 1000),
                      "내용": (res["error"] or f"위치 확정 호출 {len(loc)}건 · 상태 {turn['status']}")[:200]})
     return rows
+
+
+def llm_info(base=None, llm_key=None, url=None):
+    """실행 기록(meta)용 — LLM 서버가 띄운 모델(키가 있을 때)과 공간오케 /ready 의 설정 모델. 키는 기록하지 않음"""
+    diag = {}
+    r = _get((base or BASE).rstrip("/") + "/ready")
+    if r["ok"] and isinstance(r["body"], dict):
+        diag = r["body"].get("vllm_diag") or {}
+    ok, detail, info, _ = llm_check(url or CHECKS["LLM (GPT-OSS 120B)"], llm_key_env() if llm_key is None else llm_key, diag)
+    return {**info, "정상": ok, "내용": detail, "공간오케 설정 모델": diag.get("model"), "공간오케 LLM 주소": diag.get("base")}
 
 
 def ready_info(base=None):
