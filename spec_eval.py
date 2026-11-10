@@ -643,13 +643,13 @@ def mismatch_reason(gv, pv, r, gc=None, pc=None, gl=None, pl=None):
             why.append(f"판단 불일치 — 정답 {gv}, AI 판단 없음({r.get('원판정') or r.get('오류') or '판정 미제시'})")
         else:
             why.append(f"판단 불일치 — 정답 {gv}, AI {pv}. AI 판단 근거: {ai_basis(r)}")
-    if gc and pc is not None and not cite_set_equal(pc, gc):
+    if gc and pc is not None and not cite_overlap(pc, gc):            # AI1 보조 지표: 정답 조문과 하나라도 일치하면 일치 (2026-11-10)
         only_g = sorted(fmt_cite(c) for c in gc if not any(cite_match(p, c) for p in pc))
         only_p = sorted(fmt_cite(c) for c in pc if not any(cite_match(c, g) for g in gc))
-        why.append("근거 조문 불일치 — " + " / ".join(x for x in (
+        why.append("근거 조문 불일치(정답 조문과 하나도 일치하지 않음) — " + " / ".join(x for x in (
             f"정답에만 있음: {', '.join(only_g)}" if only_g else "", f"AI에만 있음: {', '.join(only_p)}" if only_p else "") if x))
-    if gl and pl is not None and not gl <= pl:
-        why.append(f"적용 법령 불일치 — AI 응답에 없는 정답 법령: {', '.join(sorted(law_id(x) for x in gl - pl))}")
+    if gl and pl is not None and not gl & pl:                       # 정답 법령과 하나라도 일치하면 일치
+        why.append(f"적용 법령 불일치(정답 법령과 하나도 일치하지 않음) — 정답 {', '.join(sorted(law_id(x) for x in gl))} / AI {', '.join(sorted(law_id(x) for x in pl)) or '없음'}")
     return " / ".join(why) or "-"
 
 
@@ -669,10 +669,10 @@ def score_ai1(log, answer):
                          예측_적용룰셋="; ".join(r.get("적용룰셋") or []),
                          정답_근거조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          예측_근거조문="; ".join(r.get("근거조문") or []),
-                         근거조문_일치=(cite_set_equal(pc, gc) if gc else None),
+                         근거조문_일치=(cite_overlap(pc, gc) if gc else None),        # 보조 지표: 정답 조문과 하나라도 일치 (부분 포함 인정)
                          정답_적용법령="; ".join(split_list(g.get("적용법령"))) if g is not None else "",
                          예측_적용법령="; ".join(r.get("적용법령") or []),
-                         적용법령_일치=(gl <= pl if gl else None),
+                         적용법령_일치=(bool(gl & pl) if gl else None),
                          불일치사유=mismatch_reason(gv, pv, r, gc, pc, gl, pl),
                          **{c: r.get(c, "") for c in REF_COLS if c in log.columns}))
     res = pd.DataFrame(rows)
