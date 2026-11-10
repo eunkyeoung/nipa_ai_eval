@@ -166,12 +166,12 @@ def _law_in(seg, prev):
         names = [m.group(0).strip() for m in _LAWNAME.finditer(part) if m.group(0).strip()]
         if names:
             n = names[-1]
-            if n in ("시행령", "시행규칙", "영") or n.startswith("같은법"):
+            if n in ("시행령", "시행규칙", "영", "규칙") or n.startswith("같은법"):     # 약식 표기: '영' = 앞 법령의 시행령, '규칙' = 시행규칙
                 base = re.sub(r"(시행령|시행규칙)$", "", prev or "")
                 suf = "시행규칙" if "규칙" in n else "시행령"
                 return base + suf if base else None
             return norm_law(n)
-    if re.fullmatch(r"\s*[·,]?\s*영\s*", seg or "") and prev:
+    if prev and re.search(r"(?<![가-힣])영(?![가-힣])", seg or ""):          # '(영)', '·영' 등 → 앞 법령의 시행령 (예: '택지개발촉진법 제6조(영), 제2조')
         return re.sub(r"(시행령|시행규칙)$", "", prev) + "시행령"
     return prev
 
