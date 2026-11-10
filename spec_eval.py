@@ -995,7 +995,9 @@ def score_ai5(log, answer, law_db=None):
         h1 = None if law_db is None else any(not exists(c) for c in pc)
         h2 = not pc
         h3 = bool(pc) and bool(gc) and not cite_overlap(pc, gc)
-        h4 = bool(gl) and gl != pl                     # ④ 규격서 v1.51: 응답의 적용 법령이 정답 적용 법령과 일치(집합 일치, 순서 무시)해야 정상
+        # ④ 정답 적용 법령은 허용 집합(근거조문 열의 법령, 이 중 어느 것을 근거로 해도 맞음) → ③과 같은 방식으로
+        #    응답의 적용 법령이 허용 법령과 하나도 일치하지 않으면 불일치 (2026-11-10, 완전 일치 규칙에서 변경 · 시험기관 확인 대상)
+        h4 = bool(gl) and not (gl & pl)
         missing = [fmt_cite(c) for c in pc if law_db is not None and not exists(c)]
         rows.append(dict(사례ID=cid, 질의문=r.get("질의문"), 판단유형=r.get("판단유형"),
                          설명문=str(r.get("설명문") or ""),                 # 규격서 출력: 판단 결과·설명문·인용 조문·적용 법령
@@ -1009,7 +1011,7 @@ def score_ai5(log, answer, law_db=None):
     how = {"① 인용 조문 미존재": "응답의 인용 조문이 법령·조례 조문 DB에 존재하지 않음",       # 규격서 v1.51 40쪽 표 그대로
            "② 근거 조문 부재": "응답에 근거 조문 항목이 없거나 값이 비어 있음",
            "③ 근거 오인용": "인용 조문이 실재하나 정답 조문셋과 교집합이 없음",
-           "④ 법령·조례 근거 불일치": "응답의 적용 법령이 정답 적용 법령과 다름"}       # ⑤ 논리 불일치는 시험항목에서 제외(2026-11-10)
+           "④ 법령·조례 근거 불일치": "응답의 적용 법령이 정답 적용 법령과 다름 (정답 허용 법령과 하나도 일치하지 않음)"}       # ⑤ 논리 불일치는 시험항목에서 제외(2026-11-10)
     types = []
     for k in how:
         s = res[k] if n else pd.Series(dtype=object)
