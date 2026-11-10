@@ -136,6 +136,17 @@ def extract(events):
     for s in done:
         if s.get("id") == "zone_use":
             allow += laws_of(s)
+    # 용도지역별 건축 제한 근거 (raw.engine.zone_limits[].source.law) — 11-10 확인: 허용을 정한 시행령 별표·시군 조례가 여기에 있음
+    for z in ((diag.get("raw") or {}).get("engine") or {}).get("zone_limits") or []:
+        if not isinstance(z, dict):
+            continue
+        src = z.get("source")
+        law = src.get("law") if isinstance(src, dict) else None
+        law = str(law).split(" — ")[0].strip() if law else None     # " — " 뒤는 설명문 (예: '… 제48조 — 3.제17호 중 영 별표20' 의 '영 별표20'은 시행령 별표라 조례로 읽으면 안 됨)
+        if law and z.get("sym") == "O":
+            allow.append(str(law))
+        elif law and z.get("sym") == "X":
+            deny.append(str(law))
     all_laws = [x for s in done for x in laws_of(s)]
     all_laws += [c.get("source") for c in j.get("conditions") or [] if c.get("source")]
 
