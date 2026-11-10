@@ -1025,11 +1025,19 @@ def score_ai5(log, answer, law_db=None):
     res = pd.DataFrame(rows)
     n = len(res)
     val = pct(res["환각"].sum(), n) if n else None
+    how = {"① 인용 조문 미존재": "응답의 인용 조문이 법령·조례 조문 DB에 존재하지 않음",       # 규격서 v1.51 40쪽 표 그대로
+           "② 근거 조문 부재": "응답에 근거 조문 항목이 없거나 값이 비어 있음",
+           "③ 근거 오인용": "인용 조문이 실재하나 정답 조문셋과 교집합이 없음",
+           "④ 법령·조례 근거 불일치": "응답의 적용 법령이 정답 적용 법령과 다름",
+           "⑤ 판단 사유와 최종 결정 간 논리 불일치": "사전 정의된 논리 불일치 검출 규칙(R1~R3)에 해당"}
     types = []
-    for k in ["① 인용 조문 미존재", "② 근거 조문 부재", "③ 근거 오인용", "④ 법령·조례 근거 불일치"]:
-        s = res[k] if n else pd.Series(dtype=object)
-        types.append({"환각 유형": k, "검출 건수": int(s.fillna(False).astype(bool).sum()) if n else 0,
-                      "비고": "조문 DB 미제공 — 판정 보류" if k.startswith("①") and law_db is None else ""})
+    for k in how:
+        col = "⑤ 논리 불일치(보조)" if k.startswith("⑤") else k
+        s = res[col] if n else pd.Series(dtype=object)
+        cnt = int((s != "").sum()) if k.startswith("⑤") and n else (int(s.fillna(False).astype(bool).sum()) if n else 0)
+        types.append({"환각 유형": k, "판정 방법": how[k], "검출 건수": cnt,
+                      "산정": "보조 지표 (환각 발생률에 미포함)" if k.startswith("⑤") else
+                              ("산정 대상 — 조문 DB 미제공으로 판정 보류" if k.startswith("①") and law_db is None else "산정 대상")})
     summ = pd.DataFrame([{"구분": "정상 응답", "건수": int((~res["환각"]).sum()) if n else 0},
                          {"구분": "환각 응답", "건수": int(res["환각"].sum()) if n else 0},
                          {"구분": "전체", "건수": n}])
