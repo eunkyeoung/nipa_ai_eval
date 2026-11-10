@@ -23,33 +23,33 @@ from qa_eval import LAW_ALIAS, classify_permits, norm_law
 SPEC = {
     "AI1": dict(no="2-1", name="[AI 1] 인허가 질의에 대한 사전 진단 판단 결과 도출 기능", metric="사전 진단 판단 정확도",
                 target=95.0, cmp=">=", log="diagnose_log_ai1.jsonl",
-                formula="정확도(%) = ( 맞힌 예측 수 / 전체 테스트 데이터 수 ) × 100",
+                formula="[AI 1] 사전 진단 판단 정확도(%) = AI 판단 결과 일치 건수 / 전체 테스트 건수 × 100",
                 data="표준 질의문 50건 (허가 가능 25 / 허가 불가능 25)"),
     "AI2": dict(no="2-2", name="[AI 2] 유의어·유사 표현 질의에 대한 동일 사전 진단 결과 재현 기능", metric="사전 진단 판단 F1 스코어",
                 target=95.0, cmp=">=", log="diagnose_log_ai2.jsonl",
-                formula="가중평균 F1(%) = Σ (판단 유형별 F1 × 판단 유형별 정답 질의 수) / 전체 질의 수  (F1 Score(%) = 2 × Precision × Recall / (Precision + Recall))",
+                formula="[AI 2] 종합 F1 Score(%) = 판단 유형별 F1 Score의 가중평균  (가중치 = 판단 유형별 정답 질의 수, F1 = 2 × Precision × Recall / (Precision + Recall))",
                 data="시나리오 10건 × 질의 5건(원문 1 + 변형 4) = 50 질의"),
     "AI3": dict(no="2-3", name="[AI 3] 사전 진단 추론·데이터 조회 과정의 동일 프로세스 수행 및 로그 기록 기능", metric="사전 진단 판단 일관성",
                 target=98.0, cmp=">=", log="diagnose_log_ai3.jsonl",
-                formula="사전 진단 판단 일관성(%) = 일치 수행 횟수 / 전체 수행 횟수 × 100  (1회차 로그 = 기준, 기준 회차 자신도 일치 수행에 포함)",   # 규격서 v1.51 33쪽 문구
+                formula="[AI 3] 사전 진단 판단 일관성(%) = 동일 결과 도출 횟수 / 전체 반복 수행 횟수 × 100  (1회차 로그 = 기준, 기준 회차도 동일 결과에 포함)",   # 수행계획서 문구
                 data="질의 10건 × 반복 5회 = 50회 수행"),
     "AI4": dict(no="2-4", name="[AI 4] 예외·단서 규정 적용 사례의 허가 가능/허가 불가능 판정 및 단서 조건 제시 기능", metric="조건부 가능 판단 정확도",
                 target=95.0, cmp=">=", log="diagnose_log_ai4.jsonl",
-                formula="정확도(%) = ( 맞힌 예측 수 / 전체 테스트 데이터 수 ) × 100  (판정 결과가 정답 라벨과 정확 일치하고 단서 조건 근거 조문이 집합 일치해야 맞힌 예측)",
+                formula="[AI 4] 조건부 가능 판단 정확도(%) = 조건부 판단 및 제시 조건이 모두 적합한 건수 / 전체 조건부 테스트 건수 × 100  (제시 조건 = 단서 조건 근거 조문, 보완사항·행정절차는 보조 지표)",
                 data="표준 질의문 50건 (허가 가능 40 / 허가 불가능 10)"),
     "AI5": dict(no="2-5", name="[AI 5] 법령·조례 근거의 정확성이 확보된 사전 진단 응답 생성 기능", metric="환각 발생률",
                 target=3.0, cmp="<=", log="diagnose_log_ai5.jsonl",
-                formula="환각 발생률(%) = ( 환각 사례로 판정된 응답 건수 / 전체 테스트 응답 건수 ) × 100",
+                formula="[AI 5] 환각 발생률(%) = 환각 사례로 판정된 응답 건수 / 전체 테스트 응답 건수 × 100",                          # 수행계획서 문구
                 data="질의문 50건 + 정답 조문셋 50건 + 법령·조례 조문 DB"),
     "AI6": dict(no="2-6", name="[AI 6] 자연어 기반 지도 제어 기능", metric="자연어 기반 지도 제어 정확도",
                 target=90.0, cmp=">=", log="command_log_ai6.jsonl", dec=1, cmd=True,
-                formula="명령 실행 정확도(%) = 정상 수행 건수 / 전체 테스트 건수 × 100  (정상 수행 = ① 의도 ② 파라미터 ③ 지도 제어 모두 일치)",
+                formula="[AI 6] 명령 실행 정확도(%) = 정상 수행 건수 / 전체 테스트 건수 × 100  (정상 수행 = ① 의도 ② 파라미터 ③ 지도 제어 모두 일치)",
                 data="자연어 지도 제어 명령 50건 (공간규제 분석 15 / 도로 접근성 분석 15 / 산지ㆍ농지 규제 분석 20)",
                 types=["공간규제 분석", "도로 접근성 분석", "산지ㆍ농지 규제 분석"],
                 causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "GIS 지도 제어 실행 오류"]),
     "AI7": dict(no="2-7", name="[AI 7] 자연어 기반 3D 시뮬레이션 명령 처리 기능", metric="자연어 기반 3D 시뮬레이션 명령 정확도",
                 target=90.0, cmp=">=", log="command_log_ai7.jsonl", dec=1, cmd=True,
-                formula="3D 생성 및 분석 정확도(%) = 기준 충족 건수 / 전체 평가 건수 × 100  (기준 충족 = ① 의도 ② 파라미터 ③ 3D 생성·실행 모두 일치)",
+                formula="[AI 7] 3D 생성 및 분석 정확도(%) = 기준 충족 건수 / 전체 평가 건수 × 100  (기준 충족 = ① 의도 ② 파라미터 ③ 3D 생성·실행 모두 일치)",
                 data="자연어 3D 시뮬레이션 명령 50건 (기본 제어 15 / 경사도 5 / 토공량 5 / 지형 생성 5 / 가상건물 5 / 일조 7 / 조망 8)",
                 types=["3D 지도 기본 제어", "필지 경사도 분석", "필지 토공량 산출", "지형 생성", "가상건물 생성",
                        "일조 시뮬레이션 실행", "조망 시뮬레이션 실행"],
@@ -796,7 +796,7 @@ def score_ai2(log, answer, testset=None):
     n = len(log)
     cols = TYPE2 + ([UNDECIDED] if (log["예측_판단유형"] == UNDECIDED).any() else [])
     cm = pd.crosstab(log["정답_판단유형"], log["예측_판단유형"]).reindex(index=TYPE2, columns=cols, fill_value=0)
-    cm.index.name = "정답 ↓ / 예측 →"
+    cm.index.name = "정답 ↓ / AI 판단 →"
     rows, wsum = [], 0.0
     for t in TYPE2:
         tp = int(cm.loc[t, t])
@@ -1351,7 +1351,8 @@ def score_cmd(item, log, answer, testset=None):
                           "정확도(%)": pct(int(res[res["명령유형"] == t]["정상수행"].sum()), int((res["명령유형"] == t).sum()), dec) if n else None}
                          for t in types])
     by_c = pd.DataFrame([{"오류 원인 유형": c, "건수": int((res["오류원인"] == c).sum()) if n else 0} for c in sp["causes"]])
-    return dict(value=val, n=n, tables={"총괄 결과": total, "명령 유형별 세부 결과": by_t, "오류 원인 유형별 건수": by_c},
+    return dict(value=val, n=n, tables={"총괄 결과 (전체 테스트 건수·정상 수행 건수·오류 건수·정확도)": total,
+                                        f"명령 유형 {len(sp['types'])}종별 세부 결과": by_t, "오류 원인 유형별 건수": by_c},
                 cases=res)
 
 
