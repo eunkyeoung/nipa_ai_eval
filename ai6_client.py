@@ -412,6 +412,9 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120, llm_key=N
                 r["ok"] = core_ok and console_ok and not bad
                 detail = (f"코어 {'정상' if core_ok else '응답 없음'} · 콘솔 {'정상' if console_ok else '연결 안 됨'}"
                           + (f" · 중계 실패 {', '.join(bad)}" if bad else f" · 중계 {sum(1 for a in RELAY_AGENTS if a in relay)}개 정상"))
+            elif name.startswith("공간분석 API"):                # 동결 버전 확인용 — OpenAPI 문서의 info.version (시스템 조회값)
+                info = r["body"].get("info") if isinstance(r["body"].get("info"), dict) else {}
+                detail = f"{info.get('title') or 'GIS API'} 버전 {info.get('version') or '미제공'}"
         elif not r["ok"]:
             detail = str(r["body"])[:200]
         rows.append({"항목": name, "주소": url, "결과": "정상" if r["ok"] else "실패", "응답(ms)": r["ms"], "내용": detail})

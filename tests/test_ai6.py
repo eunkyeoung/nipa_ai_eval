@@ -209,6 +209,40 @@ class Judge(unittest.TestCase):
         finally:
             E.JUDGE_ZOOM_LEVEL = False
 
+    def test_map_control_values(self):                          # ③ 지도제어 = 이동·확대·축소·레이어 표시, 여럿은 ',' — 그 밖의 값은 점검에서 막음
+        gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 지도 확대/축소; 규제 저촉 분석; 분석 결과 표출")
+        zoom = [("call.started", {"call_id": "cz", "callee": "map_navigation_b", "tool": "mapControl",
+                                  "args": plan("mapControl", action="SET_ZOOM", zoomLevel="17")}),
+                ("call.finished", {"call_id": "cz", "callee": "map_navigation_b", "tool": "mapControl", "status": "ok",
+                                   "payload": {"status": "ok", "resolve": {"status": "ok"}}}),
+                ("actions", {"call_id": "cz", "items": [{"type": "map.SET_ZOOM", "result": {"zoomLevel": 17}}]})]
+        ev = locate_events() + zoom + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+        for val, ok in (("확대", True), ("이동, 확대", True), ("이동", True), ("레이어 표시", False), ("확대(17레벨)", False)):
+            g = dict(gold, 정답시나리오=f"표출대상=대상 필지 도형; 지도제어={val}; 분석결과표출=용도지역·지구 중첩 도형")
+            self.assertEqual(run(ev, g)[0]["③"], ok, val)
+        layer = [("actions", {"call_id": "cl", "items": [{"type": "map.showLayer", "params": {"layers": [{"id": "lt_c_uq111", "name": "도시지역"}]}}]})]
+        g = dict(gold, 정답시나리오="표출대상=대상 필지 도형; 지도제어=레이어 표시; 분석결과표출=용도지역·지구 중첩 도형")
+        self.assertTrue(run(ev[:-3] + layer + finish(), g)[0]["③"])
+        ts = [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "x"}]
+        bad = dict(gold, 정답시나리오="표출대상=대상 필지 도형; 지도제어=확대(17레벨)")
+        self.assertTrue(any("지도제어 값" in p for p in E.blocking(E.validate(ts, [bad]))))
+
+    def test_move_and_zoom_counts_as_zoom(self):                # 일반 모드 map_navigation_b 는 '이동해서 17레벨로 확대'를 MOVE_AND_ZOOM 하나로 보냄
+        gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 지도 확대/축소; 규제 저촉 분석; 분석 결과 표출",
+                    정답시나리오="표출대상=대상 필지 도형; 지도제어=확대; 분석결과표출=용도지역·지구 중첩 도형")
+
+        def mz(result):
+            item = {"type": "map.MOVE_AND_ZOOM", "result": result}
+            return [("call.started", {"call_id": "cz", "callee": "map_navigation_b", "tool": "ask", "args": {"query": "q", "_text": "q"}}),
+                    ("call.finished", {"call_id": "cz", "callee": "map_navigation_b", "tool": "ask", "status": "ok",
+                                       "payload": {"status": "ok", "resolve": {"success": True, "action": "MOVE_AND_ZOOM", "result": result}}}),
+                    ("actions", {"call_id": "cz", "items": [{"type": "ui.focus", "target": "map"}, item]})]
+        base = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY")
+        v, _ = run(base + mz({"lng": 1, "lat": 2, "zoom": 17, "crs": "EPSG:5186"}) + finish(), gold)
+        self.assertTrue(v["정상수행"], v["불일치"])
+        v, _ = run(base + mz({"lng": 1, "lat": 2}) + finish(), gold)    # 줌 값이 없으면 확대로 안 셈
+        self.assertFalse(v["③"])
+
     def test_highlight_absorbed_into_move(self):                # SELECT_FEATURE → mapFeature(HIGHLIGHT) 가 붙어도 '의도 초과'가 아님
         hl = [("call.started", {"call_id": "ch", "callee": "map_navigation_b", "tool": "mapFeature",
                                 "args": plan("mapFeature", action="HIGHLIGHT", featureRef=PNU)}),
@@ -283,6 +317,30 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
         finally:
             E.UNLOCATED_RULE = False
 
+    def test_unlocated_needs_location_call_and_ok_select(self):  # 위치 미확정 = 위치 확정 호출은 했고, 성공한 SELECT·분석 호출이 없음
+        none = [("turn.started", {"thread_id": "t1"})] + finish(answer="지원하지 않는 요청입니다.")   # 호출 없음 → ① (P02)
+        sel = [(e, {**d, "status": "error", "reason_code": "rejected", "payload": None})
+               if e == "call.finished" and d.get("call_id") == "c2" else (e, d)
+               for e, d in locate_events() if not (e == "actions" and d.get("call_id") == "c2")] + finish()
+
+        def search(st):                                           # 예전 모양: 호출은 ok, resolve 가 failed(시스템 실패) · no_data(못 찾음)
+            return [(e, {**d, "payload": {"status": "ok", "resolve": {"status": st}}}) if e == "call.finished" else (e, d)
+                    for e, d in locate_events(select_ok=False) if e != "actions"] + finish()
+        v = run(none, GOLD_OVERLAP)[0]
+        self.assertEqual(v["오류원인"], "의도 해석 오류")
+        self.assertNotIn("위치 미확정", v["세부원인"])
+        self.assertIn("위치 확정 호출 실패: SELECT error", run(sel, GOLD_OVERLAP)[0]["세부원인"])
+        self.assertIn("위치 확정 호출 실패", run(search("failed"), GOLD_OVERLAP)[0]["세부원인"])
+        self.assertIn("대상 필지를 정하지 못함", run(search("no_data"), GOLD_OVERLAP)[0]["세부원인"])
+        E.UNLOCATED_RULE = True
+        try:
+            self.assertEqual(run(none, GOLD_OVERLAP)[0]["오류원인"], "의도 해석 오류")
+            self.assertEqual(run(sel, GOLD_OVERLAP)[0]["오류원인"], "GIS 지도 제어 실행 오류")
+            self.assertEqual(run(search("failed"), GOLD_OVERLAP)[0]["오류원인"], "GIS 지도 제어 실행 오류")
+            self.assertEqual(run(search("no_data"), GOLD_OVERLAP)[0]["오류원인"], "핵심 파라미터 추출 오류")
+        finally:
+            E.UNLOCATED_RULE = False
+
     def test_search_candidate_pnu_not_used(self):             # 검색 호출의 첫 후보 PNU 는 ② 대조에 쓰지 않음
         ev = locate_events()
         ev = [(e, {**d, "payload": {**d["payload"], "resolve": {**d["payload"]["resolve"], "pnu": "1111111111111111111"}}})
@@ -309,6 +367,16 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
         gold = dict(GOLD_OVERLAP, 정답시나리오="표출대상=대상 필지 도형; 분석결과표출=저촉 용도지역·지구 도형")
         ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
         self.assertTrue(run(ev, gold)[0]["정상수행"])
+
+    def test_buffer_label_with_radius_word(self):            # '반경 100m 버퍼 도형' — '반경'이 들어 있어도 버퍼 도형으로 대조
+        gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 규제 저촉 분석; 버퍼 분석; 분석 결과 표출",
+                    정답파라미터=f"PNU={PNU}; 분석대상=용도지역·지구; 반경=100m",
+                    정답시나리오="표출대상=대상 필지 도형; 분석결과표출=용도지역·지구 중첩 도형, 반경 100m 버퍼 도형")
+        ev = (locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY")
+              + analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "BUFFER", call_id="c4", distance="100")
+              + finish())
+        v, _ = run(ev, gold)
+        self.assertTrue(v["정상수행"], v["불일치"])
 
     def test_radius_exact_and_set(self):                      # 반경은 단위만 맞추고 값은 같아야 함, 남는 반경도 오류
         gold = {"사례ID": "AI6-0013", "명령유형": "공간규제 분석", "참조PNU": PNU,
@@ -385,12 +453,54 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
               + analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "LAYER_FIND", geom=None,
                                 lyr_query="지구단위계획구역")
               + analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "LAYER_NEARBY", call_id="c4",
-                                lyr_id="lsmd_cont_uq161", distance="300") + finish())
+                                lyr_id="klip_c_uq161", distance="300") + finish())
         v, _ = run(ev, gold)
         self.assertTrue(v["정상수행"], v["불일치"])
         ev2 = (locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_PLAN") + finish())
         v2, _ = run(ev2, gold)                                   # 중첩 분석으로 가면 ①(주변 규제 분석 누락)에서 걸림
         self.assertFalse(v2["①"])
+
+    def test_layer_id_must_be_layer_data(self):               # 이름은 '지구단위계획구역'인데 ID 가 도로 테이블(11-10 BE 연결 결함) → ② 오류
+        gold = {"사례ID": "AI6-0014", "명령유형": "공간규제 분석", "참조PNU": PNU,
+                "정답의도": "지도 이동; 주변 규제 분석; 분석 결과 표출",
+                "정답파라미터": f"PNU={PNU}; 분석대상=지구단위계획구역; 반경=300m",
+                "정답시나리오": "표출대상=대상 필지 도형; 분석결과표출=반경 300m 내 지구단위계획구역 도형"}
+
+        def ev(lid):
+            find = [("call.started", {"call_id": "cf", "callee": "spatial_regulation", "tool": "ask",
+                                      "args": plan("tool.spatial.analysis", operation="LAYER_FIND", pnu=PNU, lyr_query="지구단위계획구역")}),
+                    ("call.finished", {"call_id": "cf", "callee": "spatial_regulation", "tool": "ask", "status": "ok",
+                                       "payload": {"status": "ok", "resolve": {"status": "ok", "result": {"layers": [
+                                           {"name": "지구단위계획구역 · 국토교통부", "id": lid}]}}}})]
+            return (locate_events() + find + analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "LAYER_NEARBY",
+                                                             call_id="c4", lyr_id=lid, distance="300") + finish())
+        v, _ = run(ev("lsmd_cont_uq161"), gold)
+        self.assertFalse(v["②"])
+        self.assertEqual(v["오류원인"], "핵심 파라미터 추출 오류")
+        self.assertTrue(any("자료 불일치" in m and "lsmd_cont_uq161" in m for m in v["불일치"]), v["불일치"])
+        self.assertTrue(run(ev("klip_c_uq161"), gold)[0]["정상수행"])
+        E.LAYER_ID_CHECK = False
+        try:
+            self.assertTrue(run(ev("lsmd_cont_uq161"), gold)[0]["정상수행"])
+        finally:
+            E.LAYER_ID_CHECK = True
+        gold2 = dict(gold, 정답의도="지도 이동; 규제 저촉 분석; 분석 결과 표출", 정답파라미터=f"PNU={PNU}; 분석대상=지구단위계획구역",
+                     정답시나리오="표출대상=대상 필지 도형; 분석결과표출=지구단위계획구역 도형")
+        ev2 = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_PLAN") + finish()
+        self.assertTrue(run(ev2, gold2)[0]["정상수행"])                # 토지특성 OVERLAP_PLAN 경로는 레이어 ID 가 없어 대조 안 함
+
+    def test_radius_from_resolve_input_on_core_llm_route(self):  # 코어 LLM 이 부른 분석은 args 가 {query,_text} 뿐 — 반경은 resolve.input 에서
+        gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 규제 저촉 분석; 버퍼 분석; 분석 결과 표출",
+                    정답파라미터=f"PNU={PNU}; 분석대상=용도지역·지구; 반경=100m",
+                    정답시나리오="표출대상=대상 필지 도형; 분석결과표출=용도지역·지구 중첩 도형, 버퍼 도형")
+        q = "반경 100m 버퍼를 만들어 보여줘"
+        buf = [("call.started", {"call_id": "c4", "callee": "spatial_regulation", "tool": "ask", "args": {"query": q, "_text": q}}),
+               ("call.finished", {"call_id": "c4", "callee": "spatial_regulation", "tool": "ask", "status": "ok",
+                                  "payload": {"status": "ok", "resolve": {"status": "ok", "pnu": PNU, "geom": {"result_geojson": POLY},
+                                                                          "input": {"operation": "BUFFER", "pnu": PNU, "distance": 100.0}}}})]
+        v, ext = run(locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + buf + finish(), gold)
+        self.assertEqual(ext["radius"], [100.0])
+        self.assertTrue(v["정상수행"], v["불일치"])
 
     def test_criteria_fingerprint_tracks_options(self):
         a = E.criteria_fingerprint()
@@ -400,6 +510,21 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
         finally:
             E.REQUIRE_TARGET_GEOMETRY = not E.REQUIRE_TARGET_GEOMETRY
         self.assertEqual(a, E.criteria_fingerprint())
+
+
+class ReadRows(unittest.TestCase):
+    def test_cp949_csv(self):                                    # 엑셀 'CSV (쉼표로 분리)' 저장(CP949)도 읽음 — 화면이 멈추지 않게
+        import shutil
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        try:
+            p = os.path.join(tmp, "testset_ai6.csv")
+            with open(p, "w", encoding="cp949", newline="") as f:
+                f.write("사례ID,명령유형,명령문\r\nAI6-0001,공간규제 분석,경산시 신천동 31-1 용도지역 보여줘\r\n")
+            rows = E.read_rows(p)
+            self.assertEqual(rows, [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "경산시 신천동 31-1 용도지역 보여줘"}])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class GoldPnu(unittest.TestCase):
@@ -412,6 +537,16 @@ class GoldPnu(unittest.TestCase):
         self.assertTrue(v["정상수행"], v["불일치"])
         sci = dict(GOLD_OVERLAP, 참조PNU="4.72901E+18", 정답파라미터="위치=경산시 신천동 31-1; 분석대상=용도지역·지구")
         self.assertTrue(any("엑셀이 숫자로" in p for p in E.validate(ts, [sci])))
+
+    def test_missing_or_blank_gold_is_not_system_error(self):  # 정답 행이 없거나 빈 칸 = 데이터 문제 — 점검에서 막고, 판정은 시스템 탓으로 안 셈
+        ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+        for gold in ({}, dict(GOLD_OVERLAP, 정답의도="")):
+            v, _ = run(ev, gold)
+            self.assertFalse(v["정상수행"])
+            self.assertNotIn(v["오류원인"], E.CAUSES, v["불일치"])
+        ts = [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "x"}]
+        for col in ("정답의도", "정답파라미터", "정답시나리오"):
+            self.assertTrue(any(f"{col} 없음" in p for p in E.blocking(E.validate(ts, [dict(GOLD_OVERLAP, **{col: ""})]))), col)
 
 
 class Score(unittest.TestCase):
@@ -432,12 +567,63 @@ class Score(unittest.TestCase):
         types = {r["명령 유형"]: r for r in s["유형별"]}
         self.assertEqual(types["산지·농지 규제 분석"]["오류"], 1)       # 가운뎃점 변형(ㆍ)도 같은 유형
 
+    def test_blank_id_row_not_in_denominator(self):             # 시험셋 CSV 끝의 빈 줄(',,') — 러너가 보내지 않으니 분모에도 넣지 않음
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8-sig", newline="") as f:
+            f.write("사례ID,명령유형,명령문\nAI6-0001,공간규제 분석,x\n,,\n")
+        self.addCleanup(os.remove, f.name)
+        ts = E.read_rows(f.name)
+        s = E.score([{"사례ID": "AI6-0001", "판정": "정상 수행", "오류원인": "", "불일치내용": []}], ts)
+        self.assertEqual((s["n"], s["ok"], s["value"], s["응답오류"]), (1, 1, 100.0, 0))
+        self.assertNotIn("", {r["명령 유형"] for r in s["유형별"]})
+
     def test_validate(self):
         ts = [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "x"}]
         ans = [dict(GOLD_OVERLAP, 정답의도="지도 이동; 엉뚱한 의도")]
         probs = E.validate(ts, ans)
         self.assertTrue(any("엉뚱한 의도" in p for p in probs))
         self.assertTrue(any("15건" in p for p in probs))
+
+
+class ConnFailStop(unittest.TestCase):                             # 연결 실패 3회 연속으로 멈춤 → 이어서 실행 안 내고, 공식 아님
+    def test_stop_is_not_resumable_and_not_official(self):
+        import csv
+        import shutil
+        import tempfile
+        import unittest.mock as um
+        import spec_runner_ai6 as R6
+        tmp, cwd = tempfile.mkdtemp(), os.getcwd()
+        try:
+            os.chdir(tmp)
+            ts, ans = "testset_ai6.csv", "answer_ai6.csv"
+            for name, rows in ((ts, [{"사례ID": f"AI6-{i:04d}", "명령유형": "공간규제 분석", "명령문": f"명령 {i}"} for i in range(1, 6)]),
+                               (ans, [dict(GOLD_OVERLAP, 사례ID=f"AI6-{i:04d}") for i in range(1, 6)])):
+                with open(name, "w", encoding="utf-8-sig", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=list(rows[0]))
+                    w.writeheader()
+                    w.writerows(rows)
+            base = "http://127.0.0.1:1"
+            with open(R6.FREEZE_FILE, "w", encoding="utf-8") as f:                 # 동결 → 원래는 공식 실행
+                json.dump(R6.freeze_record(ts, ans, None, 30, base), f)
+            res = dict(url=base + "/api/chat", request={}, thread_id="t", http_status=500, events=[], ended_by="http",
+                       t_first_event=None, elapsed=0.1, deadline=30, error="HTTP 500")
+            ok = [{"항목": "x", "결과": "정상", "내용": ""}]
+            argv = ["spec_runner_ai6.py", "--testset", ts, "--answer", ans, "--base", base, "--deadline", "30", "--status-file", "st.json"]
+            with um.patch.object(R6.C, "precheck", return_value=ok), um.patch.object(R6.C, "ready_info", return_value={}), \
+                    um.patch.object(R6.C, "llm_info", return_value={}), um.patch.object(R6.C, "stream_chat", side_effect=lambda *a, **k: dict(res)), \
+                    um.patch.object(R6.E, "validate", return_value=[]), um.patch.object(R6, "GAP", 0), um.patch.object(sys, "argv", argv):
+                R6.main()
+            with open("st.json", encoding="utf-8") as f:
+                st_ = json.load(f)
+            self.assertEqual((st_["state"], st_["done"]), ("error", 3))
+            self.assertNotIn("argv", st_)                                          # 화면이 '↻ 이어서'를 내지 않음
+            with open(os.path.join(st_["run_dir"], "meta.json"), encoding="utf-8") as f:
+                m = json.load(f)
+            self.assertFalse(m["공식"])
+            self.assertTrue(any("연결 실패" in w for w in m["예비사유"]))
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class Rescore(unittest.TestCase):                                  # 다시 판정: 원본 폴더는 그대로, 새 폴더는 한 겹 이름
@@ -481,6 +667,168 @@ class Rescore(unittest.TestCase):                                  # 다시 판�
             self.assertFalse(os.path.exists(os.path.join(src, E.GIS_LOG)))       # 원본 폴더에는 판정 기록을 쓰지 않음
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class StatusBeforePrecheck(unittest.TestCase):                     # 사전 점검이 오래 걸려도 화면이 '실행 중'으로 보도록 점검 전에 상태를 씀
+    def test_running_status_during_precheck(self):
+        import csv
+        import shutil
+        import tempfile
+        import unittest.mock as um
+        import spec_runner_ai6 as R6
+        tmp, cwd = tempfile.mkdtemp(), os.getcwd()
+        try:
+            os.chdir(tmp)
+            for name, row in (("testset_ai6.csv", {"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "명령 1"}),
+                              ("answer_ai6.csv", GOLD_OVERLAP)):
+                with open(name, "w", encoding="utf-8-sig", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=list(row))
+                    w.writeheader()
+                    w.writerow(row)
+            seen = {}
+
+            def precheck(*a, **k):                                  # 점검하는 동안 화면이 읽는 상태 파일
+                with open("st.json", encoding="utf-8") as f:
+                    seen.update(json.load(f))
+                return [{"항목": "x", "결과": "정상", "내용": ""}]
+            argv = ["spec_runner_ai6.py", "--testset", "testset_ai6.csv", "--answer", "answer_ai6.csv", "--cases", "AI6-0001",
+                    "--base", "http://127.0.0.1:1", "--deadline", "30", "--status-file", "st.json"]
+            with um.patch.object(R6.C, "precheck", side_effect=precheck), um.patch.object(R6.C, "ready_info", return_value={}), \
+                    um.patch.object(R6.C, "llm_info", return_value={}), \
+                    um.patch.object(R6.C, "stream_chat", return_value=dict(OK_RES, events=[], http_status=200)), \
+                    um.patch.object(R6, "GAP", 0), um.patch.object(sys, "argv", argv):
+                R6.main()
+            self.assertEqual((seen.get("state"), seen.get("pid")), ("running", os.getpid()))
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class Runner(unittest.TestCase):                                   # 실행기 main(): 상태 파일·이어서 실행·사전 점검 (보내는 곳은 닫힌 포트만)
+    BASE = "http://127.0.0.1:9"
+
+    def setUp(self):
+        import tempfile
+        import spec_runner_ai6 as R6
+        self.R6, self.tmp = R6, tempfile.mkdtemp()
+        self.sf = os.path.join(self.tmp, "st.json")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _csv(self, name, rows):
+        import csv
+        p = os.path.join(self.tmp, name)
+        with open(p, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0]))
+            w.writeheader()
+            w.writerows(rows)
+        return p
+
+    def _data(self, n=1, freeze=True):                             # 합성 시험셋·정답셋 n건(AI6-0001…), 기본 대응표, 동결
+        ts = self._csv("testset_ai6.csv", [{"사례ID": f"AI6-{i:04d}", "명령유형": "공간규제 분석",
+                                            "명령문": "경산시 신천동 31-1 용도지역 보여줘"} for i in range(1, n + 1)])
+        ans = self._csv("answer_ai6.csv", [{**GOLD_OVERLAP, "사례ID": f"AI6-{i:04d}"} for i in range(1, n + 1)])
+        if freeze:
+            with open(os.path.join(self.tmp, self.R6.FREEZE_FILE), "w", encoding="utf-8") as f:
+                json.dump(self.R6.freeze_record(ts, ans, None, 5, self.BASE), f)
+        return ["--testset", ts, "--answer", ans]
+
+    def _main(self, *args, precheck=()):
+        import contextlib
+        import io
+        import unittest.mock as um
+        R6 = self.R6
+        pc = precheck if callable(precheck) else (lambda *a, **k: [dict(r) for r in precheck])
+        with contextlib.ExitStack() as es:
+            for obj, name, val in ((sys, "argv", ["spec_runner_ai6.py", "--status-file", self.sf, "--base", self.BASE,
+                                                  "--deadline", "5", *args]),
+                                   (R6, "GAP", 0), (R6, "STOP_FILE", os.path.join(self.tmp, "stop.flag")),
+                                   (R6.E, "blocking", lambda probs: []), (R6.C, "precheck", pc),
+                                   (R6.C, "ready_info", lambda *a, **k: {}), (R6.C, "llm_info", lambda *a, **k: {})):
+                es.enter_context(um.patch.object(obj, name, val))
+            es.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            R6.main()
+
+    def _status(self):
+        try:
+            with open(self.sf, encoding="utf-8") as f:
+                return json.load(f)
+        except OSError:
+            return {}
+
+    def _meta(self, rd):
+        with open(os.path.join(rd, "meta.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def _gis(self, rd, cid):
+        with open(os.path.join(rd, E.GIS_LOG), encoding="utf-8") as f:
+            return [r for r in map(json.loads, f) if r["사례ID"] == cid][0]
+
+    def _lost_case(self, rd, raw=False):                           # 보낸 기록(attempts)만 있고 로그 줄이 없는 사례 AI6-0001
+        os.makedirs(os.path.join(rd, "raw"))
+        if raw:
+            ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+            with open(os.path.join(rd, "raw", "AI6-0001.json"), "w", encoding="utf-8") as f:
+                json.dump({"사례ID": "AI6-0001", "response": dict(OK_RES, events=[{"event": e, "data": d} for e, d in ev])}, f)
+        with open(os.path.join(rd, "attempts.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"사례ID": "AI6-0001", "thread_id": "t1", "at": "2026-11-10 12:00:00"}) + "\n")
+        with open(os.path.join(rd, "meta.json"), "w", encoding="utf-8") as f:
+            json.dump({"공식": True, "예비사유": []}, f)
+
+    def test_bad_testset_writes_error_status(self):                # 시험셋 칸이 틀리면 상태 파일에 오류로 남김(화면이 '시작 중'에 머물지 않게)
+        ts = self._csv("testset_ai6.csv", [{"사례ID": "AI6-0001", "명령유형": "지도 이동", "질의": "경산시 신천동 31-1로 이동"}])
+        with self.assertRaises(SystemExit):
+            self._main("--testset", ts, "--cases", "AI6-0001")
+        self.assertEqual(self._status().get("state"), "error")
+        self.assertIn("명령문", self._status().get("message", ""))
+
+    def test_conn_fail_stop_not_resumable_or_official(self):       # 연결 실패 3회 연속 → 전체 재수행 대상: '↻ 이어서' 없음 · 예비
+        rd = os.path.join(self.tmp, "run")
+        self._main(*self._data(4), "--run-dir", rd)
+        st, m = self._status(), self._meta(rd)
+        self.assertEqual((st["state"], st["done"]), ("error", 3))
+        self.assertNotIn("argv", st)
+        self.assertFalse(m["공식"])
+        self.assertTrue(any("연결 실패" in w for w in m["예비사유"]))
+
+    def test_status_written_before_precheck(self):                 # 사전 점검이 20초를 넘어도 화면이 '비정상 종료'로 보지 않게 먼저 씀
+        seen = {}
+
+        def pc(*a, **k):
+            seen.update(self._status())
+            return []
+        self._main(*self._data(1), "--run-dir", os.path.join(self.tmp, "run"), precheck=pc)
+        self.assertEqual((seen.get("state"), seen.get("pid")), ("running", os.getpid()))
+
+    def test_refused_start_leaves_no_folder(self):                 # 사전 점검 실패로 시작 못 한 실행 → 폴더를 남기지 않고 '↻ 이어서'도 안 냄
+        rd = os.path.join(self.tmp, "run")
+        with self.assertRaises(SystemExit):
+            self._main(*self._data(1), "--run-dir", rd, precheck=[{"항목": "공간분석 API", "결과": "실패", "내용": "ConnectionError"}])
+        self.assertEqual(self._status().get("state"), "error")
+        self.assertNotIn("argv", self._status())
+        self.assertFalse(os.path.exists(rd))
+
+    def test_resume_judges_saved_raw(self):                        # 원문은 저장했는데 기록 전에 멈춘 사례 → 저장된 원문으로 판정(응답 오류 아님)
+        rd = os.path.join(self.tmp, "run")
+        args = self._data(1, freeze=False)
+        self._lost_case(rd, raw=True)
+        self._main(*args, "--run-dir", rd, "--resume", "--no-precheck")
+        self.assertEqual(self._gis(rd, "AI6-0001")["판정"], "정상 수행")
+        self.assertTrue(self._meta(rd)["공식"])
+
+    def test_resume_uses_run_snapshot(self):                       # 이어서 실행은 처음 실행 때 사본(data/)으로 판정 — 그 사이 고친 정답이 섞이지 않게
+        import shutil
+        rd = os.path.join(self.tmp, "run")
+        args = self._data(1, freeze=False)
+        self._lost_case(rd)
+        os.makedirs(os.path.join(rd, "data"))
+        for n in ("testset_ai6.csv", "answer_ai6.csv"):
+            shutil.copy2(os.path.join(self.tmp, n), os.path.join(rd, "data"))
+        self._csv("answer_ai6.csv", [{**GOLD_OVERLAP, "정답의도": "지도 이동"}])          # 멈춘 뒤 정답을 고침
+        self._main(*args, "--run-dir", rd, "--resume", "--no-precheck")
+        self.assertEqual(self._gis(rd, "AI6-0001")["정답"]["정답의도"], GOLD_OVERLAP["정답의도"])
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -607,6 +955,15 @@ class LlmCheck(unittest.TestCase):                                 # 사전 점�
         llm = next(r for r in rows if r["항목"].startswith("LLM"))
         self.assertEqual(llm["결과"], "정상", llm["내용"])
         self.assertIn("공간오케 설정 모델과 같음", llm["내용"])
+
+
+class GisVersion(unittest.TestCase):
+    def test_precheck_records_gis_api_version(self):            # 동결 버전 확인 — 공간분석 API 버전은 OpenAPI 문서 info.version
+        import unittest.mock as um
+        doc = dict(ok=True, status=200, ms=1, body={"openapi": "3.0.1", "info": {"title": "GIS API", "version": "1.4.2"}})
+        with um.patch.object(C, "_get", return_value=doc):
+            rows = C.precheck("http://127.0.0.1:1", checks={"공간분석 API (GIS API Server)": "http://127.0.0.1:1/v3/api-docs"})
+        self.assertEqual((rows[0]["결과"], rows[0]["내용"]), ("정상", "GIS API 버전 1.4.2"))
 
 
 class Rules(unittest.TestCase):

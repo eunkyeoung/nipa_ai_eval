@@ -43,6 +43,12 @@ def call(cid, callee, tool, args, resolve, actions=None, status="ok"):
     return ev
 
 
+def layer_id(layer):
+    """정답 레이어 → 그 레이어 자료 테이블 ID (판정의 레이어 자료 대조를 통과하는 값). 모르는 레이어는 임의 ID"""
+    ok = next((sorted(v)[0] for k, v in E.LAYER_TABLES.items() if E.norm(k) == E.norm(layer)), None)
+    return ok or "lyr_" + str(abs(hash(layer)) % 10000)
+
+
 def events_for(message):
     g = next((v for k, v in GOLD.items() if v.get("_cmd") == message), None)
     if g is None and "지도 이동" in message:                 # 사전 점검의 주소 검색 1건(시험셋 밖 필지) — 위치 확정까지만
@@ -92,14 +98,14 @@ def events_for(message):
                 ev += call(cid, "land_attr_b", "parcelInfo", {"pnu": pnu, "action": "OVERLAP_PLAN"}, geo("result_geojson", POLY))
             else:
                 layer = targets[0] if targets else "개발제한구역"
-                lid = "lyr_" + str(abs(hash(layer)) % 10000)
+                lid = layer_id(layer)
                 ev += call(cid, "spatial_regulation", "tool.spatial.analysis", {"operation": "LAYER_FIND", "pnu": pnu, "lyr_query": layer},
                            {"status": "ok", "result": {"layers": [{"name": f"{layer} · 규제", "id": lid}]}})
                 ev += call(cid + "b", "spatial_regulation", "tool.spatial.analysis",
                            {"operation": "INTERSECTIONLAYER", "pnu": pnu, "lyr_id": lid}, geo("result_geojson", POLY))
         elif intent == "주변 규제 분석":
             layer = targets[0] if targets else "개발제한구역"
-            lid = "lyr_" + str(abs(hash(layer)) % 10000)
+            lid = layer_id(layer)
             ev += call(cid, "spatial_regulation", "tool.spatial.analysis", {"operation": "LAYER_FIND", "pnu": pnu, "lyr_query": layer},
                        {"status": "ok", "result": {"layers": [{"name": f"{layer} · 규제", "id": lid}]}})
             ev += call(cid + "b", "spatial_regulation", "tool.spatial.analysis",

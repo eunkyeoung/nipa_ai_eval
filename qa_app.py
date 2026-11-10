@@ -272,7 +272,9 @@ def progress_panel():
                 b1, b2 = h2.columns(2)
                 if b1.button("↻ 이어서", width="stretch", help="이미 받은 결과는 그대로 두고 남은 질의만 실행"):
                     argv = [a for a in stt["argv"] if a != "--resume"] + ["--resume"]
-                    launch([sys.executable, "-u", stt.get("script", "qa_runner.py")] + argv, total, resume=True)
+                    k = st.session_state.get("ai6_llm_key")      # AI6: 화면에 넣은 LLM 키를 이어서 실행에도 넘김 — 다시 하는 사전 점검도 모델까지 확인
+                    launch([sys.executable, "-u", stt.get("script", "qa_runner.py")] + argv, total, resume=True,
+                           env={"AI6_LLM_KEY": k, "VLLM_API_KEY": ""} if k else None)
                 close = b2.button("닫기", width="stretch")
             else:
                 close = h2.button("닫기", width="stretch")
@@ -361,9 +363,10 @@ if CHECK_VIEW:
     check_page.render(area)
     st.stop()
 if SPEC_VIEW:
-    _sitem = spec_page.sidebar(side, launch, is_running(read_status()))
+    _stt = read_status()
+    _sitem = spec_page.sidebar(side, launch, is_running(_stt))
     progress_panel()
-    spec_page.render(_sitem, area)
+    spec_page.render(_sitem, area, live=_stt.get("run_dir") if is_running(_stt) else None)
     st.stop()
 
 with side.popover("📂 정답셋 변경", width="stretch"):

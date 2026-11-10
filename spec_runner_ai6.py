@@ -255,13 +255,17 @@ def main():
         print(f"[AI6] 다시 판정 결과 폴더: {new} (예비 — 원래 실행 폴더는 그대로)", flush=True)
         return
 
+    live = (a.testset, a.answer, a.intent_map)             # 동결 확인은 지금 시험 데이터 폴더의 파일로
+    if a.resume and a.run_dir:                             # 이어서 실행은 처음 실행 때 사본(data/)으로 보내고 판정 — 그 사이 바뀐 파일이 섞이지 않게
+        cp = lambda p: os.path.join(a.run_dir, "data", os.path.basename(p))
+        a.testset, a.answer, a.intent_map = [cp(p) if p and os.path.exists(cp(p)) else p for p in live]
     base = (a.base or C.BASE).rstrip("/")
     deadline = float(a.deadline or C.DEADLINE)
     ts = E.read_rows(a.testset)
-    if not ts:
-        raise SystemExit(f"시험셋을 읽지 못했습니다: {a.testset}")
+    if not ts:                                             # 상태 파일에도 오류로 남김(화면이 '시작 중'에 머물지 않게)
+        refuse(a.status_file, f"시험셋을 읽지 못했습니다: {a.testset}")
     if "사례ID" not in ts[0] or "명령문" not in ts[0]:
-        raise SystemExit(f"시험셋에 '사례ID', '명령문' 컬럼이 필요합니다. 현재: {list(ts[0])}")
+        refuse(a.status_file, f"시험셋에 '사례ID', '명령문' 컬럼이 필요합니다. 현재: {list(ts[0])}")
     answers = {str(r.get("사례ID")): r for r in E.read_rows(a.answer)} if a.answer else {}
     rules = E.load_rules(a.intent_map) if a.intent_map else E.load_rules()
     ts = [r for r in ts if str(r.get("사례ID", "")).strip()]
@@ -272,17 +276,18 @@ def main():
     outside = any(not re.match(r"^AI6-\d{4}$", str(r.get("사례ID"))) for r in ts)   # 예비 실측(P6-…) 등 → 공식 결과 아님
     pilot = bool(a.cases or a.retry_errors or a.no_precheck or outside)
     data_check = E.validate(ts if not a.cases else E.read_rows(a.testset), list(answers.values()), rules)
-    if not pilot and not a.resume and E.blocking(data_check):
+    if not pilot and E.blocking(data_check):                    # 이어서 실행도 다시 점검 — 동결을 풀고 정답을 고친 뒤 이어 돌리는 경우
         refuse(a.status_file, f"시험 데이터 점검 문제 {len(E.blocking(data_check))}건이 있어 공식 실행을 시작하지 않아요: "
                + " / ".join(E.blocking(data_check)[:3]) + (" …" if len(E.blocking(data_check)) > 3 else ""))
-    freeze_path = os.path.join(os.path.dirname(os.path.abspath(a.testset)), FREEZE_FILE)
-    frozen = freeze_check(freeze_path, freeze_record(a.testset, a.answer, a.intent_map, deadline, base))
+    freeze_path = os.path.join(os.path.dirname(os.path.abspath(live[0])), FREEZE_FILE)
+    frozen = freeze_check(freeze_path, freeze_record(*live, deadline, base))
     if frozen:                                             # 규격: 의도 대응표는 시험 전에 확정하고 시험 기간 중 바꾸지 않음
         refuse(a.status_file, "동결 이후 바뀐 항목이 있어 실행하지 않아요: " + ", ".join(frozen)
                + " — 의도한 변경이면 화면에서 동결을 풀고 다시 동결하세요.")
 
     run_dir = a.run_dir or os.path.join("spec", "AI6", time.strftime("%Y%m%d_%H%M%S"))
     raw_dir = os.path.join(run_dir, "raw")
+    new_dir = not os.path.exists(run_dir)                  # 이번에 만든 폴더 — 사전 점검에서 막히면 지움
     os.makedirs(raw_dir, exist_ok=True)
     snap = os.path.join(run_dir, "data")
     os.makedirs(snap, exist_ok=True)
@@ -315,12 +320,34 @@ def main():
                        thread_id=at.get("thread_id"), http_status=None, events=[], ended_by="exception", t_first_event=None,
                        elapsed=None, deadline=deadline, 요청시각=at.get("at"),
                        error="QA 실행이 응답을 기록하기 전에 멈춤 — 명령 1회 입력 원칙에 따라 다시 보내지 않음")
-            pr, gr, _ = judge_one(r, answers.get(r["사례ID"]), res, rules)
+            try:                                           # 응답 원문은 저장했는데 기록 전에 멈춘 경우 → 저장된 원문으로 판정
+                with open(os.path.join(raw_dir, f"{r['사례ID']}.json"), encoding="utf-8") as f:
+                    saved = dict(json.load(f)["response"])
+                saved["events"] = [(e.get("event"), e.get("data")) for e in saved.get("events") or []]
+                pr, gr, _ = judge_one(r, answers.get(r["사례ID"]), saved, rules)
+            except Exception:                              # noqa: BLE001 — 원문이 없거나 깨졌거나 판정이 안 되면 응답 오류로 남김
+                pr, gr, _ = judge_one(r, answers.get(r["사례ID"]), res, rules)
+                lost += 1
             append_jsonl(parse_path, pr)
             append_jsonl(gis_path, gr)
             done.add(r["사례ID"])
-            lost += 1
     plan = [r for r in ts if r["사례ID"] not in done]
+
+    argv = sys.argv[1:]
+    if "--run-dir" not in argv:
+        argv += ["--run-dir", run_dir]
+    total = len(plan) + len(done)
+    status = dict(state="running", pid=os.getpid(), started=time.time(), script=SCRIPT, mode="성과지표 AI6",
+                  run_dir=run_dir, out=os.path.join(run_dir, "progress.xlsx"), total=total, done=len(done), current=None,
+                  message="사전 점검 중…", argv=argv)
+    write_status(a.status_file, status)                    # 사전 점검(주소 검색 포함 최대 2분)보다 먼저 — 20초 넘게 갱신이 없으면 화면이 비정상 종료로 봄
+    alive = threading.Event()
+
+    def heartbeat():
+        while not alive.wait(3):
+            write_status(a.status_file, status)
+    if a.status_file:
+        threading.Thread(target=heartbeat, daemon=True).start()
 
     mp = os.path.join(run_dir, "meta.json")
     fresh = None
@@ -357,27 +384,18 @@ def main():
     with open(mp, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1, default=str)
 
-    argv = sys.argv[1:]
-    if "--run-dir" not in argv:
-        argv += ["--run-dir", run_dir]
-    total = len(plan) + len(done)
-    status = dict(state="running", pid=os.getpid(), started=time.time(), script=SCRIPT, mode="성과지표 AI6",
-                  run_dir=run_dir, out=os.path.join(run_dir, "progress.xlsx"), total=total, done=len(done), current=None,
-                  message="이어서 실행" if a.resume else "", argv=argv)
+    status["message"] = "이어서 실행" if a.resume else ""
     bad = [r for r in fresh or [] if r.get("결과") != "정상"]   # 이번 실행에서 한 점검만
     if bad:                               # 사전 점검 실패 → 실행하지 않음(규격 시험환경 미충족)
+        alive.set()
         status.update(state="error", message="사전 점검 실패: " + ", ".join(f"{r['항목']}({r['내용'][:40]})" for r in bad),
                       finished=time.time())
+        if new_dir:                                        # 시작도 못 한 폴더는 남기지 않음(최신 결과 '미실행'으로 잡히지 않게) · '↻ 이어서'도 안 냄
+            shutil.rmtree(run_dir, ignore_errors=True)
+            status.pop("argv", None)
         write_status(a.status_file, status)
         raise SystemExit(status["message"])
     write_status(a.status_file, status)
-    alive = threading.Event()
-
-    def heartbeat():
-        while not alive.wait(3):
-            write_status(a.status_file, status)
-    if a.status_file:
-        threading.Thread(target=heartbeat, daemon=True).start()
 
     prog = [{"사례ID": r.get("사례ID"), "회차": 1, "명령유형": r.get("명령유형"), "질의": r.get("명령문"), "판단유형": r.get("판정"),
              "오류원인": r.get("오류원인"), "소요초": r.get("소요초")} for r in read_jsonl(gis_path)]
@@ -419,6 +437,10 @@ def main():
             if fails >= MAX_CONN_FAILS:
                 status.update(state="error", message=f"연결 실패 {fails}회 연속 ({status['done']}/{total}건) — 시험 환경 문제로 보고 멈췄어요. "
                                                      "원인을 고친 뒤 전체를 다시 실행하세요(규격: 환경이 바뀌면 전체 재수행).")
+                status.pop("argv", None)                   # 화면에 '↻ 이어서'를 내지 않음 — 이 폴더를 이어 돌려도 공식이 아님
+                meta.update(공식=False, 예비사유=(meta.get("예비사유") or []) + [f"연결 실패 {fails}회 연속으로 멈춤 — 전체 재수행 대상"])
+                with open(mp, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, ensure_ascii=False, indent=1, default=str)
                 break
             pause(COOLDOWN if res.get("ended_by") == "deadline" else GAP)
         if status["state"] == "running":
