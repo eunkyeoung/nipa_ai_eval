@@ -500,6 +500,33 @@ def labeled_raw(raw):
     return {f"{r['번호']} · {r['종류']}": e for r, e in zip(event_rows(raw), raw or [])}
 
 
+def diff_detail(base, other, diffs, err=None):
+    """불일치 필드별로 1회차 값 → 이번 회차 값 (집합은 추가·빠짐)"""
+    if not diffs:
+        return "-"
+    out = []
+    by_name = {x["단계명"]: x for x in other}
+    key = {"실행": "실행", "데이터소스": "데이터소스", "조회키": "조회키", "결과건수": "결과건수",
+           "적용룰셋": "적용룰셋", "검색법령": "검색법령", "최종판단": "중간판정값"}
+    for stage, f in diffs:
+        if f == "오류":
+            out.append(f"{stage}: {err or '응답 없음'}")
+            continue
+        if f == "실행순서":
+            seq = lambda L: "→".join(str(x["단계번호"]) for x in L if x["실행"])
+            out.append(f"실행 순서: 1회차 {seq(base)} / 이번 {seq(other)}")
+            continue
+        a = next((x for x in base if x["단계명"] == stage), {}).get(key[f])
+        b = by_name.get(stage, {}).get(key[f])
+        if f in ("적용룰셋", "검색법령"):
+            add, miss = sorted(set(b or []) - set(a or [])), sorted(set(a or []) - set(b or []))
+            out.append(f"{stage} {f}: " + " / ".join(x for x in (f"추가 {', '.join(add)}" if add else "",
+                                                               f"빠짐 {', '.join(miss)}" if miss else "") if x))
+        else:
+            out.append(f"{stage} {f}: 1회차 {a} → 이번 {b}")
+    return " / ".join(out)
+
+
 def compare_steps(base, other):
     """두 회차 6단계 로그 비교 → 불일치 단계 목록 [(단계명, 필드)]  (규격서 v1.51 비교 대상 필드만)
     단계 실행 순서(①~⑥ 실행 여부·순서), 조회 데이터소스, 조회 키·결과 건수, 적용 룰셋 ID 집합(⑤),
@@ -595,6 +622,37 @@ def gold_cites(v):
 
 
 # ---------------------------------------------------------------- [AI 1]
+def ai_basis(r):
+    """AI가 밝힌 판단 근거 한 줄: 불허 사유 → 위반 조건 → 결론문 → 설명문 순"""
+    for k in ("불허사유", "위반조건"):
+        v = r.get(k)
+        if isinstance(v, (list, tuple)) and [x for x in v if x]:
+            return "; ".join(str(x) for x in v if x)
+    for k in ("결론문", "설명문"):
+        v = str(r.get(k) or "").strip()
+        if v and v != "nan":
+            return v[:200]
+    return "응답에 근거 설명 없음"
+
+
+def mismatch_reason(gv, pv, r, gc=None, pc=None, gl=None, pl=None):
+    """판단·근거 조문·적용 법령 불일치 사유 문장"""
+    why = []
+    if gv != pv:
+        if pv == UNDECIDED:
+            why.append(f"판단 불일치 — 정답 {gv}, AI 판단 없음({r.get('원판정') or r.get('오류') or '판정 미제시'})")
+        else:
+            why.append(f"판단 불일치 — 정답 {gv}, AI {pv}. AI 판단 근거: {ai_basis(r)}")
+    if gc and pc is not None and not cite_set_equal(pc, gc):
+        only_g = sorted(fmt_cite(c) for c in gc if not any(cite_match(p, c) for p in pc))
+        only_p = sorted(fmt_cite(c) for c in pc if not any(cite_match(c, g) for g in gc))
+        why.append("근거 조문 불일치 — " + " / ".join(x for x in (
+            f"정답에만 있음: {', '.join(only_g)}" if only_g else "", f"AI에만 있음: {', '.join(only_p)}" if only_p else "") if x))
+    if gl and pl is not None and not gl <= pl:
+        why.append(f"적용 법령 불일치 — AI 응답에 없는 정답 법령: {', '.join(sorted(law_id(x) for x in gl - pl))}")
+    return " / ".join(why) or "-"
+
+
 def score_ai1(log, answer):
     """판단 유형 2종 정확도 + 보조 지표(근거조문, 적용법령)"""
     a = answer.set_index("사례ID")
@@ -615,6 +673,7 @@ def score_ai1(log, answer):
                          정답_적용법령="; ".join(split_list(g.get("적용법령"))) if g is not None else "",
                          예측_적용법령="; ".join(r.get("적용법령") or []),
                          적용법령_일치=(gl <= pl if gl else None),
+                         불일치사유=mismatch_reason(gv, pv, r, gc, pc, gl, pl),
                          **{c: r.get(c, "") for c in REF_COLS if c in log.columns}))
     res = pd.DataFrame(rows)
     n = len(res)
@@ -793,6 +852,7 @@ def score_ai2(log, answer, testset=None):
     log["정답_판단유형"] = log["시나리오ID"].map(lambda s: type2(a.loc[str(s)].get("판단유형")) if str(s) in a.index else UNDECIDED)
     log["예측_판단유형"] = log["판단유형"].fillna(UNDECIDED)
     log["일치"] = log["정답_판단유형"] == log["예측_판단유형"]
+    log["불일치사유"] = [mismatch_reason(g, p, r) for g, p, (_, r) in zip(log["정답_판단유형"], log["예측_판단유형"], log.iterrows())]
     n = len(log)
     cols = TYPE2 + ([UNDECIDED] if (log["예측_판단유형"] == UNDECIDED).any() else [])
     cm = pd.crosstab(log["정답_판단유형"], log["예측_판단유형"]).reindex(index=TYPE2, columns=cols, fill_value=0)
@@ -830,7 +890,7 @@ def score_ai2(log, answer, testset=None):
                 tables={"판단 유형 2종별 Precision·Recall·F1 스코어": pd.DataFrame(rows),
                         "보조 지표: 표현 변형 재현 일치율 (시나리오별·전체)": pd.DataFrame(rep_rows)},
                 aux={"표현 변형 재현 일치율(%)": pct(var_ok, var_n)},
-                cases=log[["질의ID", "시나리오ID", "구분", "질의문", "정답_판단유형", "예측_판단유형", "일치"]])
+                cases=log[["질의ID", "시나리오ID", "구분", "질의문", "정답_판단유형", "예측_판단유형", "일치", "불일치사유"]])
 
 
 # ---------------------------------------------------------------- [AI 3]
@@ -859,6 +919,7 @@ def score_ai3(log):
                              "기준": "기준 (1회차)" if int(r["회차"]) == int(g.iloc[0]["회차"]) else "1회차와 비교",
                              "일치": ok, "불일치 단계": "; ".join(sorted({d[0] for d in diffs})) or "없음",
                              "불일치 필드": "; ".join(f"{d[0][:1]}{d[1]}" for d in diffs) or "없음",
+                             "불일치 내용": diff_detail(base, r.get("단계로그") or [], diffs, r.get("오류")),
                              "최종 판단": next((s["중간판정값"] for s in r["단계로그"] if s["단계번호"] == 6), "")})
         case_ok.append({"사례ID": cid, "질의문": g.iloc[0].get("질의문", ""), "수행 횟수": len(g), "일치 수행": sum(x["일치"] for x in run_rows if x["사례ID"] == cid),
                         "5회 모두 일치": all_ok})
