@@ -39,6 +39,17 @@ CHECKS = {
 
 END_EVENTS = ("turn.finished", "error")
 
+# 공간오케는 에이전트를 모니터 중계(17007) → 콘솔 /proxy(18800)로 부름 — 콘솔·중계가 내려가면 주소가 든 사례가 전부 실패(D-199)
+REQUIRED_SERVICES = [x.strip() for x in os.environ.get(
+    "AI6_REQUIRED_SERVICES", "map_navigation_b,land_attr_b,road_access,spatial_regulation,land_regulation,"
+    "map-control-mcp,parcel-info,land-mcp,road-mcp,spatial-mcp,regulation-mcp,vllm").split(",") if x.strip()]
+RELAY_AGENTS = ["map_navigation_b", "land_attr_b", "road_access", "spatial_regulation", "land_regulation"]
+
+
+def _host_url(base, port, path):
+    from urllib.parse import urlparse
+    return f"http://{urlparse(base).hostname or '127.0.0.1'}:{port}{path}"
+
 
 def new_thread_id(case_id=""):
     tag = "".join(ch for ch in str(case_id) if ch.isalnum() or ch in "-_")[:24]
@@ -311,6 +322,9 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120):
     if base != BASE:                                               # 화면에서 공간오케 주소를 바꾼 경우
         items["공간오케 (/health)"] = base + "/health"
         items["공간오케 준비 상태 (/ready)"] = base + "/ready"
+    if checks is None:
+        items["콘솔 서비스 (에이전트·MCP 가동)"] = os.environ.get("AI6_CONSOLE_URL") or _host_url(base, 18800, "/api/stack")
+        items["모니터 중계 (공간오케 → 에이전트)"] = os.environ.get("AI6_RELAY_URL") or _host_url(base, 17007, "/api/status")
     rows = []
     llm_key = os.environ.get("AI6_LLM_KEY", "")
     for name, url in items.items():
@@ -330,6 +344,22 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120):
             elif name.startswith("LLM"):
                 ids = [m.get("id") for m in r["body"].get("data") or [] if isinstance(m, dict)]
                 detail = "모델: " + ", ".join(map(str, ids))
+            elif name.startswith("콘솔"):
+                svc = {str(x.get("name")): x for x in r["body"].get("services") or [] if isinstance(x, dict)}
+                down = [n for n in REQUIRED_SERVICES if n in svc and not svc[n].get("up")]
+                gone = [n for n in REQUIRED_SERVICES if n not in svc]
+                r["ok"] = not down and not gone
+                detail = (f"필수 {len(REQUIRED_SERVICES)}개 가동" if r["ok"] else
+                          "; ".join(x for x in (f"내려감 {', '.join(down)}" if down else "", f"목록에 없음 {', '.join(gone)}" if gone else "") if x))
+            elif name.startswith("모니터 중계"):
+                b = r["body"]
+                relay = b.get("relay") if isinstance(b.get("relay"), dict) else {}
+                bad = [a for a in RELAY_AGENTS if a in relay and (relay[a] or {}).get("status") not in (200, None)]
+                core_ok = (b.get("core") or {}).get("alive") is not False
+                console_ok = (b.get("console") or {}).get("ok") is not False
+                r["ok"] = core_ok and console_ok and not bad
+                detail = (f"코어 {'정상' if core_ok else '응답 없음'} · 콘솔 {'정상' if console_ok else '연결 안 됨'}"
+                          + (f" · 중계 실패 {', '.join(bad)}" if bad else f" · 중계 {sum(1 for a in RELAY_AGENTS if a in relay)}개 정상"))
         elif not r["ok"]:
             detail = str(r["body"])[:200]
         rows.append({"항목": name, "주소": url, "결과": "정상" if r["ok"] else "실패", "응답(ms)": r["ms"], "내용": detail})

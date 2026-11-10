@@ -86,15 +86,16 @@ CRITERIA = {
            "① 의도 추출: 시스템이 실제로 부른 기능과 지도 동작을 의도 대응표로 바꾼 의도가 정답 의도와 집합 완전 일치 — "
            "빠지거나 남으면 오류(부분 일치 = 오류). 레이어 찾기·토지이용계획 조회 같은 보조 호출은 세지 않고, "
            "공간오케가 보낸 의도 코드는 참고로만 기록\n\n"
-           "② 파라미터 추출: 위치는 대상 필지 PNU로 대조, 분석대상(분석 종류·레이어)은 집합 완전 일치, 명령에 든 반경·거리는 값으로 대조"
-           "(±0.5 m, '300m' = '0.3km'). 표기만 다른 경우는 일치('263번지' = '263', 가운뎃점·공백 무시). 정답에 없는 반경을 쓰면 오류\n\n"
+           "② 파라미터 추출: 위치는 대상 필지 PNU(필지 선택·분석 호출에 쓴 PNU, 검색 후보는 제외)로 대조, 분석대상(분석 종류·레이어)은 "
+           "집합 완전 일치 — 레이어는 공간오케가 실제로 고른 레이어로 대조, 명령에 든 반경은 단위만 맞춰 값이 같아야 함"
+           "('300m' = '0.3km', 300.4m ≠ 300m). 표기만 다른 경우는 일치('263번지' = '263', 가운뎃점·공백 무시). "
+           "정답에 없는 반경을 쓰면 오류\n\n"
            "③ GIS 지도 제어: 응답의 지도 제어 명령(대상 필지 선택·이동, 확대/축소)과 표출 도형(대상 필지 도형·분석 결과 도형)이 "
            "정답 시나리오와 일치 — 정답의 도형이 모두 와야 함(남는 도형은 기록만)\n\n"
-           "되묻기(후보 선택 요청)는 오류 — 위치 후보가 여럿이거나 필요한 값이 없어 되물으면 원인은 '핵심 파라미터 추출 오류'. "
-           "위치를 못 정해 분석이 시작되지 않으면, 위치 확정 호출이 시스템 사유로 실패했을 때 'GIS 지도 제어 실행 오류', "
-           "대상 필지를 못 찾았을 때 '핵심 파라미터 추출 오류'. 무응답·응답 대기 상한 초과·연결 실패·시스템 오류 이벤트는 "
-           "'응답 오류'로 따로 집계(도구가 실패해도 답변이 오면 응답한 것으로 보고 ①②③으로 판정). "
-           "그 밖의 오류 원인은 ① → ② → ③ 중 처음 어긋난 기준.\n\n"
+           "되묻기(후보 선택 요청)는 오류. 무응답·응답 대기 상한 초과·연결 실패·시스템 오류 이벤트는 '응답 오류'로 따로 집계"
+           "(도구가 실패해도 답변이 오면 응답한 것으로 보고 ①②③으로 판정). "
+           "오류 원인은 규격대로 ① → ② → ③ 중 처음 어긋난 기준 — 되묻기 사유·위치 미확정 같은 내용은 '세부 원인'으로 따로 남김. "
+           "\n\n"
            "호출 순서·중심 좌표·줌 레벨·산출 면적·거리는 로그에만 기록하고 판정에 쓰지 않음(명령에 든 반경만 ②에서 판정). "
            "결과는 소수점 셋째자리 이하 버림.",
     "AI7": "사례마다 ① 의도 추출 ② 핵심 파라미터(위치·층수·높이·용도·기준일·시간대·조망점 등) ③ 3D 시뮬레이션 실행(3D 지도 상태·생성 객체·"
@@ -311,6 +312,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
 AI6_COLS = {"testset_ai6": ["사례ID", "명령유형", "명령문"],
             "answer_ai6": ["사례ID", "명령유형", "정답의도", "정답파라미터", "정답시나리오", "참조PNU"],
             "intent_map_ai6": ["정답의도", "근거", "값", "비고"]}
+AI6_OPT_COLS = {"answer_ai6": ["검증자", "교차검증자", "검증일"]}   # 있으면 그대로 옮김 (규격: GIS 전문가가 정답 라벨 검증)
 AI6_SHEET_KEYS = {"testset_ai6": ("testset", "질문지", "시험셋"), "answer_ai6": ("answer", "정답지", "정답셋"),
                   "intent_map_ai6": ("intent_map", "대응표")}
 
@@ -342,7 +344,7 @@ def import_ai6_workbook(data):
                 continue
             if lack:
                 raise ValueError(f"'{sheet}' 시트에 칸이 없어요: {', '.join(lack)}")
-            plan[stem] = (sheet, cols, rows)
+            plan[stem] = (sheet, cols + [c for c in AI6_OPT_COLS.get(stem, []) if rows and c in rows[0]], rows)
         if "intent_map_ai6" in plan:                               # 대응표 형식(근거 종류 등)까지 확인
             import io as _io
             buf = _io.StringIO()
@@ -400,7 +402,7 @@ def sidebar_ai6(side, launch, running, missing):
                              help="POST {주소}/api/chat 으로 명령을 보내요. 기본값은 환경변수 AI6_BASE")
         deadline = st.number_input("사례당 응답 대기 상한(초)", 30, 1200, int(fz.get("deadline_s") or C6.DEADLINE), 10, key="ai6_deadline",
                                    help="규격서 시험조건의 응답 대기 상한 — 넘기면 연결을 끊고 '응답 오류'로 집계 (회의에서 값 확정, 동결 대상)")
-        probe = st.checkbox("사전 점검에 주소 검색 1건 포함 (V-World 경유)", key="ai6_probe",
+        probe = st.checkbox("사전 점검에 주소 검색 1건 포함 (V-World 경유)", value=True, key="ai6_probe",
                             help=f"공간오케에 시험셋에 없는 명령 1건('{C6.PROBE_MESSAGE}')을 보내 위치 검색이 되는지 확인해요")
     if side.button("사전 점검", width="stretch", disabled=running,
                    help="공간오케 /health·/ready, LLM, 공간분석 API 응답을 확인해요. 실행할 때도 다시 점검하고, 실패하면 실행하지 않아요."):
@@ -413,7 +415,7 @@ def sidebar_ai6(side, launch, running, missing):
         side.caption(("✅ 사전 점검 정상" if not bad else f"❌ 사전 점검 실패 {len(bad)}건 — 실행하면 시작하지 않고 멈춰요") + f" · {pc['at']}")
         with side.expander("사전 점검 결과", expanded=bool(bad)):
             show_table(pd.DataFrame(pc["rows"]))
-    cur = R6.freeze_record(ts_p, ans_p, map_p, deadline) if ts_p and ans_p else None
+    cur = R6.freeze_record(ts_p, ans_p, map_p, deadline, base) if ts_p and ans_p else None
     diff = R6.freeze_check(fz_path, cur) if cur else None
     if fz:                                                         # 규격: 의도 대응표는 시험 전에 확정, 시험 기간 중 변경 안 함
         side.caption(f"🔒 동결됨 · {fz.get('frozen_at', '')}" + (f" — ❌ 바뀐 항목: {', '.join(diff)} (실행 안 됨)" if diff else
@@ -430,16 +432,21 @@ def sidebar_ai6(side, launch, running, missing):
         st.rerun()
     ids = side.multiselect("실행할 ID (비우면 전체)", [r.get("사례ID") for r in ts_rows], key="spec_ids_AI6")
     n = len(ids) or len(ts_rows)
-    side.caption(f"명령 {n}건 · 예상 약 {max(1, n * 30 // 60)}분 (명령당 약 30초, 최대 {n * int(deadline) // 60}분)"
+    side.caption(f"명령 {n}건 · 예상 약 {max(1, n * 20 // 60)}분 (2026-11-10 실측 명령당 4~19초 + 간격, 최대 {n * int(deadline) // 60}분)"
                  + (" · ID를 골라 돌리면 '예비 실행'으로 기록돼요(공식 결과 아님)" if ids else ""))
-    blocked = bool(missing) or not ts_rows or not ans_rows or bool(rule_err) or bool(diff)
+    data_block = bool(E6.blocking(probs)) and not ids                 # 데이터 문제가 있으면 공식(전체) 실행은 막고, ID를 고른 예비 실행만
+    blocked = bool(missing) or not ts_rows or not ans_rows or bool(rule_err) or bool(diff) or data_block
     run = side.button("⏳ 실행 중…" if running else "AI 6 지도 제어 시험 실행", type="primary", width="stretch",
                       disabled=running or blocked,
                       help="결과는 spec/AI6/<시각>/ 에 저장돼요(명령 해석 로그 · 실행 결과 로그 · 결과표). 백그라운드에서 실행됩니다.")
     if missing:
         side.caption("❌ 표시된 파일을 먼저 올려 주세요 (📂 시험 데이터).")
+    if not fz and ts_rows and not ids:
+        side.caption("ℹ️ 동결하지 않고 돌린 실행은 '예비'로 기록돼요 — 예비 실측을 마친 뒤 🔒 동결하고 공식 실행하세요.")
     if rule_err:
         side.caption("❌ 의도 대응표 형식이 달라 실행할 수 없어요 — 위 '시험 데이터 점검'을 보세요.")
+    elif data_block:
+        side.caption("❌ 시험 데이터 점검 문제가 있어 전체(공식) 실행은 막혀요 — 고친 뒤 실행하거나, ID를 골라 예비로 돌려 보세요.")
     if run and not blocked and not running:                        # 비활성 버튼이 눌린 것처럼 와도 한 번 더 막음
         import qa_runner
         cmd = [sys.executable, "-u", S.SPEC["AI6"]["runner"], "--testset", ts_p, "--answer", ans_p,
@@ -489,12 +496,14 @@ def ai6_detail(run_dir, cid):
            ("① 의도 / ② 파라미터 / ③ 지도 제어", " / ".join("O" if gr.get(k) else ("-" if gr.get(k) is None else "X")
                                                     for k in ("①의도", "②파라미터", "③지도제어"))),
            ("불일치 내용", " | ".join(gr.get("불일치내용") or []) or "-"),
+           ("세부 원인", gr.get("세부원인") or "-"),
            ("참고 (판정 제외)", " | ".join(gr.get("참고") or []) or "-"),
            ("정답 의도", (gr.get("정답") or {}).get("정답의도")), ("해석 의도(대응표 적용)", "; ".join(pr.get("해석의도") or [])),
            ("의도 근거", "; ".join(f"{e.get('의도')} ← {e.get('근거')} {e.get('값')}" for e in pr.get("의도근거") or [])),
            ("정답 파라미터", (gr.get("정답") or {}).get("정답파라미터")), ("핵심 파라미터(시스템)", j(pr.get("핵심파라미터"))),
            ("정답 시나리오", (gr.get("정답") or {}).get("정답시나리오")),
            ("실행 대상 기능(호출)", calls or "-"), ("지도 제어 명령", acts or "-"), ("표출 도형", geoms or "-"),
+           ("고른 레이어", ", ".join(f"{c.get('name') or '이름 모름'} ({c.get('lyr_id')})" for c in pr.get("고른레이어") or []) or "-"),
            ("되묻기", "예 — " + j(pr.get("되묻기내용")) if gr.get("되묻기") else "아니오"),
            ("응답 오류", gr.get("응답오류") or "-"), ("소요(초)", gr.get("소요초")), ("thread_id", gr.get("thread_id")),
            ("최종 응답", (gr.get("최종응답") or "-")[:500])]
@@ -521,7 +530,7 @@ def overview():
                      "진단 결과": fmt_pct(sm.get("value"), it) if sm else "미실행",
                      "목표": target_txt(it),
                      "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
-                     "대상": sm.get("n", "-"), "실행": os.path.basename(rs[0]) if rs else "-"})
+                     "대상": str(sm.get("n", "-")), "실행": os.path.basename(rs[0]) if rs else "-"})
     return pd.DataFrame(rows)
 
 
@@ -564,12 +573,13 @@ def render(item, area, help_fn=None):
         spec_runner.run_score(item, run_dir, ans, ts, law)
         st.toast("저장했어요")
     if auto6 and hc[2].button("🔁 다시 판정", width="stretch",
-                              help="공간오케에 다시 묻지 않고, 저장된 응답 원문을 지금 spec_data 의 정답셋·의도 대응표로 다시 판정해요. "
-                                   "처음 실행한 로그는 original_logs/ 에 그대로 보관돼요(공식 결과)."):
+                              help="공간오케에 다시 묻지 않고, 저장된 응답 원문을 지금 spec_data 의 정답셋·의도 대응표로 다시 판정해 "
+                                   "새 폴더 '<이 폴더>_재판정_<시각>'에 '예비'로 남겨요. 이 실행 폴더(공식 결과)는 바뀌지 않아요."):
         import spec_runner_ai6
-        spec_runner_ai6.rescore(run_dir, data_path("answer_ai6"), None, data_path("intent_map_ai6"))
+        new, _ = spec_runner_ai6.rescore(run_dir, data_path("answer_ai6"), None, data_path("intent_map_ai6"))
+        st.session_state["spec_run_dir"] = new
         st.cache_data.clear()
-        st.toast("다시 판정했어요")
+        st.toast(f"다시 판정 결과를 새 폴더에 남겼어요: {os.path.basename(new)}")
         st.rerun()
 
     # ---- 핵심 지표
@@ -620,7 +630,8 @@ def render(item, area, help_fn=None):
             env.append(("반복 횟수", meta.get("repeat", "-")))
         if auto6:
             import ai6_eval as E6
-            rd, rsc = meta.get("ready") or {}, (meta.get("rescored") or [None])[-1]
+            rd, rsc = meta.get("ready") or {}, meta.get("rescored")
+            rsc = rsc[-1] if isinstance(rsc, list) and rsc else rsc
             env = [env[0],
                    ("대상 시스템 (공간오케)", meta.get("endpoint") or meta.get("base") or "-"),
                    ("LLM 모델 (공간오케 /ready)", rd.get("LLM 모델") or "-"),
@@ -637,7 +648,8 @@ def render(item, area, help_fn=None):
                         else "아니오 (동결 전 실행)"))
             if rsc:
                 env.append(("다시 판정", f"{rsc.get('at')} — 정답셋 {str(rsc.get('answer_sha256') or '-')[:16]}… · "
-                                       f"대응표 {str(rsc.get('intent_map_sha256') or '기본')[:16]}… (처음 실행 로그는 original_logs/)"))
+                                       f"대응표 {str(rsc.get('intent_map_sha256') or '기본')[:16]}…"
+                                       + (f" (원본 실행 폴더 {meta['원본']})" if meta.get("원본") else "")))
         elif sp.get("cmd"):
             env = [x for x in env if x[0] not in ("대상 시스템", "시스템 빌드 / 계약 버전")]
             env.insert(1, ("실행 결과 파일 SHA-256", f"{meta.get('result_sha256') or '-'}  ({meta.get('result_file') or '-'})"))

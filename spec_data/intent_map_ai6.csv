@@ -1,5 +1,5 @@
 ﻿정답의도,근거,값,비고
-지도 이동,호출,map_navigation_b:INTEGRATED_LOCATION_SEARCH|map_navigation_b:SELECT|map_navigation_b:MOVE_TO|map_navigation_b:CENTER|map_navigation_b:MOVE_AND_ZOOM|map_navigation_b:FIT_BOUNDS|map_navigation_b:HIGHLIGHT,주소가 있으면 공간오케가 위치 확정(검색 → SELECT)을 자동으로 붙임. 대상 필지 강조(SELECT_FEATURE → HIGHLIGHT)도 여기에 흡수
+지도 이동,호출,map_navigation_b:INTEGRATED_LOCATION_SEARCH|map_navigation_b:SELECT|map_navigation_b:MOVE_TO|map_navigation_b:CENTER|map_navigation_b:MOVE_AND_ZOOM|map_navigation_b:FIT_BOUNDS|map_navigation_b:HIGHLIGHT|map_navigation_b:ADD_MARKER,주소가 있으면 공간오케가 위치 확정(검색 → SELECT)을 자동으로 붙임. 대상 필지 강조(SELECT_FEATURE → HIGHLIGHT)·마커(MAP_MARKER)도 여기에 흡수
 지도 이동,동작,SELECT|MOVE_TO|CENTER|MOVE_AND_ZOOM|FIT_BOUNDS,화면 이동 명령
 지도 확대/축소,호출,map_navigation_b:SET_ZOOM|map_navigation_b:ZOOM_IN|map_navigation_b:ZOOM_OUT,
 지도 확대/축소,동작,SET_ZOOM|ZOOM_IN|ZOOM_OUT,

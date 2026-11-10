@@ -85,16 +85,18 @@ def events_for(message):
                 ev += call(cid, "land_attr_b", "parcelInfo", {"pnu": pnu, "action": "OVERLAP_PLAN"}, geo("result_geojson", POLY))
             else:
                 layer = targets[0] if targets else "개발제한구역"
+                lid = "lyr_" + str(abs(hash(layer)) % 10000)
                 ev += call(cid, "spatial_regulation", "tool.spatial.analysis", {"operation": "LAYER_FIND", "pnu": pnu, "lyr_query": layer},
-                           {"status": "ok", "result": {"lyr_id": "lsmd_cont_ud801"}})
+                           {"status": "ok", "result": {"layers": [{"name": f"{layer} · 규제", "id": lid}]}})
                 ev += call(cid + "b", "spatial_regulation", "tool.spatial.analysis",
-                           {"operation": "INTERSECTIONLAYER", "pnu": pnu, "lyr_id": "lsmd_cont_ud801"}, geo("result_geojson", POLY))
+                           {"operation": "INTERSECTIONLAYER", "pnu": pnu, "lyr_id": lid}, geo("result_geojson", POLY))
         elif intent == "주변 규제 분석":
             layer = targets[0] if targets else "개발제한구역"
+            lid = "lyr_" + str(abs(hash(layer)) % 10000)
             ev += call(cid, "spatial_regulation", "tool.spatial.analysis", {"operation": "LAYER_FIND", "pnu": pnu, "lyr_query": layer},
-                       {"status": "ok", "result": {"lyr_id": "lsmd_cont_ud801"}})
+                       {"status": "ok", "result": {"layers": [{"name": f"{layer} · 규제", "id": lid}]}})
             ev += call(cid + "b", "spatial_regulation", "tool.spatial.analysis",
-                       {"operation": "LAYER_NEARBY", "pnu": pnu, "lyr_id": "lsmd_cont_ud801", "distance": f"{dist:g}"}, geo("result_geojson", POLY))
+                       {"operation": "LAYER_NEARBY", "pnu": pnu, "lyr_id": lid, "distance": f"{dist:g}"}, geo("result_geojson", POLY))
         elif intent == "버퍼 분석":
             ev += call(cid, "spatial_regulation", "tool.spatial.analysis", {"operation": "BUFFER", "pnu": pnu, "distance": f"{dist:g}"},
                        {"status": "ok", "pnu": pnu, "geom": {"result_geojson": [POLY]}})
@@ -123,8 +125,12 @@ class H(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        import ai6_client as C
         body = {"/health": {"status": "ok"}, "/ready": {"ready": True, "vllm_diag": {"model": "openai/gpt-oss-120b"}},
-                "/v1/models": {"data": [{"id": "openai/gpt-oss-120b"}]}, "/v3/api-docs": {"openapi": "3.0.1"}}.get(self.path, {})
+                "/v1/models": {"data": [{"id": "openai/gpt-oss-120b"}]}, "/v3/api-docs": {"openapi": "3.0.1"},
+                "/api/stack": {"services": [{"name": n, "up": True} for n in C.REQUIRED_SERVICES]},
+                "/api/status": {"core": {"alive": True}, "console": {"ok": True},
+                                "relay": {a: {"status": 200, "failures": 0} for a in C.RELAY_AGENTS}}}.get(self.path, {})
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()

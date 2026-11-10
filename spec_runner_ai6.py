@@ -76,10 +76,10 @@ def rules_sha256(intent_map):
     return sha256(intent_map) if intent_map else "기본:" + hashlib.sha256(E.rules_csv().encode("utf-8")).hexdigest()
 
 
-def freeze_record(testset, answer, intent_map, deadline):
-    """동결할 값 — 시험셋·정답셋·의도 대응표·판정 기준 지문·응답 대기 상한"""
+def freeze_record(testset, answer, intent_map, deadline, base=None):
+    """동결할 값 — 시험셋·정답셋·의도 대응표·판정 기준 지문·응답 대기 상한·공간오케 주소"""
     return dict(testset_sha256=sha256(testset), answer_sha256=sha256(answer), intent_map_sha256=rules_sha256(intent_map),
-                criteria_sha256=E.criteria_fingerprint(), deadline_s=float(deadline))
+                criteria_sha256=E.criteria_fingerprint(), deadline_s=float(deadline), base=(base or C.BASE).rstrip("/"))
 
 
 def freeze_check(freeze_path, cur):
@@ -89,8 +89,8 @@ def freeze_check(freeze_path, cur):
     with open(freeze_path, encoding="utf-8") as f:
         fz = json.load(f)
     names = {"testset_sha256": "시험셋", "answer_sha256": "정답셋", "intent_map_sha256": "의도 대응표",
-             "criteria_sha256": "판정 기준(코드)", "deadline_s": "응답 대기 상한"}
-    return [names[k] for k in names if str(fz.get(k)) != str(cur.get(k))]
+             "criteria_sha256": "판정 기준(코드)", "deadline_s": "응답 대기 상한", "base": "공간오케 주소"}
+    return [names[k] for k in names if k in fz and str(fz.get(k)) != str(cur.get(k))]
 
 
 def sha256(path):
@@ -186,21 +186,26 @@ def judge_one(case, gold, res, rules):
 
 
 def rescore(run_dir, answer, testset, intent_map):
-    """원문(raw/*.json)으로 두 로그를 다시 만들고 채점 — 정답·대응표를 고친 뒤 개발 중 확인용(공식 시험 결과는 다시 묻지 않은 원래 로그)"""
-    snap = os.path.join(run_dir, "data")
+    """원문(raw/*.json)을 다시 판정해 새 폴더 '<실행 폴더>_재판정_<시각>'에 씀 — 정답·대응표를 고친 뒤 확인용(예비).
+    공식 실행 폴더는 건드리지 않음(실행 뒤에 대응표를 바꿔 점수가 바뀌는 일을 막음). 돌려주는 값: (새 폴더, 채점 결과)"""
+    src = os.path.normpath(run_dir)
+    snap = os.path.join(src, "data")
     pick = lambda p, name: p or next(iter(sorted(glob.glob(os.path.join(snap, name)))), None)
     answer, testset, intent_map = pick(answer, "answer_ai6.*"), pick(testset, "testset_ai6.*"), pick(intent_map, "intent_map_ai6.*")
     rules = E.load_rules(intent_map) if intent_map else E.load_rules()
     gold = {str(r.get("사례ID")): r for r in E.read_rows(answer)}
     cases = {str(r.get("사례ID")): r for r in E.read_rows(testset)}
-    keep = os.path.join(run_dir, "original_logs")                 # 처음 실행한 로그(공식 결과)는 한 번만 보관하고 다시 덮지 않음
-    if not os.path.isdir(keep):
-        os.makedirs(keep)
-        names = [E.PARSE_LOG, E.GIS_LOG, "summary.json", "result.xlsx"] + \
-            [os.path.basename(x) for x in glob.glob(os.path.join(run_dir, "result_*.csv"))]   # pandas 없을 때의 표별 CSV
-        for name in names:
-            if os.path.exists(os.path.join(run_dir, name)):
-                shutil.copy2(os.path.join(run_dir, name), keep)
+    root = re.sub(r"(_재판정_\d{6}(_\d+)?)+$", "", src)            # 다시 판정한 폴더를 또 판정해도 이름이 겹겹이 붙지 않게
+    new = f"{root}_재판정_{time.strftime('%H%M%S')}"
+    k = 2
+    while os.path.exists(new):                                   # 같은 초에 두 번 누른 경우
+        new, k = f"{root}_재판정_{time.strftime('%H%M%S')}_{k}", k + 1
+    shutil.copytree(os.path.join(src, "raw"), os.path.join(new, "raw"))
+    os.makedirs(os.path.join(new, "data"), exist_ok=True)
+    for p in (testset, answer, intent_map):                      # 이 판정에 쓴 파일
+        if p and os.path.exists(p):
+            shutil.copy2(p, os.path.join(new, "data", os.path.basename(p)))
+    run_dir = new
     parse_rows, gis_rows = [], []
     for p in sorted(glob.glob(os.path.join(run_dir, "raw", "*.json"))):
         with open(p, encoding="utf-8") as f:
@@ -213,13 +218,20 @@ def rescore(run_dir, answer, testset, intent_map):
         gis_rows.append(gr)
     write_jsonl(os.path.join(run_dir, E.PARSE_LOG), parse_rows)
     write_jsonl(os.path.join(run_dir, E.GIS_LOG), gis_rows)
-    mp = os.path.join(run_dir, "meta.json")
-    meta = json.load(open(mp, encoding="utf-8")) if os.path.exists(mp) else {}
-    meta.setdefault("rescored", []).append(dict(at=time.strftime("%Y-%m-%d %H:%M:%S"), answer_sha256=sha256(answer),
-                                                intent_map_sha256=sha256(intent_map)))
-    with open(mp, "w", encoding="utf-8") as f:
+    om = os.path.join(src, "meta.json")
+    meta = {}
+    if os.path.exists(om):
+        with open(om, encoding="utf-8") as f:
+            meta = json.load(f)
+    first = meta.get("원본") or src                               # 처음 실행한 폴더(다시 판정을 거듭해도 그대로)
+    why = [w for w in meta.get("예비사유") or [] if not str(w).startswith("다시 판정(")]
+    meta.update(원본=first, 공식=False, 예비사유=why + [f"다시 판정(원본 {os.path.basename(first)})"],
+                rescored=dict(at=time.strftime("%Y-%m-%d %H:%M:%S"), answer=answer, answer_sha256=sha256(answer),
+                              intent_map=intent_map or "기본 대응표", intent_map_sha256=rules_sha256(intent_map)),
+                criteria_sha256=E.criteria_fingerprint(), started=meta.get("started"))
+    with open(os.path.join(new, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1, default=str)
-    return score_run(run_dir, testset)
+    return new, score_run(new, os.path.join(new, "data", os.path.basename(testset)) if testset else testset)
 
 
 def main():
@@ -239,7 +251,8 @@ def main():
     ap.add_argument("--status-file")
     a = ap.parse_args()
     if a.rescore:
-        rescore(a.rescore, a.answer, a.testset, a.intent_map)
+        new, _ = rescore(a.rescore, a.answer, a.testset, a.intent_map)
+        print(f"[AI6] 다시 판정 결과 폴더: {new} (예비 — 원래 실행 폴더는 그대로)", flush=True)
         return
 
     base = (a.base or C.BASE).rstrip("/")
@@ -256,8 +269,14 @@ def main():
         want = {c.strip() for c in a.cases.split(",") if c.strip()}
         ts = [r for r in ts if r["사례ID"] in want]
 
+    outside = any(not re.match(r"^AI6-\d{4}$", str(r.get("사례ID"))) for r in ts)   # 예비 실측(P6-…) 등 → 공식 결과 아님
+    pilot = bool(a.cases or a.retry_errors or a.no_precheck or outside)
+    data_check = E.validate(ts if not a.cases else E.read_rows(a.testset), list(answers.values()), rules)
+    if not pilot and not a.resume and E.blocking(data_check):
+        refuse(a.status_file, f"시험 데이터 점검 문제 {len(E.blocking(data_check))}건이 있어 공식 실행을 시작하지 않아요: "
+               + " / ".join(E.blocking(data_check)[:3]) + (" …" if len(E.blocking(data_check)) > 3 else ""))
     freeze_path = os.path.join(os.path.dirname(os.path.abspath(a.testset)), FREEZE_FILE)
-    frozen = freeze_check(freeze_path, freeze_record(a.testset, a.answer, a.intent_map, deadline))
+    frozen = freeze_check(freeze_path, freeze_record(a.testset, a.answer, a.intent_map, deadline, base))
     if frozen:                                             # 규격: 의도 대응표는 시험 전에 확정하고 시험 기간 중 바꾸지 않음
         refuse(a.status_file, "동결 이후 바뀐 항목이 있어 실행하지 않아요: " + ", ".join(frozen)
                + " — 의도한 변경이면 화면에서 동결을 풀고 다시 동결하세요.")
@@ -273,7 +292,7 @@ def main():
     parse_path, gis_path = os.path.join(run_dir, E.PARSE_LOG), os.path.join(run_dir, E.GIS_LOG)
     att_path = os.path.join(run_dir, "attempts.jsonl")      # 보내기 직전에 한 줄 — 이어서 실행 때 다시 보내지 않는 근거
 
-    done = set()
+    done, lost = set(), 0
     if a.resume:
         gis_rows = read_jsonl(gis_path)
         if a.retry_errors:                                 # 응답 오류 줄을 지우고 다시 보냄 (지운 줄은 retried.jsonl 에 보관)
@@ -300,10 +319,11 @@ def main():
             append_jsonl(parse_path, pr)
             append_jsonl(gis_path, gr)
             done.add(r["사례ID"])
+            lost += 1
     plan = [r for r in ts if r["사례ID"] not in done]
 
-    outside = any(not re.match(r"^AI6-\d{4}$", str(r.get("사례ID"))) for r in ts)   # 예비 실측(P6-…) 등 → 공식 결과 아님
     mp = os.path.join(run_dir, "meta.json")
+    fresh = None
     if a.resume and os.path.exists(mp):
         with open(mp, encoding="utf-8") as f:
             meta = {**json.load(f)}
@@ -311,20 +331,27 @@ def main():
         if a.retry_errors:
             meta["공식"] = False
             meta.setdefault("예비사유", []).append("응답 오류 재전송")
+        if lost:                                           # QA 쪽 중단 — 시스템 무응답이 아니므로 공식 결과로 쓰지 않고 전체 재수행 권장
+            meta["공식"] = False
+            meta.setdefault("예비사유", []).append(f"QA 중단으로 응답을 기록 못 한 사례 {lost}건(응답 오류로 남김) — 전체 재수행 권장")
+        if not a.no_precheck:                              # 이어서 실행도 환경을 다시 점검
+            fresh = C.precheck(base, probe_message=a.probe)
+            meta.setdefault("resume_precheck", []).append(dict(at=time.strftime("%Y-%m-%d %H:%M:%S"), rows=fresh))
     else:
         meta = dict(item="AI6", 시험항목="[AI 6] 자연어 기반 지도 제어 기능", base=base, endpoint=f"{base}/api/chat",
                     deadline_s=deadline, origin=C.ORIGIN, cases=[r["사례ID"] for r in ts] if a.cases else [],
                     testset=a.testset, testset_sha256=sha256(a.testset), answer=a.answer, answer_sha256=sha256(a.answer),
                     intent_map=a.intent_map, intent_map_sha256=sha256(a.intent_map),
                     intent_rules=[{k: (sorted(v) if isinstance(v, set) else v) for k, v in r.items()} for r in rules],
-                    data_check=E.validate(ts if not a.cases else E.read_rows(a.testset), list(answers.values()), rules),
+                    data_check=data_check,
                     intent_rules_sha256=rules_sha256(a.intent_map), criteria_sha256=E.criteria_fingerprint(),
-                    frozen=os.path.exists(freeze_path), 공식=not (a.cases or a.retry_errors or a.no_precheck or outside),
+                    frozen=os.path.exists(freeze_path), 공식=os.path.exists(freeze_path) and not pilot,
                     예비사유=[x for x, on in (("일부 ID만 실행", a.cases), ("응답 오류 재전송", a.retry_errors),
-                                              ("사전 점검 생략", a.no_precheck), ("시험셋 밖 ID(예비 실측)", outside)) if on],
+                                              ("사전 점검 생략", a.no_precheck), ("시험셋 밖 ID(예비 실측)", outside),
+                                              ("동결 전 실행", not os.path.exists(freeze_path))) if on],
                     gap_s=GAP, started=time.strftime("%Y-%m-%d %H:%M:%S"))
         if not a.no_precheck:
-            meta["precheck"] = C.precheck(base, probe_message=a.probe)
+            fresh = meta["precheck"] = C.precheck(base, probe_message=a.probe)
             meta["ready"] = C.ready_info(base)
     with open(mp, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1, default=str)
@@ -336,8 +363,8 @@ def main():
     status = dict(state="running", pid=os.getpid(), started=time.time(), script=SCRIPT, mode="성과지표 AI6",
                   run_dir=run_dir, out=os.path.join(run_dir, "progress.xlsx"), total=total, done=len(done), current=None,
                   message="이어서 실행" if a.resume else "", argv=argv)
-    bad = [r for r in meta.get("precheck") or [] if r.get("결과") != "정상"]
-    if bad and not a.resume:                               # 사전 점검 실패 → 실행하지 않음(규격 시험환경 미충족)
+    bad = [r for r in fresh or [] if r.get("결과") != "정상"]   # 이번 실행에서 한 점검만
+    if bad:                               # 사전 점검 실패 → 실행하지 않음(규격 시험환경 미충족)
         status.update(state="error", message="사전 점검 실패: " + ", ".join(f"{r['항목']}({r['내용'][:40]})" for r in bad),
                       finished=time.time())
         write_status(a.status_file, status)

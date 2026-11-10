@@ -35,9 +35,14 @@ REQUIRE_TARGET_GEOMETRY = True        # ③ 표출대상: SELECT 등 이동 명�
 # 규격: '중심 좌표·줌 레벨 … 로그에 기록하되 판정에 사용하지 않음(명령에 포함된 반경·거리 등 분석 조건 값은 ②에서 판정)'
 # → 확대 레벨 숫자는 참고로만 기록. 확대 명령이 나갔는지는 ③ 지도제어=확대 로 판정
 JUDGE_ZOOM_LEVEL = False                  # True 면 '대상 필지 도형'에 도형 원본(geometry)까지 요구 — 기본은 PNU 로 지정된 선택·이동 명령
-ASK_CAUSE = "reason"                             # 되묻기 원인: reason = 사유가 위치 후보 여럿·필요한 값 없음이면 '핵심 파라미터 추출 오류', 그 밖은 ①→②→③ · param = 늘 파라미터
+ASK_CAUSE = "order"                             # 되묻기 원인: reason = 사유가 위치 후보 여럿·필요한 값 없음이면 '핵심 파라미터 추출 오류', 그 밖은 ①→②→③ · param = 늘 파라미터
 ASK_PARAM_REASONS = {"ambiguous_candidates", "missing_required_value"}
-RADIUS_OPS = {"BUFFER", "LAYER_NEARBY"}                  # 명령에 든 반경이 넘어가는 분석 — 정답에 반경이 없는데 쓰면 ② 오류
+RADIUS_OPS = {"BUFFER", "LAYER_NEARBY"}
+RADIUS_EPS = 1e-6                     # 반경은 단위만 맞추고(0.3km = 300m) 값은 같아야 함 — 규격: 표기만 다른 경우만 일치
+UNLOCATED_RULE = False                # True 면 '위치 미확정'(분석 미시작·PNU 없음)을 시스템 실패=GIS / 못 찾음=파라미터로 돌림.
+#                                       규격(①→②→③ 처음 불일치)과 다른 운영 정의라 기본은 끔 — 세부 원인으로만 기록
+SEARCH_OPS = {"INTEGRATED_LOCATION_SEARCH", "LEGAL_BOUNDARY_SEARCH", "ROAD_SEARCH", "GEOCODE", "GEOCODE_NORMALIZE"}
+LAYER_ANALYSIS_OPS = {"INTERSECTIONLAYER", "LAYER_NEARBY"}                  # 명령에 든 반경이 넘어가는 분석 — 정답에 반경이 없는데 쓰면 ② 오류
 
 DOTS = "·ㆍ・‧∙⋅･•"
 MOVE_ACTIONS = {"SELECT", "MOVE_TO", "CENTER", "MOVE_AND_ZOOM", "FIT_BOUNDS"}
@@ -49,8 +54,9 @@ LOCATE_OPS = {"INTEGRATED_LOCATION_SEARCH", "LEGAL_BOUNDARY_SEARCH", "ROAD_SEARC
 # 정답의도 '(무시)' = 의도로 세지 않는 보조 신호
 DEFAULT_RULES = [
     ("지도 이동", "호출", "map_navigation_b:INTEGRATED_LOCATION_SEARCH|map_navigation_b:SELECT|map_navigation_b:MOVE_TO|"
-                         "map_navigation_b:CENTER|map_navigation_b:MOVE_AND_ZOOM|map_navigation_b:FIT_BOUNDS|map_navigation_b:HIGHLIGHT",
-     "주소가 있으면 공간오케가 위치 확정(검색 → SELECT)을 자동으로 붙임. 대상 필지 강조(SELECT_FEATURE → HIGHLIGHT)도 여기에 흡수"),
+                         "map_navigation_b:CENTER|map_navigation_b:MOVE_AND_ZOOM|map_navigation_b:FIT_BOUNDS|map_navigation_b:HIGHLIGHT|"
+                         "map_navigation_b:ADD_MARKER",
+     "주소가 있으면 공간오케가 위치 확정(검색 → SELECT)을 자동으로 붙임. 대상 필지 강조(SELECT_FEATURE → HIGHLIGHT)·마커(MAP_MARKER)도 여기에 흡수"),
     ("지도 이동", "동작", "SELECT|MOVE_TO|CENTER|MOVE_AND_ZOOM|FIT_BOUNDS", "화면 이동 명령"),
     ("지도 확대/축소", "호출", "map_navigation_b:SET_ZOOM|map_navigation_b:ZOOM_IN|map_navigation_b:ZOOM_OUT", ""),
     ("지도 확대/축소", "동작", "SET_ZOOM|ZOOM_IN|ZOOM_OUT", ""),
@@ -84,9 +90,9 @@ TARGET_OPS = OrderedDict([
 # 분석결과표출(③) — 정답 토큰 안의 낱말 → (operation, 도형 키). 위에서부터 처음 맞는 규칙
 SCENARIO_RULES = [                                               # '반경'·'저촉'이 먼저 — '반경 300m 내 지구단위계획구역 도형'은 반경 레이어 분석
     ("반경", {"LAYER_NEARBY"}, ("result_geojson",)),
-    ("저촉", {"INTERSECTIONLAYER"}, ("result_geojson",)),
-    ("용도지역·지구 중첩", {"OVERLAP_GEOMETRY"}, ("result_geojson",)),
+    ("용도지역·지구", {"OVERLAP_GEOMETRY"}, ("result_geojson",)),
     ("지구단위계획구역", {"OVERLAP_PLAN", "INTERSECTIONLAYER"}, ("result_geojson",)),
+    ("저촉", {"INTERSECTIONLAYER"}, ("result_geojson",)),
     ("버퍼", {"BUFFER"}, ("result_geojson",)),
     ("접도선", {"CONTACT_SUMMARY", "CONTACT_GEOM"}, ("road_contact_geojson",)),
     ("산지전용", {"FOREST_CONVERSION"}, ("result_geojson",)),
@@ -173,6 +179,9 @@ def parse_kv(v):
 
 
 # ---------------------------------------------------------------- 표 읽기 (CSV · XLSX, pandas 없이)
+RAW_COLS = ("명령문",)                                             # 시스템에 그대로 보내는 칸 — 읽을 때 손대지 않음
+
+
 def read_rows(path, sheet=None):
     """CSV(UTF-8, BOM 허용) 또는 XLSX 의 첫 시트(또는 이름이 sheet 인 시트) → [dict]. 모든 값은 문자열"""
     if not path:
@@ -182,7 +191,8 @@ def read_rows(path, sheet=None):
     with open(path, encoding="utf-8-sig", newline="") as f:
         text = f.read()
     rows = list(csv.DictReader(io.StringIO(text)))
-    return [{(k or "").strip(): (v or "").strip() for k, v in r.items() if k is not None} for r in rows]
+    return [{(k or "").strip(): ((v or "") if (k or "").strip() in RAW_COLS else (v or "").strip())
+             for k, v in r.items() if k is not None} for r in rows]
 
 
 def sheet_names(path):
@@ -226,7 +236,8 @@ def _read_xlsx(path, sheet=None):
     cols = sorted(head, key=lambda c: (len(c), c))
     out = []
     for row in grid[1:]:
-        d = {str(head[c]).strip(): str(row.get(c, "") or "").strip() for c in cols if str(head[c]).strip()}
+        d = {str(head[c]).strip(): (str(row.get(c, "") or "") if str(head[c]).strip() in RAW_COLS else str(row.get(c, "") or "").strip())
+             for c in cols if str(head[c]).strip()}
         if any(d.values()):
             out.append(d)
     return out
@@ -287,12 +298,21 @@ def _resolve(call):
     return pay, res
 
 
+def _plan_step(call):
+    args = call.get("args") if isinstance(call.get("args"), dict) else {}
+    plan = ((args.get("_metadata") or {}).get("plan") or []) if isinstance(args.get("_metadata"), dict) else []
+    return next((st for st in plan if isinstance(st, dict)), {})
+
+
 def call_op(call):
+    """operation — 계획 항목 {tool, operation, args} 의 operation → args.operation/action → resolve.input.operation …
+    계획이 없는 호출(코어 LLM 이 부른 normal 모드)에서 아무것도 못 찾으면 NORMAL"""
     a, _ = _plan_args(call)
     _, res = _resolve(call)
     inp = res.get("input") if isinstance(res.get("input"), dict) else {}
-    op = a.get("operation") or a.get("action") or inp.get("operation") or res.get("action") or res.get("operation") or ""
-    return str(op).strip().upper()
+    op = (_plan_step(call).get("operation") or a.get("operation") or a.get("action") or inp.get("operation")
+          or res.get("action") or res.get("operation") or "")
+    return str(op).strip().upper() or "NORMAL"
 
 
 def nonempty_geom(v):
@@ -370,7 +390,7 @@ ACTION_ALIAS = {"flyto": "MOVE_TO", "moveto": "MOVE_TO", "panto": "MOVE_TO", "se
                 "focusparcel": "SELECT", "selectfeature": "SELECT", "select": "SELECT", "highlight": "HIGHLIGHT",
                 "zoomto": "SET_ZOOM", "setzoom": "SET_ZOOM", "zoomin": "ZOOM_IN", "zoomout": "ZOOM_OUT",
                 "fitbounds": "FIT_BOUNDS", "moveandzoom": "MOVE_AND_ZOOM", "addmarker": "ADD_MARKER",
-                "showlayer": "SHOW_LAYER", "hidelayer": "HIDE_LAYER", "layerclear": "LAYER_CLEAR", "clearmap": "LAYER_CLEAR",
+                "showlayer": "SHOW_LAYER", "hidelayer": "HIDE_LAYER", "layerclear": "LAYER_CLEAR", "clearmap": "RESET_MAP", "resetmap": "RESET_MAP",
                 "panby": "PAN", "pan": "PAN"}
 
 
@@ -421,18 +441,19 @@ for _k, _ops in TARGET_OPS.items():
         OP_LABEL.setdefault(_o, _k)
 
 
-def target_labels(calls, layers):
-    """규격 출력 '분석대상' — 분석 호출 operation 을 정답지 낱말(용도지역·지구 · 접도 …)로, 레이어 분석은 레이어 이름으로"""
+def target_labels(calls, layers, chosen=None):
+    """규격 출력 '분석대상' — 분석 호출 operation 을 정답지 낱말(용도지역·지구 · 접도 …)로, 레이어 분석은 고른 레이어 이름으로"""
     out = []
+    names = {c.get("lyr_id"): layer_name(c.get("name")) for c in chosen or [] if c.get("name")}
     for c in calls:
         if c["callee"] == "map_navigation_b" or c["operation"] in LOCATE_OPS or c["operation"] == "LAYER_FIND":
             continue
         a = c["args"] or {}
-        lab = OP_LABEL.get(c["operation"]) or next((str(a[k]) for k in ("lyr_query", "layer", "lyr_name") if a.get(k)), None) \
-            or f"{c['callee']}:{c['operation']}"
+        lab = OP_LABEL.get(c["operation"]) or names.get(a.get("lyr_id")) \
+            or next((str(a[k]) for k in ("lyr_query", "layer", "lyr_name") if a.get(k)), None) or f"{c['callee']}:{c['operation']}"
         if lab not in out:
             out.append(lab)
-    for l in layers:
+    for l in ([] if names else layers):                            # 고른 레이어를 알면 검색어는 빼고
         if l not in out:
             out.append(l)
     return out
@@ -491,10 +512,19 @@ def extract(turn, rules=None):
         intents.append(f"?{key}")
 
     ok_calls = [c for c in calls if call_ok(c)]
-    pnus = []
+    pnus, search_pnus = [], []
     for c in calls:
-        if c["pnu"]:
+        if c["pnu"] and c["operation"] in SEARCH_OPS:             # 검색 결과 첫 후보 — 대상이 아닐 수 있어 기록만
+            search_pnus.append(c["pnu"])
+        elif c["pnu"]:
             pnus.append(("호출 " + f"{c['callee']}:{c['operation']}", c["pnu"]))
+    catalog = {}                                                   # LAYER_FIND 결과의 레이어 목록 → id: 이름
+    for raw in turn.get("calls") or []:
+        if call_op(raw) == "LAYER_FIND":
+            catalog.update(_layer_catalog(raw))
+    chosen = [{"operation": c["operation"], "lyr_id": (c["args"] or {}).get("lyr_id"),
+               "name": catalog.get(str((c["args"] or {}).get("lyr_id")))}
+              for c in calls if c["operation"] in LAYER_ANALYSIS_OPS]
     for a in actions:
         if a["pnu"]:
             pnus.append(("지도 동작 " + a["type"], a["pnu"]))
@@ -528,7 +558,7 @@ def extract(turn, rules=None):
         ("의도", [i for i in intents if not i.startswith("?")]),
         ("핵심파라미터", OrderedDict([
             ("위치", next((str((c["args"] or {}).get("query")) for c in calls if (c["args"] or {}).get("query")), "")),
-            ("PNU", sorted({p for _, p in pnus})), ("분석대상", target_labels(calls, layers)),
+            ("PNU", sorted({p for _, p in pnus})), ("분석대상", target_labels(calls, layers, chosen)),
             ("반경(m)", sorted(set(dists))), ("확대레벨", sorted(set(zooms)))])),
         ("실행대상기능", OrderedDict([("명령유형", TYPE_OF_CALLEE.get(main["callee"], "") if main else ""),
                                 ("Function", functions)])),
@@ -542,6 +572,7 @@ def extract(turn, rules=None):
         ("unmapped_calls", unmapped), ("intent_codes", codes), ("pnus", pnus), ("layers", layers),
         ("distances", dists), ("zooms", zooms), ("ops", ops), ("geom_calls", [c["call_id"] for c in geom_calls]),
         ("analysis_calls", [c["call_id"] for c in analysis]),
+        ("chosen_layers", chosen), ("search_pnus", search_pnus),
         ("radius", [m for c in calls if c["operation"] in RADIUS_OPS
                     for m in [meters((c["args"] or {}).get(k)) for k in ("distance", "radius")] if m is not None]),
         ("asked", asked), ("asks", turn.get("asks") or []), ("status", turn.get("status")),
@@ -569,13 +600,35 @@ def response_error(res, turn):
 ALL_TARGET_OPS = set().union(*TARGET_OPS.values())
 
 
+def layer_name(name):
+    """'지구단위계획구역 · 용도지역지구' → '지구단위계획구역' (공간오케 layer_choice 가 비교하는 부분)"""
+    return str(name or "").split(" · ")[0].strip()
+
+
+def _layer_catalog(call):
+    """LAYER_FIND 호출 결과에서 레이어 목록을 찾아 {id: 이름} — 결과가 resolve.result · resolve · payload 어디에 있든"""
+    pay, res = _resolve(call)
+    out = {}
+    for box in (res.get("result"), res, pay):
+        items = box.get("layers") if isinstance(box, dict) else None
+        if isinstance(items, list):
+            for x in items:
+                if isinstance(x, dict):
+                    i = x.get("id") or x.get("lyr_id")
+                    if i:
+                        out[str(i)] = str(x.get("name") or x.get("lyr_nm") or x.get("label") or i)
+    return out
+
+
 def criteria_fingerprint():
     """판정 기준(분석대상·시나리오 대조 규칙과 판정 옵션)의 SHA-256 — 대응표와 함께 동결·기록"""
     blob = json.dumps({"TARGET_OPS": {k: sorted(v) for k, v in TARGET_OPS.items()},
                        "SCENARIO_RULES": [[a, sorted(b), list(c)] for a, b, c in SCENARIO_RULES],
                        "LOCATE_OPS": sorted(LOCATE_OPS), "MOVE_ACTIONS": sorted(MOVE_ACTIONS), "RADIUS_OPS": sorted(RADIUS_OPS),
                        "REQUIRE_TARGET_GEOMETRY": REQUIRE_TARGET_GEOMETRY, "JUDGE_ZOOM_LEVEL": JUDGE_ZOOM_LEVEL,
-                       "ASK_CAUSE": ASK_CAUSE, "ASK_PARAM_REASONS": sorted(ASK_PARAM_REASONS), "DEC": DEC, "TARGET": TARGET},
+                       "ASK_CAUSE": ASK_CAUSE, "ASK_PARAM_REASONS": sorted(ASK_PARAM_REASONS), "DEC": DEC, "TARGET": TARGET,
+                       "UNLOCATED_RULE": UNLOCATED_RULE, "RADIUS_EPS": RADIUS_EPS, "SEARCH_OPS": sorted(SEARCH_OPS),
+                       "LAYER_ANALYSIS_OPS": sorted(LAYER_ANALYSIS_OPS)},
                       ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -613,8 +666,17 @@ def judge(gold, ext, res=None, turn=None):
         extra = [names[x] for x in got - want]
         miss.append("① 의도 " + " / ".join(filter(None, [f"누락 {', '.join(lack)}" if lack else "",
                                                        f"초과 {', '.join(extra)}" if extra else ""])))
-    # ② 파라미터
+    # ② 파라미터 — 레이어는 공간오케가 실제로 고른 레이어(lyr_id → LAYER_FIND 목록의 이름). 못 찾으면 검색어(lyr_query)로
     params = parse_kv(gold.get("정답파라미터"))
+    picked = [c for c in ext.get("chosen_layers") or [] if c.get("name")]
+    if picked:
+        layer_pool = {norm(v) for c in picked for v in (layer_name(c["name"]), layer_name(c["name"]).split("/")[-1])}
+        sys_layers = [layer_name(c["name"]) for c in picked]
+    else:
+        layer_pool = {norm(x) for x in ext["layers"]}
+        sys_layers = list(ext["layers"])
+        if ext.get("chosen_layers"):
+            notes.append("고른 레이어의 이름을 응답에서 찾지 못해 검색어(lyr_query)로 대조")
     ok2, why2 = True, []
     sys_pnus = {p for _, p in ext["pnus"]}
     if gold_pnu or "PNU" in params or "위치" in params:
@@ -633,19 +695,20 @@ def judge(gold, ext, res=None, turn=None):
         if key == "분석대상":
             for tok in [t.strip() for t in val.split(",") if t.strip()]:
                 ops = next((o for k, o in TARGET_OPS.items() if norm(k) == norm(tok)), None)
-                as_layer = norm(tok) in {norm(x) for x in ext["layers"]}   # 같은 낱말이 레이어 이름일 수도 있음(지구단위계획구역 등)
+                as_layer = norm(tok) in layer_pool                         # 같은 낱말이 레이어 이름일 수도 있음(지구단위계획구역 등)
                 if ops is not None:
                     if not (ops & set(ext["ops"])) and not as_layer:
                         ok2 = False
                         why2.append(f"분석대상 '{tok}' 호출 없음 (시스템 {', '.join(ext['ops']) or '없음'})")
                 elif not as_layer:
                     ok2 = False
-                    why2.append(f"레이어 '{tok}' 불일치 (시스템 {', '.join(ext['layers']) or '없음'})")
-        elif key == "반경":
+                    why2.append(f"레이어 '{tok}' 불일치 (시스템 {', '.join(sys_layers) or '없음'})")
+        elif key == "반경":                                         # 반경 분석(버퍼·반경 안 레이어)에 넘어간 값의 집합 = 정답
             g = meters(val)
-            if g is None or not any(abs(g - d) <= 0.5 for d in ext["distances"]):
+            got = sorted(set(ext.get("radius") or []))
+            if g is None or not got or any(abs(g - d) > RADIUS_EPS for d in got):
                 ok2 = False
-                why2.append(f"반경 불일치 (정답 {val} / 시스템 {', '.join(f'{d:g}m' for d in ext['distances']) or '없음'})")
+                why2.append(f"반경 불일치 (정답 {val} / 시스템 {', '.join(f'{d:g}m' for d in got) or '없음'})")
         elif key == "확대레벨" and not JUDGE_ZOOM_LEVEL:            # 판정 제외 — 참고로만 남김
             notes.append(f"확대 레벨(참고·판정 제외) 정답 {val} / 시스템 {', '.join(ext['zooms']) or '없음'}")
         elif key == "확대레벨":                                    # 공간오케는 zoomLevel 을 문자열("17")로 보냄 → 숫자로 비교
@@ -663,7 +726,7 @@ def judge(gold, ext, res=None, turn=None):
         gold_ops = set().union(*[known[norm(t)] for t in toks if norm(t) in known])
         gold_layers = {norm(t) for t in toks}                     # 레이어로 쓴 경우도 허용(위와 같음)
         extra = sorted({op for op in ext["ops"] if op in ALL_TARGET_OPS} - gold_ops) + \
-            sorted({x for x in ext["layers"] if norm(x) not in gold_layers})
+            sorted({x for x in sys_layers if norm(x) not in gold_layers and norm(x.split("/")[-1]) not in gold_layers})
         if extra:
             ok2 = False
             why2.append(f"분석대상 초과 {', '.join(extra)} (정답 {params['분석대상']})")
@@ -719,22 +782,28 @@ def judge(gold, ext, res=None, turn=None):
         miss.append("되묻기 = 오류 · " + why3[-1])
     out.update({"①": ok1, "②": ok2, "③": ok3})
     asked = bool(ext.get("asked"))
-    reasons = {str(a.get("reason") or "") for a in ext.get("asks") or [] if isinstance(a, dict)}
-    unlocated = not sys_pnus and not ext.get("analysis_calls")   # 위치를 못 정해 분석이 시작되지 않음 → ①은 관찰할 수 없음
+    reasons = {str(a.get("reason") or "") for a in ext.get("asks") or [] if isinstance(a, dict)} - {""}
+    unlocated = not sys_pnus and not ext.get("analysis_calls")   # 위치를 못 정해 분석이 시작되지 않음
+    failed = [c for c in ext["calls"] if c["callee"] == "map_navigation_b"
+              and str(c.get("status") or "").lower() in ("error", "unknown")]
+    detail = []                                                    # 세부 원인 — 공식 원인(①→②→③)과 별도로 기록
+    if asked:
+        detail.append("되묻기" + (f"(사유 {', '.join(sorted(reasons))})" if reasons else "(사유 없음)"))
+    if unlocated:
+        detail.append("위치 미확정 — " + ("위치 확정 호출 실패: " + ", ".join(f"{c['operation']} {c['status']}" for c in failed)
+                                         if failed else "대상 필지를 정하지 못함") + " · 분석 호출이 시작되지 않음")
+    first = ("의도 해석 오류" if not ok1 else "핵심 파라미터 추출 오류" if not ok2 else "GIS 지도 제어 실행 오류" if not ok3 else "")
     if ok1 and ok2 and ok3 and not asked:
         out["정상수행"] = True
-    elif asked and (ASK_CAUSE == "param" or reasons & ASK_PARAM_REASONS):   # 위치 후보가 여럿이거나 필요한 값을 못 정함
+    elif asked and (ASK_CAUSE == "param" or (ASK_CAUSE == "reason" and reasons & ASK_PARAM_REASONS)):
         out["오류원인"] = "핵심 파라미터 추출 오류"
-    elif unlocated:                                                # 위치 미확정 규칙: 시스템 실패면 GIS, 못 찾았으면 파라미터
-        failed = [c for c in ext["calls"] if c["callee"] == "map_navigation_b"
-                  and str(c.get("status") or "").lower() in ("error", "unknown")]
+    elif unlocated and UNLOCATED_RULE:
         out["오류원인"] = "GIS 지도 제어 실행 오류" if failed else "핵심 파라미터 추출 오류"
-        miss.append("위치 미확정 — 분석 호출이 시작되지 않아 ①은 판정하지 않음 ("
-                    + ("위치 확정 호출 실패: " + ", ".join(f"{c['operation']} {c['status']}" for c in failed) if failed
-                       else "검색 결과에서 대상 필지를 정하지 못함") + ")")
-    else:
-        out["오류원인"] = ("의도 해석 오류" if not ok1 else "핵심 파라미터 추출 오류" if not ok2
-                         else "GIS 지도 제어 실행 오류" if not ok3 else "핵심 파라미터 추출 오류")
+    else:                                                          # 규격: 여러 기준이 어긋나면 ① → ② → ③ 중 처음 어긋난 기준
+        out["오류원인"] = first or "핵심 파라미터 추출 오류"           # ①②③은 맞았는데 되물은 경우 — 값을 확정하지 못한 것으로 봄
+    if detail:
+        miss.extend(d for d in detail if not d.startswith("되묻기"))
+    out["세부원인"] = "; ".join(detail)
     out["불일치"] = miss
     out["참고"] = notes
     return out
@@ -756,6 +825,7 @@ def parse_log_row(case, res, ext):
                                    ("args", c["args"]), ("status", c["status"]), ("reason_code", c["reason_code"]),
                                    ("elapsed_ms", c["elapsed_ms"])]) for c in ext["calls"]]),
         ("되묻기", ext["asked"]), ("되묻기내용", ext["asks"]),
+        ("고른레이어", ext.get("chosen_layers") or []), ("검색후보PNU", ext.get("search_pnus") or []),
         ("규격출력", ext["spec_output"]),
     ])
 
@@ -778,7 +848,7 @@ def gis_log_row(case, gold, res, ext, verdict):
         ("①의도", verdict["①"]), ("②파라미터", verdict["②"]), ("③지도제어", verdict["③"]),
         ("판정", "정상 수행" if verdict["정상수행"] else "오류"), ("오류원인", verdict["오류원인"]),
         ("되묻기", verdict["되묻기"]), ("응답오류", verdict["응답오류"]), ("불일치내용", verdict["불일치"]),
-        ("참고", verdict.get("참고") or []),
+        ("세부원인", verdict.get("세부원인") or ""), ("참고", verdict.get("참고") or []),
     ])
 
 
@@ -793,13 +863,14 @@ def score(gis_rows, testset_rows, dec=DEC):
         if r is None:
             cases.append(OrderedDict([("사례ID", cid), ("명령유형", canon_type(t.get("명령유형"))), ("명령문", t.get("명령문")),
                                       ("①의도", None), ("②파라미터", None), ("③지도제어", None), ("판정", "오류"),
-                                      ("오류원인", "응답 오류"), ("되묻기", False), ("불일치내용", "미실행"), ("소요초", None)]))
+                                      ("오류원인", "응답 오류"), ("되묻기", False), ("세부원인", "미실행"), ("불일치내용", "미실행"),
+                                      ("소요초", None)]))
             continue
         cases.append(OrderedDict([("사례ID", cid), ("명령유형", canon_type(t.get("명령유형") or r.get("명령유형"))),
                                   ("명령문", t.get("명령문")), ("①의도", r.get("①의도")), ("②파라미터", r.get("②파라미터")),
                                   ("③지도제어", r.get("③지도제어")), ("판정", r.get("판정")), ("오류원인", r.get("오류원인")),
-                                  ("되묻기", r.get("되묻기")), ("불일치내용", " | ".join(r.get("불일치내용") or [])),
-                                  ("소요초", r.get("소요초"))]))
+                                  ("되묻기", r.get("되묻기")), ("세부원인", r.get("세부원인") or ""),
+                                  ("불일치내용", " | ".join(r.get("불일치내용") or [])), ("소요초", r.get("소요초"))]))
     n = len(cases)
     ok = sum(1 for c in cases if c["판정"] == "정상 수행")
     value = floor_pct(ok, n, dec)
@@ -835,8 +906,14 @@ def validate(testset_rows, answer_rows, rules=None):
         if v > 1:
             probs.append(f"사례ID 중복: {k} ({v}건)")
     for r in testset_rows:
-        if not str(r.get("명령문", "")).strip():
+        cmd = str(r.get("명령문", ""))
+        if not cmd.strip():
             probs.append(f"{r.get('사례ID')}: 명령문 없음")
+            continue
+        if cmd != cmd.strip() or "\n" in cmd or "\r" in cmd or "  " in cmd or "\t" in cmd:   # 그대로 보내므로 미리 고쳐 둠
+            probs.append(f"{r.get('사례ID')}: 명령문에 앞뒤 공백·줄바꿈·연속 공백·탭이 있음(문장을 그대로 보내므로 데이터에서 고칠 것)")
+        if re.search(r"(?<!\d)\d{19}(?!\d)", cmd):
+            probs.append(f"{r.get('사례ID')}: 명령문에 19자리 숫자(PNU)가 있음 — 시스템에는 자연어 명령만 입력")
     cnt = Counter(canon_type(r.get("명령유형")) for r in testset_rows)
     for t, want in TYPE_COUNTS.items():
         if cnt.get(t, 0) != want:
@@ -862,9 +939,23 @@ def validate(testset_rows, answer_rows, rules=None):
         for k in parse_kv(a.get("정답파라미터")):
             if k not in ("위치", "PNU", "분석대상", "반경", "확대레벨"):
                 probs.append(f"{cid}: 대조 규칙이 없는 파라미터 키 '{k}'")
-        for k in parse_kv(a.get("정답시나리오")):
+        scen = parse_kv(a.get("정답시나리오"))
+        for k in scen:
             if k not in ("표출대상", "지도제어", "분석결과표출"):
                 probs.append(f"{cid}: 대조 규칙이 없는 시나리오 키 '{k}'")
+        for tok in [t.strip() for t in str(scen.get("분석결과표출") or "").split(",") if t.strip()]:
+            if not any(norm(rk) in norm(tok) for rk, _, _ in SCENARIO_RULES):
+                probs.append(f"{cid}: 대조 규칙이 없는 표출 도형 '{tok}' (대조 기준의 낱말을 쓸 것)")
     for cid in set(ans) - set(ids):
         probs.append(f"{cid}: 시험셋에 없는 정답")
+    if answer_rows and not any(str(r.get("검증자") or "").strip() for r in answer_rows):   # 규격: GIS 전문가가 정답 라벨을 검증
+        probs.append(NOTE + "정답셋에 검증자(GIS 전문가) 칸이 비어 있음 — 공식 시험 전 검증자·검증일을 적을 것")
     return probs
+
+
+NOTE = "(참고) "                                                    # 실행을 막지 않는 알림 — 나머지 점검 결과는 공식 실행을 막음
+
+
+def blocking(probs):
+    """공식 실행을 막는 점검 결과만"""
+    return [p for p in probs if not str(p).startswith(NOTE)]

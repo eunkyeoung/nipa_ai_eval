@@ -142,7 +142,8 @@ class Judge(unittest.TestCase):
         v, ext = run(ev, GOLD_OVERLAP)
         self.assertTrue(ext["asked"])
         self.assertFalse(v["정상수행"])
-        self.assertEqual(v["오류원인"], "핵심 파라미터 추출 오류")
+        self.assertEqual(v["오류원인"], "의도 해석 오류")              # 규격: ①→②→③ 처음 불일치 — 분석이 시작되지 않아 ①부터 어긋남
+        self.assertIn("되묻기(사유 ambiguous_candidates)", v["세부원인"])
 
     def test_deadline_is_response_error(self):
         ev = locate_events()
@@ -252,23 +253,101 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
                                                         "options": ["1", "2"], "reason": reason})] + finish(status="asking")
         return run(ev, GOLD_OVERLAP)[0]
 
-    def test_ask_cause_by_reason(self):
-        self.assertEqual(self._ask("ambiguous_candidates")["오류원인"], "핵심 파라미터 추출 오류")
-        self.assertEqual(self._ask("missing_required_value")["오류원인"], "핵심 파라미터 추출 오류")
-        v = self._ask("confirm_plan")                            # 그 밖의 사유 + 위치 미확정 → 위치 미확정 규칙
-        self.assertFalse(v["정상수행"])
-        self.assertEqual(v["오류원인"], "핵심 파라미터 추출 오류")
+    def test_ask_cause_by_reason_option(self):                  # 회의에서 '사유 기준'을 택하면(ASK_CAUSE='reason')
+        E.ASK_CAUSE = "reason"
+        try:
+            self.assertEqual(self._ask("ambiguous_candidates")["오류원인"], "핵심 파라미터 추출 오류")
+            self.assertEqual(self._ask("missing_required_value")["오류원인"], "핵심 파라미터 추출 오류")
+            self.assertEqual(self._ask("")["오류원인"], "의도 해석 오류")     # 결산 LLM 되묻기는 사유가 비어 옴 → 규격 순서
+        finally:
+            E.ASK_CAUSE = "order"
+        v = self._ask("ambiguous_candidates")                    # 기본(규격 순서)
+        self.assertEqual(v["오류원인"], "의도 해석 오류")
+        self.assertTrue(v["세부원인"].startswith("되묻기"))
 
-    def test_unlocated_system_failure_is_gis(self):           # 위치 확정 호출이 시스템 사유로 실패 → GIS 지도 제어 실행 오류
+    def test_unlocated_default_is_spec_order(self):            # 기본: 규격 순서(①부터) — 위치 미확정은 세부 원인으로만
         ev = locate_events(select_ok=False)
         ev = [(e, {**d, "status": "error", "reason_code": "not_connected"}) if e == "call.finished" else (e, d) for e, d in ev]
         v, _ = run(ev + finish(), GOLD_OVERLAP)
-        self.assertEqual(v["오류원인"], "GIS 지도 제어 실행 오류")
+        self.assertEqual(v["오류원인"], "의도 해석 오류")
+        self.assertIn("위치 확정 호출 실패", v["세부원인"])
         self.assertTrue(any("위치 미확정" in m for m in v["불일치"]))
 
-    def test_unlocated_not_found_is_param(self):              # 검색은 됐는데 대상 필지를 못 정함 → 핵심 파라미터 추출 오류
-        v, _ = run(locate_events(select_ok=False) + finish(), GOLD_OVERLAP)
-        self.assertEqual(v["오류원인"], "핵심 파라미터 추출 오류")
+    def test_unlocated_rule_option(self):                     # 회의에서 위치 미확정 규칙을 택하면(UNLOCATED_RULE=True)
+        E.UNLOCATED_RULE = True
+        try:
+            ev = locate_events(select_ok=False)
+            ev = [(e, {**d, "status": "error", "reason_code": "not_connected"}) if e == "call.finished" else (e, d) for e, d in ev]
+            self.assertEqual(run(ev + finish(), GOLD_OVERLAP)[0]["오류원인"], "GIS 지도 제어 실행 오류")
+            self.assertEqual(run(locate_events(select_ok=False) + finish(), GOLD_OVERLAP)[0]["오류원인"], "핵심 파라미터 추출 오류")
+        finally:
+            E.UNLOCATED_RULE = False
+
+    def test_search_candidate_pnu_not_used(self):             # 검색 호출의 첫 후보 PNU 는 ② 대조에 쓰지 않음
+        ev = locate_events()
+        ev = [(e, {**d, "payload": {**d["payload"], "resolve": {**d["payload"]["resolve"], "pnu": "1111111111111111111"}}})
+              if e == "call.finished" and d.get("call_id") == "c1" else (e, d) for e, d in ev]
+        v, ext = run(ev + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish(), GOLD_OVERLAP)
+        self.assertTrue(v["정상수행"], v["불일치"])
+        self.assertEqual(ext["search_pnus"], ["1111111111111111111"])
+
+    def test_step_level_operation_and_names(self):             # 현행 계획 항목 {tool, operation, args} · clearMap = RESET_MAP · 마커 호출
+        call = {"call_id": "x", "callee": "spatial_regulation", "tool": "ask",
+                "args": {"_metadata": {"plan": [{"tool": "tool.spatial.analysis", "operation": "BUFFER", "args": {"pnu": PNU}}]}}}
+        self.assertEqual(E.call_op(call), "BUFFER")
+        self.assertEqual(E.call_op({"call_id": "y", "callee": "land_attr_b", "args": {"_text": "x"}}), "NORMAL")
+        self.assertEqual(E.action_type({"type": "map.clearMap"}), "RESET_MAP")
+        mk = [("call.started", {"call_id": "cm", "callee": "map_navigation_b", "tool": "ask",
+                                "args": plan("mapMarker", action="ADD_MARKER", lng=1, lat=2)}),
+              ("call.finished", {"call_id": "cm", "callee": "map_navigation_b", "tool": "ask", "status": "ok",
+                                 "payload": {"status": "ok", "resolve": {"status": "ok"}}})]
+        v, ext = run(locate_events() + mk + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish(),
+                     GOLD_OVERLAP)
+        self.assertTrue(v["정상수행"], v["불일치"])
+
+    def test_spec_wording_scenario(self):                     # 규격 예시 '저촉 용도지역·지구 도형' → 용도지역·지구 중첩 분석으로 대조
+        gold = dict(GOLD_OVERLAP, 정답시나리오="표출대상=대상 필지 도형; 분석결과표출=저촉 용도지역·지구 도형")
+        ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+        self.assertTrue(run(ev, gold)[0]["정상수행"])
+
+    def test_radius_exact_and_set(self):                      # 반경은 단위만 맞추고 값은 같아야 함, 남는 반경도 오류
+        gold = {"사례ID": "AI6-0013", "명령유형": "공간규제 분석", "참조PNU": PNU,
+                "정답의도": "지도 이동; 주변 규제 분석; 분석 결과 표출",
+                "정답파라미터": f"PNU={PNU}; 분석대상=토지거래계약에관한허가구역; 반경=500m",
+                "정답시나리오": "표출대상=대상 필지 도형; 분석결과표출=반경 500m 내 토지거래계약에관한허가구역 도형"}
+
+        def ev(*dist):
+            out = locate_events() + analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "LAYER_FIND",
+                                                    geom=None, lyr_query="토지거래계약에관한허가구역")
+            for i, d in enumerate(dist):
+                out += analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "LAYER_NEARBY",
+                                       call_id=f"n{i}", lyr_id="klip_c_uq175", distance=d)
+            return out + finish()
+        self.assertTrue(run(ev("0.5km"), gold)[0]["②"])
+        self.assertFalse(run(ev("500.4"), gold)[0]["②"])
+        self.assertFalse(run(ev("500", "300"), gold)[0]["②"])
+
+    def test_layer_judged_by_chosen_layer(self):             # 검색어가 맞아도 공간오케가 다른 레이어를 골랐으면 ② 오류
+        gold = {"사례ID": "AI6-0012", "명령유형": "공간규제 분석", "참조PNU": PNU,
+                "정답의도": "지도 이동; 규제 저촉 분석; 분석 결과 표출",
+                "정답파라미터": f"PNU={PNU}; 분석대상=문화유산보호",
+                "정답시나리오": "표출대상=대상 필지 도형; 분석결과표출=문화유산보호 저촉 도형"}
+
+        def ev(picked):
+            find = [("call.started", {"call_id": "cf", "callee": "spatial_regulation", "tool": "ask",
+                                      "args": plan("tool.spatial.analysis", operation="LAYER_FIND", pnu=PNU, lyr_query="문화유산보호")}),
+                    ("call.finished", {"call_id": "cf", "callee": "spatial_regulation", "tool": "ask", "status": "ok",
+                                       "payload": {"status": "ok", "resolve": {"status": "ok", "result": {"layers": [
+                                           {"name": "문화유산/문화유산보호 · 문화유산", "id": "klip_c_uo301"},
+                                           {"name": "문화유산보호구역 · 문화유산", "id": "lt_c_xx999"}]}}}})]
+            return (locate_events() + find
+                    + analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "INTERSECTIONLAYER",
+                                      call_id="ci", lyr_id=picked) + finish())
+        v, ext = run(ev("klip_c_uo301"), gold)
+        self.assertTrue(v["정상수행"], v["불일치"])
+        self.assertEqual(ext["spec_output"]["핵심파라미터"]["분석대상"], ["문화유산/문화유산보호"])
+        v, _ = run(ev("lt_c_xx999"), gold)
+        self.assertFalse(v["②"])
 
     def test_extra_target_and_radius_fail_param(self):
         gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 규제 저촉 분석; 분석 결과 표출")
@@ -361,6 +440,49 @@ class Score(unittest.TestCase):
         self.assertTrue(any("15건" in p for p in probs))
 
 
+class Rescore(unittest.TestCase):                                  # 다시 판정: 원본 폴더는 그대로, 새 폴더는 한 겹 이름
+    def test_rescore_twice_keeps_one_suffix_and_first_source(self):
+        import shutil
+        import tempfile
+        import spec_runner_ai6 as R6
+        tmp = tempfile.mkdtemp()
+        try:
+            src = os.path.join(tmp, "20261110_120000")
+            os.makedirs(os.path.join(src, "raw"))
+            os.makedirs(os.path.join(src, "data"))
+            ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+            with open(os.path.join(src, "raw", "AI6-0001.json"), "w", encoding="utf-8") as f:
+                json.dump({"사례ID": "AI6-0001", "response": dict(OK_RES, events=[{"event": e, "data": d} for e, d in ev])}, f)
+            def put(name, rows):
+                import csv
+                with open(os.path.join(src, "data", name), "w", encoding="utf-8-sig", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=list(rows[0]))
+                    w.writeheader()
+                    w.writerows(rows)
+            put("answer_ai6.csv", [GOLD_OVERLAP])
+            put("testset_ai6.csv", [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "경산시 신천동 31-1 용도지역 보여줘"}])
+            with open(os.path.join(src, "meta.json"), "w", encoding="utf-8") as f:
+                json.dump({"공식": True, "started": "2026-11-10 12:00:00"}, f)
+            with open(os.path.join(src, "raw", "AI6-0001.json"), "rb") as f:
+                before = f.read()
+            new1, s1 = R6.rescore(src, None, None, None)
+            new2, s2 = R6.rescore(new1, None, None, None)
+            self.assertEqual(s1["value"], 100.0)
+            self.assertEqual(s2["value"], 100.0)
+            self.assertEqual(os.path.basename(new2).count("재판정"), 1)          # '_재판정_…_재판정_…' 로 겹치지 않음
+            self.assertNotEqual(new1, new2)
+            with open(os.path.join(new2, "meta.json"), encoding="utf-8") as f:
+                m2 = json.load(f)
+            self.assertEqual(m2["원본"], os.path.normpath(src))                   # 처음 실행한 폴더를 가리킴
+            self.assertFalse(m2["공식"])
+            self.assertEqual(sum(str(w).startswith("다시 판정(") for w in m2["예비사유"]), 1)
+            with open(os.path.join(src, "raw", "AI6-0001.json"), "rb") as f:
+                self.assertEqual(f.read(), before)
+            self.assertFalse(os.path.exists(os.path.join(src, E.GIS_LOG)))       # 원본 폴더에는 판정 기록을 쓰지 않음
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class _Handler(http.server.BaseHTTPRequestHandler):
     mode = "ok"
 
@@ -437,6 +559,7 @@ class Client(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
+        cls.srv.server_close()
 
     def test_ok_stops_at_turn_finished(self):
         _Handler.mode = "ok"
