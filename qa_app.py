@@ -334,7 +334,7 @@ with side_bottom:
     with st.popover("⚙️ 설정", width="stretch"):
         st.markdown("**시스템 연결**")
         base = st.text_input("시스템 API 주소", qa_runner.BASE, key="api_base",
-                             help="기본값 http://aips.iptime.org:17000/api — 테스트 서버로 바꿀 때만 수정")
+                             help="기본값 http://192.168.200.115:17010/api — 테스트 서버로 바꿀 때만 수정")
         qa_runner.BASE = base.rstrip("/")
         qa_runner.TIMEOUT = st.number_input("질의 1건 최대 대기(초)", 30, 1200, qa_runner.TIMEOUT, 30, key="timeout")
         qa_runner.QUESTION_TMPL = st.text_input("질의문 형식", qa_runner.QUESTION_TMPL, key="q_tmpl",

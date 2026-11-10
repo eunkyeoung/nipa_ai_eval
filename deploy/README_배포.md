@@ -62,7 +62,7 @@ podman load -i nipa-qa.tar
 ```bash
 podman run -d --name nipa-qa -p 16850:8501 \
   -v /opt/bi/nipa_ai_eval:/app \
-  -e AIPS_BASE=http://192.168.200.115:17000/api \
+  -e AIPS_BASE=http://192.168.200.115:17010/api \
   -e AIPS_REF_BASE=http://192.168.200.29:8777 \
   localhost/nipa-qa:latest
 podman logs -f nipa-qa        # "URL: http://0.0.0.0:8501" 이 보이면 정상
@@ -92,7 +92,7 @@ loginctl enable-linger $USER                          # 로그아웃해도 계�
 
 | 환경변수 | 기본값 | 서버에서 |
 |---|---|---|
-| `AIPS_BASE` | `http://aips.iptime.org:17000/api` | `http://192.168.200.115:17000/api` (같은 서버) |
+| `AIPS_BASE` | `http://192.168.200.115:17010/api` | `http://192.168.200.115:17010/api` (같은 서버) |
 | `AIPS_REF_BASE` | `http://192.168.200.29:8777` | 그대로. 개발자 PC라 서버에서 닿지 않으면 AI1 참조 열만 비고, 시험에는 지장 없음 |
 
 PC에서 쓰던 `.streamlit/config.toml`의 `address = "192.168.0.4"`는 컨테이너에서 쓰지 않습니다. Containerfile의 실행 명령이 `0.0.0.0:8501`로 덮어씁니다.
@@ -100,7 +100,7 @@ PC에서 쓰던 `.streamlit/config.toml`의 `address = "192.168.0.4"`는 컨테�
 ## 7. 이관 후 확인
 
 - [ ] 서버 안에서 접속 대상에 닿는지
-  - `curl -s http://192.168.200.115:17000/` (AIPS)
+  - `curl -s http://192.168.200.115:17010/` (AIPS)
   - `curl -s http://192.168.200.116:17801/api/stats` (법령 DB)
   - `curl -s http://192.168.200.115:18800/api/models` (모델명)
   - `curl -s http://192.168.200.128:8003/version` (vLLM)

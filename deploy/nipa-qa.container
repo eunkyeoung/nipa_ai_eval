@@ -10,7 +10,7 @@ Image=localhost/nipa-qa:latest
 ContainerName=nipa-qa
 PublishPort=16850:8501
 Volume=/opt/bi/nipa_ai_eval:/app
-Environment=AIPS_BASE=http://192.168.200.115:17000/api
+Environment=AIPS_BASE=http://192.168.200.115:17010/api
 Environment=AIPS_REF_BASE=http://192.168.200.29:8777
 
 [Service]
