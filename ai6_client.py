@@ -41,6 +41,8 @@ END_EVENTS = ("turn.finished", "error")
 
 # 시험의뢰서 시험환경 'LLM 추론 환경 (GPT-OSS 120B)' — LLM 서버가 띄운 모델이 이것과 같은지 사전 점검에서 확인
 LLM_MODEL = os.environ.get("AI6_LLM_MODEL", "gpt-oss-120b")
+# 규격서 동결 버전 'vLLM 0.24.0' — LLM 서버 /version 이 이것과 다르면 사전 점검 실패 (빈 값이면 기록만)
+VLLM_VERSION = os.environ.get("AI6_VLLM_VERSION", "0.24.0")
 
 
 def llm_key_env():
@@ -59,17 +61,39 @@ def _host_port(url):
     return (u.hostname or "", u.port or (443 if u.scheme == "https" else 80))
 
 
+def llm_version(url):
+    """vLLM 서버 버전 — 같은 서버의 /version (키 없이 열림). url 은 …/v1/models 주소. 못 읽으면 None"""
+    root = str(url or "").split("/v1/", 1)[0].rstrip("/")
+    r = _get(root + "/version")
+    v = r["body"].get("version") if r["ok"] and isinstance(r["body"], dict) else None
+    return str(v) if v else None
+
+
 def llm_check(url, key, ready_diag=None):
-    """LLM 서버 /v1/models 로 지금 띄운 모델을 확인 — (정상 여부, 내용, 기록용 정보).
-    키가 없어 401/403 이면 서버가 살아 있는 것만 확인(정상). 키를 줬는데 401/403 이면 키가 틀린 것(실패).
-    ready_diag(공간오케 /ready 의 vllm_diag)가 있으면 공간오케가 쓰는 LLM 주소·모델과도 맞춰 봄"""
+    """LLM 서버 확인 — (정상 여부, 내용, 기록용 정보, 응답).
+    /version: vLLM 버전이 시험 조건(VLLM_VERSION)과 다르면 실패, 못 읽으면 '미확인'으로 기록만.
+    /v1/models: 지금 띄운 모델 — 키가 있어야 목록을 줌. 키가 없어 401/403 이면 목록은 확인 못 함(그 밖의 확인은 함).
+    키를 줬는데 401/403 이면 키가 틀린 것(실패).
+    ready_diag(공간오케 /ready 의 vllm_diag)가 있으면 공간오케가 쓰는 LLM 주소·모델도 맞춰 봄(키가 없어도)"""
     r = _get(url, headers={"Authorization": f"Bearer {key}"} if key else None)
-    info = {"주소": url, "확인": "키 없음", "응답(ms)": r["ms"]}
+    ver = llm_version(url)
+    info = {"주소": url, "확인": "키 없음", "응답(ms)": r["ms"], "vLLM": ver or "미확인", "vLLM 시험조건": VLLM_VERSION or None}
+    vtxt = f"vLLM {ver}" if ver else "vLLM 버전 미확인(/version 응답 없음)"
+    probs = []
+    if VLLM_VERSION and ver and ver != VLLM_VERSION:
+        probs.append(f"vLLM {ver} — 시험 조건(vLLM {VLLM_VERSION})과 다름")
+    diag = ready_diag or {}
+    if diag.get("base") and _host_port(diag["base"]) != _host_port(url):
+        probs.append(f"공간오케는 다른 LLM 서버({diag['base']})를 씀 — 점검 주소와 다름")
     if r["status"] in (401, 403):
         if key:
             info["확인"] = "키 오류"
             return False, f"서버 응답 {r['status']} — LLM 키가 맞지 않아요(키를 고치거나 비우면 서버 응답만 확인)", info, r
-        return True, f"서버 응답 {r['status']} — 키가 없어 모델은 확인 못 함 (설정의 LLM 키 또는 AI6_LLM_KEY)", info, r
+        if diag.get("model") and _model_name(diag["model"]) != _model_name(LLM_MODEL):
+            probs.append(f"공간오케 설정 모델({diag['model']})이 시험 조건({LLM_MODEL})과 다름")
+        info["일치"] = None if not probs else False
+        tail = "; ".join(probs) if probs else "키가 없어 띄운 모델 목록은 확인 못 함 (LLM 키 칸 또는 AI6_LLM_KEY)"
+        return not probs, f"서버 응답 {r['status']} · {vtxt} — {tail}", info, r
     if not (r["ok"] and isinstance(r["body"], dict)):
         info["확인"] = "응답 없음"
         return False, str(r["body"])[:200], info, r
@@ -79,17 +103,13 @@ def llm_check(url, key, ready_diag=None):
                 원본=[m.get("root") for m in served], 최대길이=[m.get("max_model_len") for m in served], 시험조건=LLM_MODEL)
     desc = ", ".join(f"{m.get('id')}" + (f" ({m.get('root')}" + (f" · 최대 {m.get('max_model_len'):,} 토큰" if isinstance(m.get("max_model_len"), int) else "") + ")"
                                          if m.get("root") and m.get("root") != m.get("id") else "") for m in served) or "목록 비어 있음"
-    probs = []
     if _model_name(LLM_MODEL) not in names:
         probs.append(f"시험 조건 모델({LLM_MODEL})이 목록에 없음")
-    diag = ready_diag or {}
     if diag.get("model") and _model_name(diag["model"]) not in names:
         probs.append(f"공간오케 설정 모델({diag['model']})을 이 서버가 띄우지 않음")
-    if diag.get("base") and _host_port(diag["base"]) != _host_port(url):
-        probs.append(f"공간오케는 다른 LLM 서버({diag['base']})를 씀 — 점검 주소와 다름")
     info["일치"] = not probs
     tail = "; ".join(probs) if probs else (f"시험 조건({LLM_MODEL})과 같음" + (" · 공간오케 설정 모델과 같음" if diag.get("model") else ""))
-    return not probs, f"모델 {desc} — {tail}", info, r
+    return not probs, f"{vtxt} · 모델 {desc} — {tail}", info, r
 
 # 공간오케는 에이전트를 모니터 중계(17007) → 콘솔 /proxy(18800)로 부름 — 콘솔·중계가 내려가면 주소가 든 사례가 전부 실패(D-199)
 REQUIRED_SERVICES = [x.strip() for x in os.environ.get(

@@ -49,6 +49,12 @@ def layer_id(layer):
     return ok or "lyr_" + str(abs(hash(layer)) % 10000)
 
 
+def layer_find(layer, lid):
+    """LAYER_FIND 결과 — 17006 실제 모양(11-10 실측): 이름·ID 는 resolve.facts 의 '레이어'[i]·'레이어ID'[i]"""
+    return {"status": "ok", "pnu": None, "geom": {}, "input": {"operation": "LAYER_FIND", "lyr_query": layer},
+            "facts": {"찾은이름": layer, "후보수": 1, "레이어": [f"{layer} · 국토교통부"], "레이어ID": [lid]}}
+
+
 def events_for(message):
     g = next((v for k, v in GOLD.items() if v.get("_cmd") == message), None)
     if g is None and "지도 이동" in message:                 # 사전 점검의 주소 검색 1건(시험셋 밖 필지) — 위치 확정까지만
@@ -100,14 +106,14 @@ def events_for(message):
                 layer = targets[0] if targets else "개발제한구역"
                 lid = layer_id(layer)
                 ev += call(cid, "spatial_regulation", "tool.spatial.analysis", {"operation": "LAYER_FIND", "pnu": pnu, "lyr_query": layer},
-                           {"status": "ok", "result": {"layers": [{"name": f"{layer} · 규제", "id": lid}]}})
+                           layer_find(layer, lid))
                 ev += call(cid + "b", "spatial_regulation", "tool.spatial.analysis",
                            {"operation": "INTERSECTIONLAYER", "pnu": pnu, "lyr_id": lid}, geo("result_geojson", POLY))
         elif intent == "주변 규제 분석":
             layer = targets[0] if targets else "개발제한구역"
             lid = layer_id(layer)
             ev += call(cid, "spatial_regulation", "tool.spatial.analysis", {"operation": "LAYER_FIND", "pnu": pnu, "lyr_query": layer},
-                       {"status": "ok", "result": {"layers": [{"name": f"{layer} · 규제", "id": lid}]}})
+                       layer_find(layer, lid))
             ev += call(cid + "b", "spatial_regulation", "tool.spatial.analysis",
                        {"operation": "LAYER_NEARBY", "pnu": pnu, "lyr_id": lid, "distance": f"{dist:g}"}, geo("result_geojson", POLY))
         elif intent == "버퍼 분석":

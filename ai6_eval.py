@@ -379,6 +379,10 @@ def call_summary(call):
     if tool is None:                                               # 계획 없는 호출(코어 LLM 경로)은 args 가 {query} 뿐 — 반경 등 분석 조건은 resolve.input 에만 옴
         inp = res.get("input") if isinstance(res.get("input"), dict) else {}
         a = {**{k: inp[k] for k in ("distance", "radius", "lyr_id", "lyr_query") if inp.get(k) not in (None, "")}, **a}
+        facts = res.get("facts") if isinstance(res.get("facts"), dict) else {}
+        lid = facts.get("레이어")                                  # 레이어 분석 결과의 '레이어' = 분석에 쓴 레이어 ID (spatial-mcp, resolve.input 에는 없음)
+        if not a.get("lyr_id") and call_op(call) in LAYER_ANALYSIS_OPS and isinstance(lid, str) and re.fullmatch(r"[a-z0-9_]{3,64}", lid):
+            a["lyr_id"] = lid
     geom = res.get("geom") if isinstance(res.get("geom"), dict) else {}
     result = res.get("result") if isinstance(res.get("result"), dict) else {}
     pnu = pnu_of(a.get("featureRef") or a.get("pnu")) or pnu_of(result.get("pnu")) or pnu_of(res.get("pnu"))
@@ -624,7 +628,9 @@ def layer_name(name):
 
 
 def _layer_catalog(call):
-    """LAYER_FIND 호출 결과에서 레이어 목록을 찾아 {id: 이름} — 결과가 resolve.result · resolve · payload 어디에 있든"""
+    """LAYER_FIND 호출 결과에서 레이어 목록을 찾아 {id: 이름}.
+    17006 실제 응답은 resolve.facts 의 '레이어ID'[i] ↔ '레이어'[i] (payload.facts.agent_facts 에도 같은 값),
+    layers 목록 [{id, name}] 꼴이면 resolve.result · resolve · payload 어디에 있든"""
     pay, res = _resolve(call)
     out = {}
     for box in (res.get("result"), res, pay):
@@ -635,6 +641,18 @@ def _layer_catalog(call):
                     i = x.get("id") or x.get("lyr_id")
                     if i:
                         out[str(i)] = str(x.get("name") or x.get("lyr_nm") or x.get("label") or i)
+    pf = pay.get("facts") if isinstance(pay.get("facts"), dict) else {}
+    for facts in (res.get("facts"), pf.get("agent_facts"), pf):
+        if not isinstance(facts, dict):
+            continue
+        ids, names = facts.get("레이어ID"), facts.get("레이어")
+        ids = ids if isinstance(ids, list) else [ids] if ids else []
+        names = names if isinstance(names, list) else [names] if names else []
+        if len(ids) != len(names):                                 # 짝이 안 맞으면 이름을 붙이지 않음(검색어로 대조)
+            continue
+        for i, n in zip(ids, names):
+            if i and n and str(i) not in out:
+                out[str(i)] = str(n)
     return out
 
 
@@ -752,6 +770,9 @@ def judge(gold, ext, res=None, turn=None):
                     ok2 = False
                     why2.append(f"레이어 '{tok}' 자료 불일치 — 고른 레이어 ID {', '.join(bad_ids)}는 이 레이어 자료가 아님 "
                                 f"(허용 {', '.join(sorted(next(v for k, v in LAYER_TABLES.items() if norm(k) == norm(tok))))})")
+                elif (LAYER_ID_CHECK and any(norm(k) == norm(tok) for k in LAYER_TABLES) and ext.get("chosen_layers")
+                      and not any(c.get("lyr_id") for c in ext["chosen_layers"])):
+                    notes.append(f"레이어 '{tok}' 자료 대조를 못 함 — 고른 레이어 ID가 응답에 없음")
         elif key == "반경":                                         # 반경 분석(버퍼·반경 안 레이어)에 넘어간 값의 집합 = 정답
             g = meters(val)
             got = sorted(set(ext.get("radius") or []))

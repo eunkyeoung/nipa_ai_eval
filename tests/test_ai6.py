@@ -417,6 +417,59 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
         v, _ = run(ev("lt_c_xx999"), gold)
         self.assertFalse(v["②"])
 
+    def test_layer_name_from_live_facts(self):              # 17006 실제 LAYER_FIND 응답(11-10 실측 모양): 이름·ID 는 resolve.facts 의 '레이어'·'레이어ID'
+        gold = {"사례ID": "AI6-0011", "명령유형": "공간규제 분석", "참조PNU": PNU,
+                "정답의도": "지도 이동; 규제 저촉 분석; 분석 결과 표출",
+                "정답파라미터": f"PNU={PNU}; 분석대상=문화유산보호",
+                "정답시나리오": "표출대상=대상 필지 도형; 분석결과표출=문화유산보호 저촉 도형"}
+
+        def find(cid, query, ids, names):
+            facts = {"찾은이름": query, "후보수": len(ids), "레이어": names, "레이어ID": ids}
+            return [("call.started", {"call_id": cid, "callee": "spatial_regulation", "tool": "ask",
+                                      "args": plan("tool.spatial.analysis", operation="LAYER_FIND", pnu=PNU, lyr_query=query)}),
+                    ("call.finished", {"call_id": cid, "callee": "spatial_regulation", "tool": "ask", "status": "ok",
+                                       "payload": {"status": "ok", "resolve": {"status": "ok", "pnu": None, "facts": facts, "geom": {},
+                                                                               "input": {"operation": "LAYER_FIND", "lyr_query": query}},
+                                                   "facts": {"agent_facts": {"id": "spatial_regulation", **facts}}}})]
+
+        def ev(picked, retry=True):                          # 첫 검색어는 0건 → 다른 이름으로 다시 찾아 그 레이어로 교차
+            return (locate_events() + (find("f1", "문화재보호구역", [], []) if retry else [])
+                    + find("f2", "문화유산보호", ["klip_c_uo301"], ["문화유산/문화유산보호 · 국토교통부"])
+                    + analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "INTERSECTIONLAYER",
+                                      call_id="ci", lyr_id=picked) + finish())
+        v, ext = run(ev("klip_c_uo301"), gold)
+        self.assertTrue(v["정상수행"], v["불일치"])
+        self.assertEqual([c["name"] for c in ext["chosen_layers"]], ["문화유산/문화유산보호 · 국토교통부"])
+        self.assertFalse(any("검색어(lyr_query)로 대조" in n for n in v["참고"]))
+        v, _ = run(ev("lsmd_cont_uq161", retry=False), gold)  # 목록에 없는 ID 를 골랐으면 이름을 모름 → 검색어로 대조하고 참고에 남김
+        self.assertTrue(any("검색어(lyr_query)로 대조" in n for n in v["참고"]))
+        self.assertFalse(v["②"])                            # 이름 없는 호출의 레이어 자료 대조(문화유산보호 ≠ lsmd_cont_uq161)
+        self.assertTrue(any("자료 불일치" in m and "lsmd_cont_uq161" in m for m in v["불일치"]), v["불일치"])
+
+    def test_layer_id_from_facts_on_core_llm_route(self):    # 계획 없는 레이어 분석(코어 LLM 경로): args 는 {query,_text} — ID 는 resolve.facts '레이어'
+        gold = {"사례ID": "AI6-0014", "명령유형": "공간규제 분석", "참조PNU": PNU,
+                "정답의도": "지도 이동; 주변 규제 분석; 분석 결과 표출",
+                "정답파라미터": f"PNU={PNU}; 분석대상=지구단위계획구역; 반경=300m",
+                "정답시나리오": "표출대상=대상 필지 도형; 분석결과표출=반경 300m 안 지구단위계획구역 도형"}
+
+        def ev(lid):
+            facts = {"교차건수": 2, "교차여부": True, "레이어": lid, "도형": "지도에 표시됨(2건)", "반경m": 300.0}
+            return (locate_events()
+                    + [("call.started", {"call_id": "cn", "callee": "spatial_regulation", "tool": "ask",
+                                         "args": {"query": "주변 300m 지구단위계획구역", "_text": "주변 300m 지구단위계획구역"}}),
+                       ("call.finished", {"call_id": "cn", "callee": "spatial_regulation", "tool": "ask", "status": "ok",
+                                          "payload": {"status": "ok", "resolve": {
+                                              "status": "ok", "pnu": PNU, "facts": facts, "geom": {"result_geojson": [POLY]},
+                                              "input": {"operation": "LAYER_NEARBY", "pnu": PNU, "input_type": "pnu",
+                                                        "distance": 300.0, "crs": 5186}}}})]
+                    + finish())
+        v, ext = run(ev("lsmd_cont_uq161"), gold)            # 11-10 실측 모양 — 도로 테이블이면 ② 오류
+        self.assertEqual([c["lyr_id"] for c in ext["chosen_layers"]], ["lsmd_cont_uq161"])
+        self.assertFalse(v["②"])
+        self.assertTrue(any("자료 불일치" in m for m in v["불일치"]), v["불일치"])
+        v, _ = run(ev("klip_c_uq161"), gold)
+        self.assertFalse(any("자료 불일치" in m for m in v["불일치"]), v["불일치"])
+
     def test_extra_target_and_radius_fail_param(self):
         gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 규제 저촉 분석; 분석 결과 표출")
         ev = (locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY")
@@ -793,6 +846,81 @@ class Runner(unittest.TestCase):                                   # 실행기 m
         self.assertFalse(m["공식"])
         self.assertTrue(any("연결 실패" in w for w in m["예비사유"]))
 
+    def test_user_stop_is_preliminary_until_resumed_to_end(self):  # 동결한 전체 실행을 중지 → 예비, '↻ 이어서'로 끝까지 돌리면 공식
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        args = self._data(3)
+        ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+        stop = os.path.join(self.tmp, "stop.flag")
+        first = []
+
+        def chat(*a, **k):
+            if not first:                                            # 첫 사례를 보낸 뒤 중지 버튼
+                first.append(1)
+                open(stop, "w").close()
+            return dict(OK_RES, url=self.BASE + "/api/chat", request={}, http_status=200, t_first_event=0.1, deadline=5,
+                        error=None, events=list(ev))
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=chat), um.patch.object(self.R6, "STOP_FILE", stop):
+            self._main(*args, "--run-dir", rd)
+            st, m = self._status(), self._meta(rd)
+            self.assertEqual((st["state"], st["done"]), ("stopped", 1))
+            self.assertIn("argv", st)                                # '↻ 이어서'를 냄
+            self.assertFalse(m["공식"])
+            self.assertIn(self.R6.STOP_NOTE, m["예비사유"])
+            self._main(*args, "--run-dir", rd, "--resume")
+        st, m = self._status(), self._meta(rd)
+        self.assertEqual((st["state"], st["done"]), ("done", 3))
+        self.assertTrue(m["공식"], m.get("예비사유"))
+        self.assertEqual(m["예비사유"], [])
+        self.assertNotIn("중지", m)
+
+    def test_resume_with_changed_conditions_stays_preliminary(self):  # 중지 뒤 조건을 바꿔 동결을 다시 걸고 이어 돌려도 예비(처음 실행과 비교)
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        args = self._data(2)
+        ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+        stop = os.path.join(self.tmp, "stop.flag")
+        first = []
+
+        def chat(*a, **k):
+            if not first:
+                first.append(1)
+                open(stop, "w").close()
+            return dict(OK_RES, url=self.BASE + "/api/chat", request={}, http_status=200, t_first_event=0.1, deadline=5,
+                        error=None, events=list(ev))
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=chat), um.patch.object(self.R6, "STOP_FILE", stop):
+            self._main(*args, "--run-dir", rd)
+            with open(os.path.join(self.tmp, self.R6.FREEZE_FILE), "w", encoding="utf-8") as f:   # 대기 상한 7초로 다시 동결
+                json.dump(self.R6.freeze_record(args[1], args[3], None, 7, self.BASE), f)
+            self._main(*args, "--run-dir", rd, "--resume", "--deadline", "7")
+        m = self._meta(rd)
+        self.assertEqual(self._status()["state"], "done")
+        self.assertFalse(m["공식"])
+        self.assertTrue(any("처음 실행과 조건이 다름" in w and "응답 대기 상한" in w for w in m["예비사유"]), m["예비사유"])
+
+    def test_user_stop_then_unfreeze_stays_preliminary(self):      # 중지 뒤 동결을 풀고 이어 돌리면 끝까지 돌려도 예비
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        args = self._data(2)
+        ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+        stop = os.path.join(self.tmp, "stop.flag")
+        first = []
+
+        def chat(*a, **k):
+            if not first:
+                first.append(1)
+                open(stop, "w").close()
+            return dict(OK_RES, url=self.BASE + "/api/chat", request={}, http_status=200, t_first_event=0.1, deadline=5,
+                        error=None, events=list(ev))
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=chat), um.patch.object(self.R6, "STOP_FILE", stop):
+            self._main(*args, "--run-dir", rd)
+            os.remove(os.path.join(self.tmp, self.R6.FREEZE_FILE))
+            self._main(*args, "--run-dir", rd, "--resume")
+        m = self._meta(rd)
+        self.assertEqual(self._status()["state"], "done")
+        self.assertFalse(m["공식"])
+        self.assertTrue(any("동결" in w for w in m["예비사유"]), m["예비사유"])
+
     def test_status_written_before_precheck(self):                 # 사전 점검이 20초를 넘어도 화면이 '비정상 종료'로 보지 않게 먼저 씀
         seen = {}
 
@@ -871,13 +999,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
-class _LlmHandler(http.server.BaseHTTPRequestHandler):            # vLLM /v1/models 흉내 — 키가 맞아야 목록을 줌
+class _LlmHandler(http.server.BaseHTTPRequestHandler):            # vLLM 흉내 — /v1/models 는 키가 맞아야 목록을 줌, /version 은 키 없이
     model = "gpt-oss-120b"
+    version = "0.24.0"
 
     def log_message(self, *a):
         pass
 
     def do_GET(self):
+        if self.path == "/version":
+            self.send_response(200 if _LlmHandler.version else 404)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"version": _LlmHandler.version} if _LlmHandler.version else {"detail": "Not Found"}).encode())
+            return
         if self.headers.get("Authorization") != "Bearer good":
             self.send_response(401)
             self.send_header("Content-Type", "application/json")
@@ -905,7 +1040,34 @@ class LlmCheck(unittest.TestCase):                                 # 사전 점�
         cls.srv.server_close()
 
     def setUp(self):
-        _LlmHandler.model = "gpt-oss-120b"
+        _LlmHandler.model, _LlmHandler.version = "gpt-oss-120b", "0.24.0"
+
+    def test_vllm_version_checked(self):                          # 규격서 동결 버전 'vLLM 0.24.0' — /version 으로 확인, 다르면 실패
+        ok, detail, info, _ = C.llm_check(self.url, "good")
+        self.assertTrue(ok, detail)
+        self.assertEqual(info["vLLM"], "0.24.0")
+        self.assertIn("vLLM 0.24.0", detail)
+        _LlmHandler.version = "0.11.0"
+        ok, detail, _, _ = C.llm_check(self.url, "good")
+        self.assertFalse(ok)
+        self.assertIn("시험 조건(vLLM 0.24.0)과 다름", detail)
+        ok, _, _, _ = C.llm_check(self.url, "")                    # 키가 없어도 버전은 봄
+        self.assertFalse(ok)
+        _LlmHandler.version = None                                  # /version 이 없으면 '미확인'으로 기록만
+        ok, detail, info, _ = C.llm_check(self.url, "good")
+        self.assertTrue(ok, detail)
+        self.assertEqual(info["vLLM"], "미확인")
+        self.assertIn("vLLM 버전 미확인", detail)
+
+    def test_no_key_still_checks_suborc_setting(self):           # 키가 없어도 공간오케 /ready 설정 모델·주소는 시험 조건과 대조
+        ok, detail, _, _ = C.llm_check(self.url, "", {"model": "gpt-oss-20b"})
+        self.assertFalse(ok)
+        self.assertIn("공간오케 설정 모델(gpt-oss-20b)이 시험 조건(gpt-oss-120b)과 다름", detail)
+        ok, detail, _, _ = C.llm_check(self.url, "", {"model": "openai/gpt-oss-120b", "base": "http://10.0.0.9:8003/v1"})
+        self.assertFalse(ok)
+        self.assertIn("다른 LLM 서버", detail)
+        ok, detail, _, _ = C.llm_check(self.url, "", {"model": "gpt-oss-120b", "base": self.url.rsplit("/", 1)[0]})
+        self.assertTrue(ok, detail)
 
     def test_key_and_same_model(self):
         ok, detail, info, _ = C.llm_check(self.url, "good", {"model": "gpt-oss-120b", "base": self.url.rsplit("/", 1)[0]})

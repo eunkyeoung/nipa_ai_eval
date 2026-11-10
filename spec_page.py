@@ -59,7 +59,8 @@ NOT_PROVIDED = [   # 시험의뢰서가 요구하지만 AIPS가 질의 응답(SS
     "AIPS 응답(orc.start)에 모델명·룰셋 버전·법령 DB 기준일을 넣어 달라고 개발팀에 요청 필요",
 ]
 NOT_PROVIDED_AI6 = [   # [AI 6] 규격 시험방법 (2) '동결 버전 확인' 중 공간오케·에이전트가 알려 주지 않는 값 → 대신 쓰는 방법
-    "**AI 모델** — 공간오케 /ready 의 설정 모델과 LLM 서버 /v1/models 목록으로 확인 (위 'LLM 모델' 두 행, 조회값)",
+    "**AI 모델** — 공간오케 /ready 의 설정 모델, LLM 서버 /v1/models 목록(LLM 키를 넣었을 때), vLLM 버전은 LLM 서버 /version 으로 확인 "
+    "(위 'LLM 모델' 두 행과 'vLLM 버전' 행, 조회값)",
     "**공간분석 API 버전** — 사전 점검 때 /v3/api-docs 의 info.version 을 기록 (위 '실행 전 사전 점검 결과', 조회값)",
     "**Sub 오케스트레이터·에이전트 버전, 지도 데이터 기준일** — 시스템이 알려 주지 않음(/health 는 상태만) → 시험 기록에 "
     "**선언값**으로 적고, 실행마다 '연결 에이전트' 목록이 같은지로 바뀌었는지만 확인",
@@ -417,7 +418,8 @@ def sidebar_ai6(side, launch, running, missing):
                             help=f"공간오케에 시험셋에 없는 명령 1건('{C6.PROBE_MESSAGE}')을 보내 위치 검색이 되는지 확인해요")
         llm_key = st.text_input("LLM 키 (모델 확인용)", C6.llm_key_env(), type="password", key="ai6_llm_key",
                                 help=f"LLM 서버 /v1/models 로 지금 띄운 모델이 시험 조건({C6.LLM_MODEL})·공간오케 설정과 같은지 확인해요. "
-                                     "비우면 서버 응답만 확인해요. 키는 실행 기록에 남기지 않아요.")
+                                     f"비우면 모델 목록은 못 보고 vLLM 버전(시험 조건 {C6.VLLM_VERSION or '-'})과 공간오케 설정만 확인해요. "
+                                     "키는 실행 기록에 남기지 않아요.")
     if side.button("사전 점검", width="stretch", disabled=running,
                    help="공간오케 /health·/ready, LLM, 공간분석 API 응답을 확인해요. 실행할 때도 다시 점검하고, 실패하면 실행하지 않아요."):
         with st.spinner("사전 점검 중…"):
@@ -658,6 +660,7 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                    ("대상 시스템 (공간오케)", meta.get("endpoint") or meta.get("base") or "-"),
                    ("LLM 모델 (공간오케 /ready)", rd.get("LLM 모델") or "-"),
                    ("LLM 모델 (LLM 서버 확인)", (meta.get("llm") or {}).get("내용") or "기록 없음 (사전 점검 생략 또는 이전 실행)"),
+                   ("vLLM 버전 (LLM 서버 /version)", (meta.get("llm") or {}).get("vLLM") or "기록 없음 (사전 점검 생략 또는 이전 실행)"),
                    ("연결 에이전트", rd.get("연결 에이전트") or "-"),
                    ("사례당 응답 대기 상한", f"{meta.get('deadline_s', '-')}초 (넘기면 연결을 끊고 응답 오류)"),
                    ("실행 사례", f"선택 {len(meta['cases'])}건" if meta.get("cases") else "시험셋 전체"),

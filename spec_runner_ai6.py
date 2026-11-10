@@ -55,6 +55,7 @@ GAP = float(os.environ.get("AI6_GAP", "2"))                # 사례 사이 쉬�
 COOLDOWN = float(os.environ.get("AI6_COOLDOWN", "10"))     # 대기 상한 초과(취소) 뒤 쉬는 시간(초)
 MAX_CONN_FAILS = 3                                          # 연결 실패가 이만큼 이어지면 환경 문제로 보고 멈춤(전체 재수행 대상)
 FREEZE_FILE = "freeze_ai6.json"                             # 시험 데이터 폴더의 동결 기록 — 있으면 해시가 같아야 실행
+STOP_NOTE = "사용자 중지 — 끝까지 돌리기 전(↻ 이어서로 마저 돌리면 공식)"   # 동결한 전체 실행을 멈췄을 때의 예비 사유
 
 
 def refuse(status_file, msg):
@@ -124,6 +125,11 @@ def write_jsonl(path, rows):
 def append_jsonl(path, row):
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+
+
+def save_meta(path, meta):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1, default=str)
 
 
 def save_tables(path, tables):
@@ -355,6 +361,16 @@ def main():
         with open(mp, encoding="utf-8") as f:
             meta = {**json.load(f)}
         meta.setdefault("resumed", []).append(time.strftime("%Y-%m-%d %H:%M:%S"))
+        cur = freeze_record(a.testset, a.answer, a.intent_map, deadline, base)   # 처음 실행 때와 같은 조건인가 — 그사이 동결을 다시 걸었어도
+        changed = [name for key, mkey, name in (("testset_sha256", "testset_sha256", "시험셋"), ("answer_sha256", "answer_sha256", "정답셋"),
+                                                ("intent_map_sha256", "intent_rules_sha256", "의도 대응표"),
+                                                ("criteria_sha256", "criteria_sha256", "판정 기준(코드)"),
+                                                ("deadline_s", "deadline_s", "응답 대기 상한"), ("base", "base", "공간오케 주소"))
+                   if meta.get(mkey) is not None and (float(meta[mkey]) != float(cur[key]) if key == "deadline_s"
+                                                      else str(meta[mkey]) != str(cur.get(key)))]
+        if changed:
+            meta["공식"] = False
+            meta.setdefault("예비사유", []).append("이어서 실행 때 처음 실행과 조건이 다름 (" + ", ".join(changed) + ")")
         if a.retry_errors:
             meta["공식"] = False
             meta.setdefault("예비사유", []).append("응답 오류 재전송")
@@ -406,6 +422,9 @@ def main():
             if os.path.exists(STOP_FILE):
                 os.remove(STOP_FILE)
                 status.update(state="stopped", message=f"사용자가 중지 ({status['done']}/{total}건 완료)")
+                if meta.get("공식"):                           # 다 돌리기 전에는 공식 점수로 쓰지 않음 — '↻ 이어서'로 끝까지 돌리면 되돌림
+                    meta.update(공식=False, 중지=True, 예비사유=(meta.get("예비사유") or []) + [STOP_NOTE])
+                    save_meta(mp, meta)
                 break
             cid, cmd = r["사례ID"], r["명령문"]                 # 문장은 그대로 — strip 도 하지 않음(시험셋에 적힌 그대로 입력)
             status["current"] = dict(case_id=cid, 회차=1, 질의=cmd)
@@ -444,6 +463,15 @@ def main():
                 break
             pause(COOLDOWN if res.get("ended_by") == "deadline" else GAP)
         if status["state"] == "running":
+            if meta.pop("중지", None):                      # 사용자 중지 뒤 '↻ 이어서'로 끝까지 — 보낸 데이터(사본)가 지금도 동결 그대로이고 다른 예비 사유가 없으면 공식
+                why = [w for w in meta.get("예비사유") or [] if w != STOP_NOTE]
+                fz = freeze_check(freeze_path, freeze_record(a.testset, a.answer, a.intent_map, deadline, base))
+                if fz is None or fz:
+                    why.append("이어서 실행 때 동결 기록과 다름" + (f" ({', '.join(fz)})" if fz else " (동결 풀림)"))
+                if pilot and not why:
+                    why.append("이어서 실행을 예비 조건으로 함(일부 ID·사전 점검 생략 등)")
+                meta.update(예비사유=why, 공식=bool(meta.get("frozen")) and not why)
+                save_meta(mp, meta)
             snap_ts = os.path.join(snap, os.path.basename(a.testset)) if os.path.exists(os.path.join(snap, os.path.basename(a.testset))) else a.testset
             s = score_run(run_dir, snap_ts)
             msg = f"완료 ({status['done']}/{total}건)"
