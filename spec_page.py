@@ -197,6 +197,14 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                     f.write(up.getvalue())
                 st.cache_data.clear()
                 st.success(f"{stem}{ext} 저장")
+        if item == "AI4":                       # 규격서 [AI 4] 시험방법 (2): 판정 결과별·예외 유형별 개수 확인
+            t4, a4 = S.read_table(data_path("testset_ai4")), S.read_table(data_path("answer_ai4"))
+            if t4 is not None and "예외유형" in t4:
+                ec = t4["예외유형"].value_counts()
+                st.markdown("**예외 유형별 개수** — " + " / ".join(f"{k} {int(ec.get(k, 0))}건" for k in ("예외 조항", "단서 규정", "협의 대상", "심의 대상")))
+            if a4 is not None and "판정결과" in a4:
+                vc = a4["판정결과"].map(S.type2).value_counts()
+                st.markdown("**판정 결과별 개수** — " + " / ".join(f"{k} {int(vc.get(k, 0))}건" for k in S.TYPE2))
         st.divider()
         st.markdown("**양식**")
         for stem in need:

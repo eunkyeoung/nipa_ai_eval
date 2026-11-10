@@ -36,7 +36,7 @@ SPEC = {
     "AI4": dict(no="2-4", name="[AI 4] 예외·단서 규정 적용 사례의 허가 가능/허가 불가능 판정 및 단서 조건 제시 기능", metric="조건부 가능 판단 정확도",
                 target=95.0, cmp=">=", log="diagnose_log_ai4.jsonl",
                 formula="[AI 4] 조건부 가능 판단 정확도(%) = 조건부 판단 및 제시 조건이 모두 적합한 건수 / 전체 조건부 테스트 건수 × 100  (제시 조건 = 단서 조건 근거 조문, 보완사항·행정절차는 보조 지표)",
-                data="표준 질의문 50건 (허가 가능 40 / 허가 불가능 10)"),
+                data="표준 질의문 50건 (허가 가능 25 / 허가 불가능 25) · 예외 유형 4종(예외 조항 / 단서 규정 / 협의 대상 / 심의 대상)"),
     "AI5": dict(no="2-5", name="[AI 5] 법령·조례 근거의 정확성이 확보된 사전 진단 응답 생성 기능", metric="환각 발생률",
                 target=3.0, cmp="<=", log="diagnose_log_ai5.jsonl",
                 formula="[AI 5] 환각 발생률(%) = 환각 사례로 판정된 응답 건수 / 전체 테스트 응답 건수 × 100",                          # 수행계획서 문구
@@ -1016,10 +1016,11 @@ def score_ai4(log, answer, testset=None):
     for name, col in [("필요 행정절차", "필요행정절차_일치")]:
         s = res[col].dropna().astype(bool) if n else pd.Series(dtype=bool)
         aux.append({"보조 지표": name, "대상": len(s), "일치": int(s.sum()), "불일치": int((~s).sum()),
-                    "비고": ""})
+                    "적합률(%)": pct(s.sum(), len(s)), "비고": ""})
     sb = res["보완사항_판정"].dropna() if n else pd.Series(dtype=object)
     aux.append({"보조 지표": "보완사항", "대상": len(sb), "일치": int((sb == "정확 일치").sum()),
-                "불일치": int((sb == "불일치").sum()), "비고": f"부분 일치 {int((sb == '부분 일치').sum())}건"})
+                "불일치": int((sb == "불일치").sum()), "적합률(%)": pct((sb == "정확 일치").sum(), len(sb)),
+                "비고": f"부분 일치 {int((sb == '부분 일치').sum())}건 (적합률은 정확 일치 기준)"})
     return dict(value=val, n=n, tables={"판정 결과(허가 가능/허가 불가능)별 적합·부적합 건수": t1, "예외 유형별 적합·부적합 건수": t2,
                                         "보조 지표(보완사항, 필요 행정절차) 일치·불일치 건수 및 적합률": pd.DataFrame(aux)},
                 cases=res)
