@@ -123,6 +123,11 @@ def extract(events):
     for s in done:
         if s.get("verdict") == "impossible":
             deny += laws_of(s)
+    # 용도지역·지구·도시계획시설 판정에서 불가(sym X)로 결합된 항목의 조문 (judgment.matrix_gate.zone_results[].source)
+    # — 11-10 확인: 불가 단계의 detail.laws가 비어도 판정 조문은 여기에 들어 있음
+    for z in (j.get("matrix_gate") or {}).get("zone_results") or []:
+        if isinstance(z, dict) and z.get("sym") == "X" and str(z.get("in_combine")) == "True" and z.get("source"):
+            deny.append(str(z["source"]))
     # 용도지역·도시계획시설 등으로 불허된 경우 근거는 report.band.deny_reasons 에 들어 있음
     rep0 = diag.get("report") or {}
     deny += [str(x) for x in (rep0.get("band") or {}).get("deny_reasons") or []]
