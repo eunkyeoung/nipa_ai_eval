@@ -973,6 +973,10 @@ def load_law_db(path):
     return parse_citations(df[col].tolist())
 
 
+OLD_LAW_NAMES = {"도시공원법": "도시공원 및 녹지 등에 관한 법률",          # 폐지·개칭된 옛 법령명 → 현행 명칭 (환각 사유 안내용, 판정에는 쓰지 않음)
+                 "도시공원법시행령": "도시공원 및 녹지 등에 관한 법률 시행령"}
+
+
 def score_ai5(log, answer, law_db=None):
     """환각 ①~④ 자동 판정 (하나라도 해당하면 환각 1건, 중복 계수 안 함). ⑤ 논리 불일치는 시험항목에서 제외(2026-11-10)"""
     a = answer.set_index("사례ID")
@@ -999,12 +1003,24 @@ def score_ai5(log, answer, law_db=None):
         #    응답의 적용 법령이 허용 법령과 하나도 일치하지 않으면 불일치 (2026-11-10, 완전 일치 규칙에서 변경 · 시험기관 확인 대상)
         h4 = bool(gl) and not (gl & pl)
         missing = [fmt_cite(c) for c in pc if law_db is not None and not exists(c)]
+        why = []                                       # 환각 사유 (유형별로 무엇이 왜 걸렸는지)
+        if h1:
+            olds = sorted({c[0] for c in pc if not exists(c) and c[0] in OLD_LAW_NAMES})
+            why.append("① 법령·조례 조문 DB에 없는 조문 인용: " + ", ".join(missing)
+                       + (f" — 옛 법령명 {'·'.join(olds)} 사용(현행 「{OLD_LAW_NAMES[olds[0]]}」). DB에는 현행 명칭만 있음" if olds else ""))
+        if h2:
+            why.append("② 응답에 근거 조문이 없음 (판정 단계·조건·불허 사유 어디에도 조문 번호 없음)")
+        if h3:
+            why.append(f"③ 인용 조문({', '.join(sorted(fmt_cite(c) for c in pc))})이 정답 조문셋과 하나도 일치하지 않음")
+        if h4:
+            why.append(f"④ 적용 법령({', '.join(sorted(law_id(x) for x in pl)) or '없음'})이 정답 허용 법령({', '.join(split_list(g.get('적용법령')))})과 하나도 일치하지 않음")
         rows.append(dict(사례ID=cid, 질의문=r.get("질의문"), 판단유형=r.get("판단유형"),
                          설명문=str(r.get("설명문") or ""),                 # 규격서 출력: 판단 결과·설명문·인용 조문·적용 법령
                          인용조문="; ".join(r.get("근거조문") or []), 정답조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          적용법령="; ".join(r.get("적용법령") or []), 정답_적용법령="; ".join(split_list(g.get("적용법령")) if g is not None else []),
                          **{"① 인용 조문 미존재": h1, "② 근거 조문 부재": h2, "③ 근거 오인용": h3, "④ 법령·조례 근거 불일치": h4},
-                         환각=bool(h1) or h2 or h3 or h4, DB미존재조문="; ".join(missing)))
+                         환각=bool(h1) or h2 or h3 or h4, 환각사유=" / ".join(why) or "-",
+                         DB미존재조문="; ".join(missing)))
     res = pd.DataFrame(rows)
     n = len(res)
     val = pct(res["환각"].sum(), n) if n else None

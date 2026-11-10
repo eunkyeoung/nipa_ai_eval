@@ -526,6 +526,13 @@ def render(item, area, help_fn=None):
                ("필요 행정절차", "; ".join(rec.get("필요행정절차") or []) or none_why("인허가 절차 안내를")),
                ("설명문", rec.get("설명문") or "-"), ("추적 ID", rec.get("trace_id") or "-"),
                ("소요(초)", rec.get("소요초")), ("오류", " · ".join(x for x in S.error_detail(rec, run_dir) if x) or "없음 (정상 응답)")]
+        if item == "AI5" and "환각사유" in r["cases"]:          # 환각 판정과 사유 (정답 조문셋과 비교한 결과)
+            c5 = r["cases"].set_index("사례ID")
+            if cid in c5.index:
+                c5 = c5.loc[cid]
+                out[:0] = [("환각 판정", "환각" if c5["환각"] else "정상 응답"),
+                           ("환각 사유", c5["환각사유"] if c5["환각"] else "-"),
+                           ("정답 조문셋", c5["정답조문"] or "-"), ("정답 적용 법령", c5["정답_적용법령"] or "-")]
         _o = pd.DataFrame(out, columns=["출력 항목", "값"]).astype(str)
         show_table(_o)
         steps = rec.get("단계로그") or []
