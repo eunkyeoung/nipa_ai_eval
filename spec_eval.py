@@ -23,11 +23,11 @@ from qa_eval import LAW_ALIAS, classify_permits, norm_law
 SPEC = {
     "AI1": dict(no="2-1", name="[AI 1] 인허가 질의에 대한 사전 진단 판단 결과 도출 기능", metric="사전 진단 판단 정확도",
                 target=95.0, cmp=">=", log="diagnose_log_ai1.jsonl",
-                formula="[AI 1] 사전 진단 판단 정확도(%) = AI 판단 결과 일치 건수 / 전체 테스트 건수 × 100",
+                formula="정확도(%) = ( 맞힌 예측 수 / 전체 테스트 데이터 수 ) × 100",
                 data="표준 질의문 50건 (허가 가능 25 / 허가 불가능 25)"),
     "AI2": dict(no="2-2", name="[AI 2] 유의어·유사 표현 질의에 대한 동일 사전 진단 결과 재현 기능", metric="사전 진단 판단 F1 스코어",
                 target=95.0, cmp=">=", log="diagnose_log_ai2.jsonl",
-                formula="종합 F1 Score(%) = 판단 유형별 F1 Score의 가중평균  (가중치 = 판단 유형별 정답 질의 수, F1 = 2 × Precision × Recall / (Precision + Recall))",
+                formula="가중평균 F1(%) = Σ (판단 유형별 F1 × 판단 유형별 정답 질의 수) / 전체 질의 수  (F1 Score(%) = 2 × Precision × Recall / (Precision + Recall))",
                 data="시나리오 10건 × 질의 5건(원문 1 + 변형 4) = 50 질의"),
     "AI3": dict(no="2-3", name="[AI 3] 사전 진단 추론·데이터 조회 과정의 동일 프로세스 수행 및 로그 기록 기능", metric="사전 진단 판단 일관성",
                 target=98.0, cmp=">=", log="diagnose_log_ai3.jsonl",
@@ -35,7 +35,7 @@ SPEC = {
                 data="질의 10건 × 반복 5회 = 50회 수행"),
     "AI4": dict(no="2-4", name="[AI 4] 예외·단서 규정 적용 사례의 허가 가능/허가 불가능 판정 및 단서 조건 제시 기능", metric="조건부 가능 판단 정확도",
                 target=95.0, cmp=">=", log="diagnose_log_ai4.jsonl",
-                formula="[AI 4] 조건부 가능 판단 정확도(%) = 조건부 판단 및 제시 조건이 모두 적합한 건수 / 전체 조건부 테스트 건수 × 100  (제시 조건 = 단서 조건 근거 조문, 보완사항·행정절차는 보조 지표)",
+                formula="정확도(%) = ( 맞힌 예측 수 / 전체 테스트 데이터 수 ) × 100  (판정 결과가 정답 라벨과 정확 일치하고 단서 조건 근거 조문이 집합 일치해야 맞힌 예측)",
                 data="표준 질의문 50건 (허가 가능 40 / 허가 불가능 10)"),
     "AI5": dict(no="2-5", name="[AI 5] 법령·조례 근거의 정확성이 확보된 사전 진단 응답 생성 기능", metric="환각 발생률",
                 target=3.0, cmp="<=", log="diagnose_log_ai5.jsonl",
@@ -632,7 +632,7 @@ def score_ai1(log, answer):
         note = ""
         aux.append({"보조 지표": name, "대상": len(s), "일치": int(s.astype(bool).sum()), "불일치": int((~s.astype(bool)).sum()),
                     "일치율(%)": pct(s.astype(bool).sum(), len(s)), "비고": note})
-    return dict(value=acc, n=n, tables={"판단 유형별 결과": pd.DataFrame(by_type), "보조 지표": pd.DataFrame(aux)},
+    return dict(value=acc, n=n, tables={"판단 유형 2종별 일치·불일치 건수": pd.DataFrame(by_type), "보조 지표(적용 법령·근거 조문)별 일치·불일치 건수 및 일치율": pd.DataFrame(aux)},
                 cases=res, confusion=pd.crosstab(res["정답_판단유형"], res["예측_판단유형"]) if n else pd.DataFrame())
 
 
@@ -827,8 +827,8 @@ def score_ai2(log, answer, testset=None):
     rep_rows.append({"시나리오ID": "전체", "원문 질의문": f"시나리오 {log['시나리오ID'].nunique()}건 합계", "정답 판단유형": "-", "원문 결과": "-", "변형 질의 수": var_n,
                      "원문과 동일": var_ok, "재현 일치율(%)": pct(var_ok, var_n), "정답 일치 질의": int(log["일치"].sum())})
     return dict(value=wf1, n=n, confusion=cm,
-                tables={"판단 유형별 Precision·Recall·F1": pd.DataFrame(rows),
-                        "표현 변형 재현 일치율 (보조)": pd.DataFrame(rep_rows)},
+                tables={"판단 유형 2종별 Precision·Recall·F1 스코어": pd.DataFrame(rows),
+                        "보조 지표: 표현 변형 재현 일치율 (시나리오별·전체)": pd.DataFrame(rep_rows)},
                 aux={"표현 변형 재현 일치율(%)": pct(var_ok, var_n)},
                 cases=log[["질의ID", "시나리오ID", "구분", "질의문", "정답_판단유형", "예측_판단유형", "일치"]])
 
@@ -891,9 +891,9 @@ def score_ai3(log):
                              "근거": s_.get("근거", "")}
                             for cid, g in log.groupby("사례ID", sort=False) for _, r in g.sort_values("회차").iterrows()
                             for s_ in (r.get("단계로그") or [])])
-    return dict(steplog=steplog, value=val, n=n, tables={"사례별·회차별 비교 (O 일치 / X 불일치)": pivot.reset_index() if n else pivot,
+    return dict(steplog=steplog, value=val, n=n, tables={"사례별·회차별 비교 결과 (O 일치 / X 불일치)": pivot.reset_index() if n else pivot,
                                         "불일치 발생 단계별 건수": stages,
-                                        "사례 단위 일관성 (보조)": cases},
+                                        "보조 지표: 사례 단위 일관성": cases},
                 aux={"사례 단위 일관성(%)": case_val}, cases=runs)
 
 
@@ -959,7 +959,8 @@ def score_ai4(log, answer, testset=None):
     sb = res["보완사항_판정"].dropna() if n else pd.Series(dtype=object)
     aux.append({"보조 지표": "보완사항", "대상": len(sb), "일치": int((sb == "정확 일치").sum()),
                 "불일치": int((sb == "불일치").sum()), "비고": f"부분 일치 {int((sb == '부분 일치').sum())}건"})
-    return dict(value=val, n=n, tables={"판정 결과별 적합률": t1, "예외 유형별 적합률": t2, "보조 지표": pd.DataFrame(aux)},
+    return dict(value=val, n=n, tables={"판정 결과(허가 가능/허가 불가능)별 적합·부적합 건수": t1, "예외 유형별 적합·부적합 건수": t2,
+                                        "보조 지표(보완사항, 필요 행정절차) 일치·불일치 건수 및 적합률": pd.DataFrame(aux)},
                 cases=res)
 
 
@@ -1042,8 +1043,8 @@ def score_ai5(log, answer, law_db=None):
                          {"구분": "환각 응답", "건수": int(res["환각"].sum()) if n else 0},
                          {"구분": "전체", "건수": n}])
     logic = int((res["⑤ 논리 불일치(보조)"] != "").sum()) if n else 0
-    return dict(value=val, n=n, tables={"환각 유형별 검출 건수": pd.DataFrame(types), "정상·환각 응답 건수": summ,
-                                        "⑤ 논리 불일치 (보조)": pd.DataFrame([{"검출 건수": logic, "대상": n}])},
+    return dict(value=val, n=n, tables={"환각 유형별 검출 건수 (①~④ 산정 대상, ⑤ 보조 지표)": pd.DataFrame(types), "정상·환각 응답 건수": summ,
+                                        "보조 지표: ⑤ 판단 사유와 최종 결정 간 논리 불일치 검출 건수": pd.DataFrame([{"검출 건수": logic, "대상": n}])},
                 aux={"⑤ 논리 불일치 검출 건수": logic}, cases=res)
 
 
