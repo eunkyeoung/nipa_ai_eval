@@ -3,7 +3,11 @@
 import sys
 sys.path.insert(0, ".")
 
-RC, EX, CF, HI = "Regulation-Constraint", "Exception", "Conflict", "위계 추적"
+# ODP 유형 표기 — 규격서 v1.51 12쪽 "ODP / 질의 유형" 표 그대로 (영어 + 한글 뜻)
+RC = "Regulation-Constraint (규제 조건 도출)"
+EX = "Exception (예외·단서 적용)"
+CF = "Conflict (법령·조례 충돌 해소)"
+HI = "위계 추적 (법·시행령·시행규칙·조례 위임)"
 LAW = "국토의 계획 및 이용에 관한 법률"
 LAWR = "국토의 계획 및 이용에 관한 법률 시행령"
 CQS = [

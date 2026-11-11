@@ -59,7 +59,7 @@ SPEC = {
                 target=96.0, cmp=">=", log="validation_result_da2.csv", da2=True,
                 formula="[DA 2] 온톨로지(ODP) 설계 완성도(%) = CQ 질의 응답 정확도 × 0.35 + 온톨로지 스키마 적합률 × 0.15 "
                         "+ 온톨로지 기반 데이터 매핑 정확도 × 0.30 + 논리적 일관성·무결성 × 0.20",
-                data="CQ 50건(Regulation-Constraint 20 / Exception 13 / Conflict 10 / 위계 추적 7), 스키마 평가항목, 매핑 검증 표본, "
+                data="CQ 50건(Regulation-Constraint(규제 조건 도출) 20 / Exception(예외·단서 적용) 13 / Conflict(법령·조례 충돌 해소) 10 / 위계 추적(법·시행령·시행규칙·조례 위임) 7), 스키마 평가항목, 매핑 검증 표본, "
                      "LandCheck 온톨로지 모델 v1.0(스키마·인스턴스·SHACL)",
                 parts=[("DA 2-1", "CQ 질의 응답 정확도", 35, "CQ별 SPARQL 질의 결과와 정답셋의 집합 일치 비율 (부분 일치는 오답)",
                         "정답셋과 일치한 CQ 수 / 전체 CQ 수 × 100"),
