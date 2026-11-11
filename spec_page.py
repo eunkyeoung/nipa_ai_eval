@@ -20,6 +20,7 @@ LABEL = {"testset": "시험셋(질의)", "answer": "정답셋", "law_article_db"
          "result": "실행 결과(시스템 응답)"}
 RAW_VERDICT = {"possible": "승인 가능", "impossible": "부적합", "conditional": "조건부 가능",   # AIPS 원 판정값 → 수행계획서 4종
                "needs_review": "검토 필요", "unknown": "검토 필요"}
+HIDE_TABLES = {"AI1": ("보조 지표(적용 법령·근거 조문)별 일치·불일치 건수 및 일치율",)}   # 2026-11-11 의뢰기업 요청: 결과 화면에서 숨김 (result.xlsx에는 남음)
 HIDE_CASE_COLS = ["적용룰셋"]          # 질의별 결과 화면에서 숨길 컬럼 (질의별 상세 결과·result.xlsx에는 남음)
 
 
@@ -442,7 +443,8 @@ def render(item, area, help_fn=None):
             rest = list(r["tables"].items())[1:]
         else:
             rest = list(r["tables"].items())
-        rest = [(name, pct_view(df) if isinstance(df, pd.DataFrame) else df) for name, df in rest]
+        rest = [(name, pct_view(df) if isinstance(df, pd.DataFrame) else df) for name, df in rest
+                if name not in HIDE_TABLES.get(item, ())]          # 화면에서만 숨김 (result.xlsx에는 남음)
         for name, df in rest:
             st.markdown(f":orange[⚠️ **{name}**] — 시스템 판정을 받지 못해 판단불가(오답)로 집계된 건"
                         if name.startswith("응답 오류") else f"**{name}**")
