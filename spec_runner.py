@@ -219,6 +219,9 @@ def reextract(item, run_dir):
         events = [(e["event"], e["data"]) for e in json.load(open(rp, encoding="utf-8"))]
         base = qa_runner.extract(events)
         r.update(S.map_response(events, base), 단계로그=S.step_log(events, base))
+        if r.get("오류") == S.CUT_OFF:                    # '응답 중단'은 추출 결과로 정해진 값 → 새 추출로 다시 판정 (통신 오류는 그대로)
+            r["오류"] = ""
+            r["오류"] = S.error_text(r)
         n += 1
     with open(p, "w", encoding="utf-8") as f:
         for r in rows:
