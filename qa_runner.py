@@ -27,7 +27,7 @@ import requests
 
 BASE = os.environ.get("AIPS_BASE", "http://192.168.200.115:17010/api")    # AIPS 사전진단 서비스 (2026-11-10 17000 → 17010). 컨테이너는 환경변수로 지정
 DEVICE_ID = "qa-runner"                     # 시스템에서 QA 질의를 구분하기 위한 기기 ID
-TIMEOUT = 300                               # 질의 1건 최대 대기(초)
+TIMEOUT = 600                               # 질의 1건 최대 대기(초) — 11-11 시스템 응답 지연으로 300 → 600
 QUESTION_TMPL = "{주소} {시설물} 건축 가능한가요?"
 # 변형 질의(같은 의도·다른 표현) 기본 템플릿 — 1번은 기본 질의와 동일. 화면/파일로 바꿀 수 있음
 DEFAULT_VARIANTS = [
