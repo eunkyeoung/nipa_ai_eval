@@ -175,6 +175,22 @@ def _sha256(path, mtime):
     return h.hexdigest()
 
 
+# [DA 2] 입력 양식 — 제작지시서 0.2v(2026-11-06)의 CSV 필수 열 중 입력(정답) 열. 예시 1행
+DA2_TEMPLATES = {
+    "da2_cq_testset.csv": (
+        ["cq_id", "odp_type", "municipality", "question", "inference_required", "query_file", "expected_bindings"],
+        [["CQ-001", "Exception (예외·단서 적용)", "공통", "대지가 도로에 2m 미만으로 접한 경우에도 건축이 허용되는 단서 조항은 무엇인가?",
+          "false", "sparql/CQ-001.rq", '["건축법.44.1", "건축법시행령.28.1", "건축법시행령.28.2"]']]),
+    "da2_schema_checklist.csv": (
+        ["check_id", "item_group", "description", "method", "validator_file", "expected"],
+        [["SCH-001", "핵심 클래스", "법령(aip:Law)마다 법령명(aip:lawName)이 있다", "SPARQL ASK", "checks/SCH-001.rq", "true"]]),
+    "da2_mapping_testset.csv": (
+        ["mapping_id", "source_field", "target_element", "expected_mapping"],
+        [["MAP-001", "(원천 테이블).(필드) 예: 법령수집DB.법령.법령명", "https://onto.go.kr/aip/lawName",
+          '{"class": "aip:Law", "property": "aip:lawName", "relation": "", "datatype": "xsd:string"}']]),
+}
+
+
 def sidebar(side, launch, running):
     os.makedirs(DATA, exist_ok=True)
     # 시험 항목 버튼 7개를 사이드바 한 줄에 (버튼 폭을 균등하게 줄임)
@@ -200,7 +216,24 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                     st.markdown(f"**{label}** `{os.path.basename(path)}` — ✅ {kb:,.0f} KB  \nSHA-256 `{_sha256(path, os.path.getmtime(path))}`")
                 else:
                     st.markdown(f"**{label}** `{os.path.basename(path)}` — ❌ 없음")
+                ext = os.path.splitext(path)[1].lower()
+                up = st.file_uploader(os.path.basename(path), type=[ext.lstrip(".")], key=f"up_da2_{os.path.basename(path)}",
+                                      label_visibility="collapsed")
+                if up is not None:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, "wb") as f:
+                        f.write(up.getvalue())
+                    st.cache_data.clear()
+                    st.success(f"{os.path.basename(path)} 저장")
             st.caption("규격서 [DA 2] 사전조건의 검증 자산입니다. " + sp.get("source", ""))
+            st.caption("작성 규칙(제작지시서 0.2v) — CSV는 UTF-8, 헤더 1행. 정답 바인딩·매핑은 JSON 문자열. "
+                       "조문은 `법령명.조.항`(항 없으면 `법령명.조`, 별표는 `법령명.별표N`), 호·목은 쓰지 않음. "
+                       "CQ·스키마 zip에는 CSV 1개와 질의 파일(.rq / Shape .ttl)을 함께 넣음")
+            st.divider()
+            st.markdown("**양식**")
+            for fn, (cols, rows) in DA2_TEMPLATES.items():
+                st.download_button(f"⬇ {fn} 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
+                                   file_name=fn, mime="text/csv", width="stretch", key=f"tpl_da2_{fn}")
         ready = all(os.path.exists(p) for _, p in sp["assets"])
         side.button(f"▶ {SHORT[item]} 시험 실행", type="primary", width="stretch", disabled=True,
                     help="검증 자산(CQ·평가항목·매핑 표본·온톨로지 파일)이 준비되면 실행할 수 있어요.")
