@@ -37,3 +37,5 @@ spec_data/da2/landcheck_instance_v1.0.ttl
 
 # 중지된 실행 보관 (실행 결과와 같은 이유로 git 제외)
 backup/중지된_실행/
+# [DA 2] 법령 원문 조회 캐시
+spec_data/da2/_law_cache/
