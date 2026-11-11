@@ -1016,7 +1016,7 @@ def score_ai4(log, answer, testset=None):
                          예측_근거조문="; ".join(r.get("단서조건근거조문") or []), 근거조문_일치=cite_ok,
                          적합=(gv == pv) and cite_ok,
                          부적합사유=" / ".join(x for x in (
-                             f"판정 불일치 — 정답 {gv}, AI {pv}" if gv != pv else "",
+                             f"판정 불일치 — 정답 {gv}, AI {pv}. AI 판단 근거: {ai_basis(r)}" if gv != pv else "",
                              f"AI 응답에 없는 정답 근거 조문: {', '.join(miss_c)}" if miss_c else "") if x) or "-",
                          정답_보완사항=gb, 예측_보완사항=r.get("보완사항") or "", 보완사항_판정=sup,
                          정답_필요행정절차="; ".join(gp), 예측_필요행정절차="; ".join(pp), 필요행정절차_일치=proc_ok))
