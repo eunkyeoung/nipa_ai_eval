@@ -350,7 +350,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
 AI6_COLS = {"testset_ai6": ["사례ID", "명령유형", "명령문"],
             "answer_ai6": ["사례ID", "명령유형", "정답의도", "정답파라미터", "정답시나리오", "참조PNU"],
             "intent_map_ai6": ["정답의도", "근거", "값", "비고"]}
-AI6_OPT_COLS = {"answer_ai6": ["검증자", "교차검증자", "검증일"]}   # 있으면 그대로 옮김 (규격: GIS 전문가가 정답 라벨 검증)
+AI6_OPT_COLS = {"answer_ai6": ["검증자", "교차검증자", "검증일"]}   # 선택 칸 — 있으면 그대로 옮김
 AI6_SHEET_KEYS = {"testset_ai6": ("testset", "질문지", "시험셋"), "answer_ai6": ("answer", "정답지", "정답셋"),
                   "intent_map_ai6": ("intent_map", "대응표")}
 
