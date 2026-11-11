@@ -542,6 +542,17 @@ def render(item, area, help_fn=None):
                 out[:0] = [("환각 판정", "환각" if c5["환각"] else "정상 응답"),
                            ("환각 사유", c5["환각사유"] if c5["환각"] else "-"),
                            ("정답 조문셋", c5["정답조문"] or "-"), ("정답 적용 법령", c5["정답_적용법령"] or "-")]
+        if item == "AI4" and "부적합사유" in r["cases"]:        # 적합 판정과 부적합 사유 (정답과 비교한 결과)
+            c4 = r["cases"].set_index("사례ID")
+            if cid in c4.index:
+                c4 = c4.loc[cid]
+                out[:0] = [("적합 판정", "적합" if c4["적합"] else "부적합"),
+                           ("부적합 사유", c4["부적합사유"] if not c4["적합"] else "-"),
+                           ("예외 유형", c4.get("예외유형") or "-"),
+                           ("정답 판정 결과", c4["정답_판정결과"]),
+                           ("정답 단서 조건 근거 조문", c4["정답_근거조문"] or "-"),
+                           ("정답 보완사항", c4.get("정답_보완사항") or "-"),
+                           ("정답 필요 행정절차", c4.get("정답_필요행정절차") or "-")]
         _o = pd.DataFrame(out, columns=["출력 항목", "값"]).astype(str)
         show_table(_o)
         steps = rec.get("단계로그") or []

@@ -1021,6 +1021,9 @@ def score_ai4(log, answer, testset=None):
                          정답_보완사항=gb, 예측_보완사항=r.get("보완사항") or "", 보완사항_판정=sup,
                          정답_필요행정절차="; ".join(gp), 예측_필요행정절차="; ".join(pp), 필요행정절차_일치=proc_ok))
     res = pd.DataFrame(rows)
+    if len(res):                                    # 화면에서 적합·부적합 사유가 바로 보이도록 질의문 뒤로
+        front = ["사례ID", "예외유형", "질의문", "적합", "부적합사유"]
+        res = res[front + [c for c in res.columns if c not in front]]
     n = len(res)
     val = pct(res["적합"].sum(), n) if n else None
 
