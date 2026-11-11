@@ -13,6 +13,10 @@ ENV TZ=Asia/Seoul \
 COPY deploy/requirements-lock.txt /tmp/requirements.txt
 RUN pip install --root-user-action=ignore -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
+# [DA 2-4] OWL Reasoner(Pellet, owlready2 내장)용 Java — Eclipse Temurin JRE 25 (Pellet 내장 Jena가 Java 25 이상 필요)
+RUN python -c "import urllib.request as u; r = u.urlopen(u.Request('https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jre/hotspot/normal/eclipse', headers={'User-Agent': 'curl/8.0'})); open('/tmp/jre.tgz', 'wb').write(r.read())"  && mkdir -p /opt/jre && tar -xzf /tmp/jre.tgz -C /opt/jre --strip-components=1 && rm /tmp/jre.tgz  && /opt/jre/bin/java -version
+ENV PATH="/opt/jre/bin:${PATH}"
+
 WORKDIR /app
 EXPOSE 8501
 

@@ -4,3 +4,14 @@ pandas==3.1.0
 openpyxl==3.1.5
 requests==2.34.2
 scikit-learn==1.9.1
+# [DA 2] 온톨로지 검증 (2026-11-11 추가) — SPARQL(pyoxigraph)·SHACL(pyshacl)·OWL Reasoner(owlready2 내장 Pellet 2.3.1, Java 25 필요)
+pyoxigraph==0.5.13
+pyshacl==0.40.2
+owlready2==0.51
+rdflib==7.6.0
+owlrl==7.6.2
+prettytable==3.18.0
+wcwidth==0.9.4
+pyparsing==3.3.3
+html5rdf==1.2.1
+packaging==26.3
