@@ -15,7 +15,7 @@ import spec_eval as S
 DATA = "spec_data"
 FILES = {"AI1": ["testset_ai1", "answer_ai1"], "AI2": ["testset_ai2", "answer_ai2"], "AI3": ["testset_ai3"],
          "AI4": ["testset_ai4", "answer_ai4"], "AI5": ["testset_ai5", "answer_ai5", "law_article_db"],
-         "AI6": ["testset_ai6", "answer_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"]}
+         "AI6": ["testset_ai6", "answer_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"], "DA2": []}
 LABEL = {"testset": "시험셋(질의)", "answer": "정답셋", "law_article_db": "법령·조례 조문 DB",
          "result": "실행 결과(시스템 응답)"}
 RAW_VERDICT = {"possible": "승인 가능", "impossible": "부적합", "conditional": "조건부 가능",   # AIPS 원 판정값 → 수행계획서 4종
@@ -44,7 +44,7 @@ def rows_height(n, cap=420):
 
 
 SHORT = {"AI1": "AI 1 정확도", "AI2": "AI 2 F1", "AI3": "AI 3 일관성", "AI4": "AI 4 조건부", "AI5": "AI 5 환각",
-         "AI6": "AI 6 지도 제어", "AI7": "AI 7 3D 시뮬레이션"}
+         "AI6": "AI 6 지도 제어", "AI7": "AI 7 3D 시뮬레이션", "DA2": "DA 2 온톨로지"}
 NOT_PROVIDED = [   # 시험의뢰서가 요구하지만 AIPS가 질의 응답(SSE)에 실어 보내지 않는 값 → 대신 쓰는 방법
     "**AI 엔진 모델 버전** — 응답에 모델명이 없음 → 시험 시작 때 **공간정보 에이전트·MCP 콘솔(192.168.200.115:18800)**에서 지금 쓰는 모델명을 "
     "조회해 기록 (현재 gpt-oss-120b). 조회 실패 시 시험의뢰서 시험환경 값(gpt-oss-120b)",
@@ -89,6 +89,9 @@ CRITERIA = {
     "AI7": "사례마다 ① 의도 추출 ② 핵심 파라미터(위치·층수·높이·용도·기준일·시간대·조망점 등) ③ 3D 시뮬레이션 실행(3D 지도 상태·생성 객체·"
            "실행 조건이 정답 시나리오와 일치, 실행 상태 '완료')을 순서대로 판정. 셋 다 일치하면 정상 수행 1건, 부분 일치는 오류. "
            "오류 원인은 최초 불일치 기준으로 분류. 실행 대기 상한 안에 '완료'가 아니면 미실행(실행 오류).\n\n결과는 소수점 둘째자리 이하 버림.",
+    "DA2": "세부 시험항목 1-1 ~ 1-4(DA 2-1 ~ 2-4)의 구성지표 4개를 가중합산해 온톨로지(ODP) 설계 완성도를 산출하고 96 % 이상 여부를 판정. "
+           "기능 정확성(X) = 1 − 부정확한 기능의 수 / 고려 대상 기능의 수(4). 검증 결과는 validation_result_da2.csv로 저장. "
+           "결과는 소수점 셋째자리 이하 버림.",
 }
 CMD_NOTE = ("실행 결과 파일(result_ai6 / result_ai7)을 올리면 성과지표 기준으로 채점해요. "
             "자동 실행은 지도·3D 명령의 응답 구조를 확인한 뒤 연결할 예정이에요.")
@@ -177,6 +180,18 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
     st.session_state["spec_item_last"] = item
     sp = S.SPEC[item]
     side.caption(f"{sp['no']} · {sp['metric']} · 목표 {target_txt(item)}")
+
+    if sp.get("da2"):                                   # [DA 2] 온톨로지 검증 — 검증 자산 확인만 (실행은 자산이 준비되면 연결)
+        with side.popover("📂 시험 데이터 (검증 자산)", width="stretch"):
+            for label, path in sp["assets"]:
+                ok = os.path.exists(path)
+                st.markdown(f"**{label}** `{os.path.basename(path)}` — " + ("✅ 있음" if ok else "❌ 없음"))
+            st.caption("규격서 [DA 2] 사전조건의 검증 자산입니다. 파일이 준비되면 SHA-256 해시와 함께 표시됩니다.")
+        ready = all(os.path.exists(p) for _, p in sp["assets"])
+        side.button(f"▶ {SHORT[item]} 시험 실행", type="primary", width="stretch", disabled=True,
+                    help="검증 자산(CQ·평가항목·매핑 표본·온톨로지 파일)이 준비되면 실행할 수 있어요.")
+        side.caption("❌ 검증 자산 준비 중 — 실행 불가" if not ready else "실행 기능 연결 예정")
+        return item
 
     need = FILES[item]
     with side.popover("📂 시험 데이터", width="stretch"):
@@ -297,11 +312,22 @@ def overview():
 def render(item, area, help_fn=None):
     sp = S.SPEC[item]
     with area("box_spec_overview"):
-        st.markdown("#### 성과지표 현황 (AI 1 ~ AI 7)")
+        st.markdown("#### 성과지표 현황 (AI 1 ~ AI 7, DA 2)")
         ov = overview()
         st.dataframe(ov.style.map(lambda v: "background-color: #eff6ff; color: #1d4ed8; font-weight: 700"   # 진단 결과 열 = 파랑
                                   if v != "미실행" else "background-color: #eff6ff; color: #94a3b8", subset=["진단 결과"]),
                      hide_index=True, width="stretch")
+
+    if sp.get("da2"):                                   # [DA 2] 구성지표·가중치·산출식 (시험 데이터 준비 중)
+        with area("box_spec_cases"):
+            st.markdown("#### 구성지표 (세부 시험항목 1-1 ~ 1-4)")
+            show_table(pd.DataFrame([{"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %", "판정 방식": how, "산출식": f,
+                                      "결과": "미실행"} for k, n, w, how, f in sp["parts"]]))
+            st.markdown(f"- 산정식: {sp['formula']}\n- 목표: 온톨로지(ODP) 설계 완성도 {target_txt(item)}, 기능 정확성(X) = 1.0\n"
+                        f"- 시험 데이터: {sp['data']}")
+            st.info("검증 자산(CQ 목록·정답셋, 스키마 평가항목, 매핑 검증 표본, 온톨로지 파일)이 준비되면 실행할 수 있어요. "
+                    "왼쪽 '📂 시험 데이터 (검증 자산)'에서 준비 상태를 확인하세요.")
+        return
 
     rs = runs(item)
     if not rs:

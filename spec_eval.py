@@ -54,6 +54,27 @@ SPEC = {
                 types=["3D 지도 기본 제어", "필지 경사도 분석", "필지 토공량 산출", "지형 생성", "가상건물 생성",
                        "일조 시뮬레이션 실행", "조망 시뮬레이션 실행"],
                 causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "3D 시뮬레이션 명령 실행 오류"]),
+    # 시험항목 1 [DA 2] — 규격서 v1.51 6.1 (10~21쪽). 온톨로지 파일을 직접 검증 (AIPS 질의 아님). 시험 데이터 준비 중
+    "DA2": dict(no="1", name="[DA 2] 인허가 규제 판단을 위한 온톨로지(ODP) 설계 및 검증 기능", metric="온톨로지(ODP) 설계 완성도",
+                target=96.0, cmp=">=", log="validation_result_da2.csv", da2=True,
+                formula="[DA 2] 온톨로지(ODP) 설계 완성도(%) = CQ 질의 응답 정확도 × 0.35 + 온톨로지 스키마 적합률 × 0.15 "
+                        "+ 온톨로지 기반 데이터 매핑 정확도 × 0.30 + 논리적 일관성·무결성 × 0.20",
+                data="CQ 50건(Regulation-Constraint 20 / Exception 13 / Conflict 10 / 위계 추적 7), 스키마 평가항목, 매핑 검증 표본, "
+                     "LandCheck 온톨로지 모델 v1.0(스키마·인스턴스·SHACL)",
+                parts=[("DA 2-1", "CQ 질의 응답 정확도", 35, "CQ별 SPARQL 질의 결과와 정답셋의 집합 일치 비율 (부분 일치는 오답)",
+                        "정답셋과 일치한 CQ 수 / 전체 CQ 수 × 100"),
+                       ("DA 2-2", "온톨로지 스키마 적합률", 15, "평가항목별 SPARQL ASK / SHACL 검증 결과 적합 비율",
+                        "적합(true) 판정 항목 수 / 전체 평가 항목 수 × 100"),
+                       ("DA 2-3", "온톨로지 기반 데이터 매핑 정확도", 30, "클래스·속성·관계·자료형 4개 검증 단위를 모두 만족하면 정확 매핑",
+                        "정확 매핑 건수 / 전체 매핑 검증 건수 × 100"),
+                       ("DA 2-4", "논리적 일관성·무결성", 20, "OWL Reasoner(일관성 점수) + OOPS!(함정 점수)",
+                        "(일관성 점수 + 함정 점수) / 2")],
+                assets=[("CQ 목록·SPARQL 질의·정답셋", "spec_data/da2/da2_cq_testset.zip"),
+                        ("스키마 평가항목·검증 질의", "spec_data/da2/da2_schema_checklist.zip"),
+                        ("매핑 검증 표본·정답", "spec_data/da2/da2_mapping_testset.csv"),
+                        ("온톨로지 스키마", "/opt/landcheck/ontology/v1.0/landcheck_schema_v1.0.ttl"),
+                        ("인스턴스 데이터", "/opt/landcheck/ontology/v1.0/landcheck_instance_v1.0.ttl"),
+                        ("SHACL 제약규칙", "/opt/landcheck/ontology/v1.0/landcheck_shapes_v1.0.ttl")]),
 }
 TYPE2 = ["허가 가능", "허가 불가능"]
 UNDECIDED = "판단불가"
