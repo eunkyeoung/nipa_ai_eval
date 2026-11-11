@@ -266,6 +266,31 @@ def rulesets(diag):
     return sorted(i for i in ids if i)
 
 
+def cond_texts(j, rep):
+    """[AI 4] 시스템이 판정에서 밝힌 조건 문장: 실패 조건·근거 조건(natural), 단서가 붙은 지역·지구 판정 문장, 불허 사유"""
+    out = []
+    ev = {e.get("rule_id"): e for e in j.get("evidence") or [] if isinstance(e, dict)}
+    for c in j.get("conditions") or []:
+        if isinstance(c, dict) and c.get("status") == "fail":
+            out.append(str((ev.get(c.get("rule_id")) or {}).get("natural") or c.get("natural") or c.get("source") or ""))
+    for z in (j.get("matrix_gate") or {}).get("zone_results") or []:
+        if isinstance(z, dict) and str(z.get("in_combine")) == "True" and z.get("decision_kind") and z.get("decision"):
+            out.append(str(z["decision"])[:300])
+    out += [str(x) for x in ((rep or {}).get("band") or {}).get("deny_reasons") or []]
+    return " / ".join(dict.fromkeys(x for x in out if x.strip()))
+
+
+def proc_set(xs):
+    """[AI 4] 필요 행정절차 비교용 정규화: 괄호 설명((신축)·(대상 시)·[농지]) 제거, '·'로 붙은 절차 분리, 절차가 아닌 '사전검토' 제외"""
+    out = set()
+    for x in xs or []:
+        for p in re.split(r"[·;]", str(x)):
+            p = re.sub(r"\s+", "", re.sub(r"\([^)]*\)|\[[^\]]*\]", "", p))
+            if p and p not in ("사전검토", "-"):
+                out.add(p)
+    return out
+
+
 def map_response(events, base=None):
     """성과지표 출력 형식: 판단유형·근거조문·적용법령·적용룰셋·보완사항·필요행정절차·설명문 + 6단계 로그"""
     from qa_runner import extract                                           # 지연 import (순환 방지)
@@ -311,6 +336,7 @@ def map_response(events, base=None):
         "적용법령": laws,
         "적용룰셋": rulesets(diag),
         "보완사항": " / ".join(recs),
+        "단서조건문장": cond_texts(j, rep),            # [AI 4] 보완사항 비교용: 시스템이 판정에서 밝힌 조건 문장
         "필요행정절차": proc,
         "설명문": (rep.get("card") or {}).get("summary") or (rep.get("band") or {}).get("line") or st["reply"],
         "결론문": (rep.get("band") or {}).get("line") or "",
@@ -998,7 +1024,7 @@ def score_ai4(log, answer, testset=None):
         miss_c = sorted(fmt_cite(c) for c in gc if not any(cite_match(p, c) for p in pc))
         # 보완사항 3단 표기
         gb = str(g.get("보완사항", "")) if g is not None else ""
-        pb = str(r.get("보완사항") or "") + " " + str(r.get("설명문") or "")
+        pb = " ".join(str(r.get(k) or "") for k in ("보완사항", "단서조건문장", "설명문"))
         if not gb.strip():
             sup = None
         else:
@@ -1007,8 +1033,7 @@ def score_ai4(log, answer, testset=None):
             sup = "정확 일치" if hit >= 0.8 else ("부분 일치" if hit > 0 else "불일치")
         gp = split_list(g.get("필요행정절차")) if g is not None else []
         pp = r.get("필요행정절차") or []
-        norm_p = lambda xs: {next(iter(classify_permits(x)), re.sub(r"\s", "", x)) for x in xs}
-        proc_ok = (norm_p(gp) == norm_p(pp)) if gp else None
+        proc_ok = (proc_set(gp) == proc_set(pp)) if gp else None      # 규격서: 집합 일치(순서 무시) — 표기만 정규화
         etype = str(tmeta.loc[cid].get("예외유형", "")) if tmeta is not None and cid in tmeta.index else ""
         rows.append(dict(사례ID=cid, 예외유형=etype or "-", 질의문=r.get("질의문"),
                          정답_판정결과=gv, 예측_판정결과=pv, 판정_일치=gv == pv,
