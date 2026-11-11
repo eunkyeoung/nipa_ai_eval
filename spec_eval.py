@@ -1033,7 +1033,13 @@ def score_ai4(log, answer, testset=None):
             sup = "정확 일치" if hit >= 0.8 else ("부분 일치" if hit > 0 else "불일치")
         gp = split_list(g.get("필요행정절차")) if g is not None else []
         pp = r.get("필요행정절차") or []
-        proc_ok = (proc_set(gp) == proc_set(pp)) if gp else None      # 규격서: 집합 일치(순서 무시) — 표기만 정규화
+        # 필요 행정절차 3단 표기 (2026-11-11 의뢰기업 결정, 보완사항과 같은 방식): 정답 절차를 모두 포함 = 정확 일치 / 일부 = 부분 일치 / 없음 = 불일치
+        if gp:
+            gs, ps_ = proc_set(gp), proc_set(pp)
+            k = len(gs & ps_)
+            proc_ok = "정확 일치" if gs and k == len(gs) else ("부분 일치" if k else "불일치")
+        else:
+            proc_ok = None
         etype = str(tmeta.loc[cid].get("예외유형", "")) if tmeta is not None and cid in tmeta.index else ""
         rows.append(dict(사례ID=cid, 예외유형=etype or "-", 질의문=r.get("질의문"),
                          정답_판정결과=gv, 예측_판정결과=pv, 판정_일치=gv == pv,
@@ -1064,18 +1070,16 @@ def score_ai4(log, answer, testset=None):
         (sorted(set(res["예외유형"]) - {"예외 조항", "단서 규정", "협의 대상", "심의 대상", "-"}) if n else [])   # 규격서 4종은 0건이어도 항상 표시
     t2 = grp("예외유형", etypes) if n else pd.DataFrame()
     aux = []
-    for name, col in [("필요 행정절차", "필요행정절차_일치")]:
-        s = res[col].dropna().astype(bool) if n else pd.Series(dtype=bool)
-        aux.append({"보조 지표": name, "대상": len(s), "일치": int(s.sum()), "불일치": int((~s).sum()),
-                    "적합률(%)": pct(s.sum(), len(s)), "비고": ""})
-    sb = res["보완사항_판정"].dropna() if n else pd.Series(dtype=object)
-    aux.append({"보조 지표": "보완사항", "대상": len(sb), "일치": int((sb == "정확 일치").sum()),
-                "불일치": int((sb == "불일치").sum()), "적합률(%)": pct((sb == "정확 일치").sum(), len(sb)),
-                "비고": f"부분 일치 {int((sb == '부분 일치').sum())}건 (적합률은 정확 일치 기준)"})
+    for name, col in [("보완사항", "보완사항_판정"), ("필요 행정절차", "필요행정절차_일치")]:   # 3단 표기: 정확 일치 / 부분 일치 / 불일치
+        sb = res[col].dropna() if n else pd.Series(dtype=object)
+        sb = sb[sb.isin(["정확 일치", "부분 일치", "불일치"])]
+        ex, pa, no = int((sb == "정확 일치").sum()), int((sb == "부분 일치").sum()), int((sb == "불일치").sum())
+        aux.append({"보조 지표": name, "대상": len(sb), "정확 일치": ex, "부분 일치": pa, "불일치": no,
+                    "적합률(%)": pct(ex, len(sb)), "부분 일치 포함 적합률(%)": pct(ex + pa, len(sb)),
+                    "비고": "적합률 = 정확 일치 / 대상"})
     return dict(value=val, n=n, tables={"판정 결과(허가 가능/허가 불가능)별 적합·부적합 건수": t1, "예외 유형별 적합·부적합 건수": t2,
                                         "보조 지표(보완사항, 필요 행정절차) 일치·불일치 건수 및 적합률": pd.DataFrame(aux)},
-                cases=res.assign(필요행정절차_일치=res["필요행정절차_일치"].map(           # 화면 표시용 글자 (참/거짓·빈 값 섞이면 표 변환 오류)
-                    lambda x: "-" if x is None or (isinstance(x, float) and pd.isna(x)) else ("일치" if x else "불일치"))) if n else res)
+                cases=res.assign(필요행정절차_일치=res["필요행정절차_일치"].fillna("-")) if n else res)
 
 
 # ---------------------------------------------------------------- [AI 5]
