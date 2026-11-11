@@ -1069,8 +1069,7 @@ def validate(testset_rows, answer_rows, rules=None):
                 probs.append(f"{cid}: 대조 규칙이 없는 지도제어 값 '{v}' ({' · '.join(MAP_CONTROL)} 중에서 쓸 것)")
     for cid in set(ans) - set(ids):
         probs.append(f"{cid}: 시험셋에 없는 정답")
-    if answer_rows and not any(str(r.get("검증자") or "").strip() for r in answer_rows):   # 규격: GIS 전문가가 정답 라벨을 검증
-        probs.append(NOTE + "정답셋에 검증자(GIS 전문가) 칸이 비어 있음 — 공식 시험 전 검증자·검증일을 적을 것")
+    # 검증자·검증일 칸은 선택(있으면 그대로 옮김). 규격서는 칸을 요구하지 않으므로 비어 있어도 점검 항목으로 올리지 않음
     return probs
 
 
