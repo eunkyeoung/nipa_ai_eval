@@ -59,8 +59,13 @@ _n = [0]
 
 
 def G(body):
+    """패턴 묶음. 시험 대상은 동결한 ttl 파일(그래프 구분 없이 하나로 내보냄)이라 GRAPH 로 감싸지 않음
+    (Fuseki 원본에 직접 돌릴 때만 FUSEKI_GRAPHS=True — 법령마다 이름 있는 그래프가 따로 있음)"""
     _n[0] += 1
-    return f"GRAPH ?g{_n[0]} {{ {body} }}"
+    return f"GRAPH ?g{_n[0]} {{ {body} }}" if FUSEKI_GRAPHS else f"{{ {body} }}"
+
+
+FUSEKI_GRAPHS = False
 
 
 def art(law_name, kw, var):

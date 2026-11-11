@@ -4,4 +4,4 @@ PREFIX aip: <https://onto.go.kr/aip/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-SELECT DISTINCT ?ans WHERE { GRAPH ?g37 { ?L_c aip:lawName "음성군 건축 조례" . ?L_c aip:hasArticle ?c . ?c aip:articleTitle ?t_c . FILTER(CONTAINS(REPLACE(STR(?t_c), " ", ""), "가설건축물")) } GRAPH ?g38 { ?up aip:implementedBy ?c . } GRAPH ?g39 { ?h aip:hasUnit* ?up . ?h aip:unitType ?hut . FILTER(STR(?hut) = "항") BIND(?h AS ?ans) } }
+SELECT DISTINCT ?ans WHERE { { ?L_c aip:lawName "음성군 건축 조례" . ?L_c aip:hasArticle ?c . ?c aip:articleTitle ?t_c . FILTER(CONTAINS(REPLACE(STR(?t_c), " ", ""), "가설건축물")) } { ?up aip:implementedBy ?c . } { ?h aip:hasUnit* ?up . ?h aip:unitType ?hut . FILTER(STR(?hut) = "항") BIND(?h AS ?ans) } }
