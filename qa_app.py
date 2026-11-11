@@ -227,7 +227,7 @@ with st.container(key="page_header"):
         _it = st.session_state.get("spec_item") or st.session_state.get("spec_item_last", "AI1")
         if _it in spec_eval.SPEC:
             _sp = spec_eval.SPEC[_it]
-            st.markdown(f'<div class="aips-item"><span class="no">{_sp["no"]}</span>{_sp["name"]}</div>',
+            st.markdown(f'<div class="aips-item">{_sp["name"]}</div>',
                         unsafe_allow_html=True)
 
 
