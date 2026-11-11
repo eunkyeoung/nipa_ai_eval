@@ -1049,7 +1049,8 @@ def score_ai4(log, answer, testset=None):
                 "비고": f"부분 일치 {int((sb == '부분 일치').sum())}건 (적합률은 정확 일치 기준)"})
     return dict(value=val, n=n, tables={"판정 결과(허가 가능/허가 불가능)별 적합·부적합 건수": t1, "예외 유형별 적합·부적합 건수": t2,
                                         "보조 지표(보완사항, 필요 행정절차) 일치·불일치 건수 및 적합률": pd.DataFrame(aux)},
-                cases=res)
+                cases=res.assign(필요행정절차_일치=res["필요행정절차_일치"].map(           # 화면 표시용 글자 (참/거짓·빈 값 섞이면 표 변환 오류)
+                    lambda x: "-" if x is None or (isinstance(x, float) and pd.isna(x)) else ("일치" if x else "불일치"))) if n else res)
 
 
 # ---------------------------------------------------------------- [AI 5]

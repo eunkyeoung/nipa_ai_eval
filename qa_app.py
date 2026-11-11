@@ -110,6 +110,10 @@ div.st-key-page_header [data-testid="stMarkdown"] { margin-bottom: 0 !important;
 [data-testid="stSidebarContent"] { scrollbar-width: none; }
 [data-testid="stSidebarContent"]::-webkit-scrollbar { display: none; }
 .aips-title { font-size: 1.9rem; font-weight: 700; line-height: 1.35; margin: 0; color: rgb(49, 51, 63); }
+.aips-item { margin: 10px 0 2px; padding: 10px 16px; border: 1px solid #93c5fd; border-left: 6px solid #1d4ed8;
+             border-radius: 8px; background: #eff6ff; font-size: 1.12rem; font-weight: 600; color: #1e3a8a; }
+.aips-item .no { display: inline-block; margin-right: 10px; padding: 1px 8px; border-radius: 6px;
+                 background: #1d4ed8; color: #fff; font-size: 0.9rem; font-weight: 700; vertical-align: 1px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -219,6 +223,12 @@ with st.container(key="page_header"):
     st.markdown('<div class="aips-title">' + {"성과지표": "성과지표 (AI 1 ~ AI 7)",
                                               "판단 여부 점검": "판단 여부 점검"}.get(VIEW, "AIPS 사전진단 성능테스트")
                 + '</div>', unsafe_allow_html=True)
+    if SPEC_VIEW:                                   # 왼쪽에서 고른 시험항목의 전체 이름 (예: 2-4 [AI 4] 예외·단서 규정 …)
+        _it = st.session_state.get("spec_item") or st.session_state.get("spec_item_last", "AI1")
+        if _it in spec_eval.SPEC:
+            _sp = spec_eval.SPEC[_it]
+            st.markdown(f'<div class="aips-item"><span class="no">{_sp["no"]}</span>{_sp["name"]}</div>',
+                        unsafe_allow_html=True)
 
 
 @st.fragment(run_every=2)
