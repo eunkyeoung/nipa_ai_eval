@@ -276,6 +276,12 @@ def map_response(events, base=None):
     v = j.get("verdict") or diag.get("status")
     decisive = parse_citations(str(base.get("AI근거") or ""))
     cond_src = parse_citations([c.get("source") for c in j.get("conditions") or [] if c.get("source")])
+    # [AI 4] 단서 조건 문장(matrix_gate.zone_results[].decision_parts[].원문·text)의 조문 — 예: 농공단지 입주자격 '산업집적법 시행령 제6조 제1항'
+    for z in (j.get("matrix_gate") or {}).get("zone_results") or []:
+        if isinstance(z, dict) and str(z.get("in_combine")) == "True":
+            for dp in z.get("decision_parts") or []:
+                if isinstance(dp, dict):
+                    cond_src |= parse_citations(re.findall(r"〔([^〕]+)〕", str(dp.get("원문") or dp.get("text") or "")))
     laws = sorted({law_id(c[0]) for c in decisive})
     rep = diag.get("report") or {}
     recs = [r.get("question") for r in diag.get("recommendations") or [] if isinstance(r, dict) and r.get("question")]
@@ -975,7 +981,9 @@ def score_ai4(log, answer, testset=None):
         pv = r.get("판단유형") or UNDECIDED
         gc = gold_cites(g.get("근거조문")) if g is not None else set()
         pc = parse_citations(r.get("단서조건근거조문") or [])
-        cite_ok = cite_set_equal(pc, gc)
+        # 규격서 수정(2026-11-11): 정답 근거 조문을 모두 포함하면 적합 — 정답 외 관련 조문의 추가 제시는 허용
+        cite_ok = bool(gc) and all(any(cite_match(p, c) for p in pc) for c in gc)
+        miss_c = sorted(fmt_cite(c) for c in gc if not any(cite_match(p, c) for p in pc))
         # 보완사항 3단 표기
         gb = str(g.get("보완사항", "")) if g is not None else ""
         pb = str(r.get("보완사항") or "") + " " + str(r.get("설명문") or "")
@@ -995,6 +1003,9 @@ def score_ai4(log, answer, testset=None):
                          정답_근거조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          예측_근거조문="; ".join(r.get("단서조건근거조문") or []), 근거조문_일치=cite_ok,
                          적합=(gv == pv) and cite_ok,
+                         부적합사유=" / ".join(x for x in (
+                             f"판정 불일치 — 정답 {gv}, AI {pv}" if gv != pv else "",
+                             f"AI 응답에 없는 정답 근거 조문: {', '.join(miss_c)}" if miss_c else "") if x) or "-",
                          정답_보완사항=gb, 예측_보완사항=r.get("보완사항") or "", 보완사항_판정=sup,
                          정답_필요행정절차="; ".join(gp), 예측_필요행정절차="; ".join(pp), 필요행정절차_일치=proc_ok))
     res = pd.DataFrame(rows)
