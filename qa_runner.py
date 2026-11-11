@@ -107,6 +107,8 @@ def extract(events):
             stages.append(d.get("data") or {})
         elif d.get("event") == "reply":
             reply = str((d.get("data") or {}).get("reply", ""))
+        elif d.get("event") == "question" and not reply:     # 질문 이벤트로 되묻는 경우(예: "건축면적을 알려 주세요") — 11-11 AI4-0004
+            reply = str((d.get("data") or {}).get("question", "")).strip()
     if not diag:
         # 진단 없이 끝남: 주소를 못 찾았거나 되물은 경우(reply) / 그 외
         return dict(AI판정="되묻기" if reply else "응답없음", AI용도지역판정="", AI근거="",
