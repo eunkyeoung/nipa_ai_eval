@@ -164,6 +164,17 @@ def score_run(item, run_dir):
 
 
 # ---------------------------------------------------------------- 사이드바
+@st.cache_data(show_spinner=False)
+def _sha256(path, mtime):
+    """파일 SHA-256 (수정 시각이 바뀌면 다시 계산)"""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def sidebar(side, launch, running):
     os.makedirs(DATA, exist_ok=True)
     # 시험 항목 버튼 7개를 사이드바 한 줄에 (버튼 폭을 균등하게 줄임)
@@ -184,9 +195,12 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
     if sp.get("da2"):                                   # [DA 2] 온톨로지 검증 — 검증 자산 확인만 (실행은 자산이 준비되면 연결)
         with side.popover("📂 시험 데이터 (검증 자산)", width="stretch"):
             for label, path in sp["assets"]:
-                ok = os.path.exists(path)
-                st.markdown(f"**{label}** `{os.path.basename(path)}` — " + ("✅ 있음" if ok else "❌ 없음"))
-            st.caption("규격서 [DA 2] 사전조건의 검증 자산입니다. 파일이 준비되면 SHA-256 해시와 함께 표시됩니다.")
+                if os.path.exists(path):
+                    kb = os.path.getsize(path) / 1024
+                    st.markdown(f"**{label}** `{os.path.basename(path)}` — ✅ {kb:,.0f} KB  \nSHA-256 `{_sha256(path, os.path.getmtime(path))}`")
+                else:
+                    st.markdown(f"**{label}** `{os.path.basename(path)}` — ❌ 없음")
+            st.caption("규격서 [DA 2] 사전조건의 검증 자산입니다. " + sp.get("source", ""))
         ready = all(os.path.exists(p) for _, p in sp["assets"])
         side.button(f"▶ {SHORT[item]} 시험 실행", type="primary", width="stretch", disabled=True,
                     help="검증 자산(CQ·평가항목·매핑 표본·온톨로지 파일)이 준비되면 실행할 수 있어요.")
