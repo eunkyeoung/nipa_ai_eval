@@ -1,0 +1,7 @@
+# CQ-011 지목이 도로가 아닌 사유지나 국유지를 건축법상 도로로 인정받기 위한 요건은?
+# 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
+PREFIX aip: <https://onto.go.kr/aip/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?ans WHERE { { GRAPH ?g93 { ?L_d aip:lawName "건축법" . ?L_d aip:hasArticle ?d . ?d aip:articleTitle ?t_d . FILTER(CONTAINS(REPLACE(STR(?t_d), " ", ""), "정의")) } GRAPH ?g94 { ?d aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } GRAPH ?g95 { ?ans aip:hasUnit ?dh . } GRAPH ?g96 { ?dh aip:implementedBy ?di . } GRAPH ?g97 { ?di aip:articleTitle ?dit . FILTER(CONTAINS(STR(?dit), "도로")) } } UNION { GRAPH ?g99 { ?L_h aip:lawName "건축법" . ?L_h aip:hasArticle ?h . ?h aip:articleTitle ?t_h . FILTER(CONTAINS(REPLACE(STR(?t_h), " ", ""), "도로의지정")) } GRAPH ?g100 { ?h aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } GRAPH ?g101 { ?ans aip:hasUnit ?hh . } GRAPH ?g102 { ?hh aip:implementedBy ?hl_ans . } GRAPH ?g98 { ?hl_ans ^aip:hasArticle/aip:lawName ?hln . FILTER(CONTAINS(?hln, "조례")) } } }

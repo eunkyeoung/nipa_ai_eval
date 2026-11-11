@@ -1,0 +1,7 @@
+# CQ-012 건축물의 용도별 및 면적에 따른 도로의 폭은?
+# 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
+PREFIX aip: <https://onto.go.kr/aip/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?ans WHERE { { GRAPH ?g103 { ?L_d aip:lawName "건축법" . ?L_d aip:hasArticle ?d . ?d aip:articleTitle ?t_d . FILTER(CONTAINS(REPLACE(STR(?t_d), " ", ""), "정의")) } GRAPH ?g104 { ?d aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } GRAPH ?g105 { ?ans aip:hasUnit ?dh . } GRAPH ?g106 { ?dh aip:implementedBy ?di . } GRAPH ?g107 { ?di aip:articleTitle ?dit . FILTER(CONTAINS(STR(?dit), "너비")) } } UNION { GRAPH ?g108 { ?L_e aip:lawName "건축법" . ?L_e aip:hasArticle ?e . ?e aip:articleTitle ?t_e . FILTER(CONTAINS(REPLACE(STR(?t_e), " ", ""), "정의")) } GRAPH ?g109 { ?e aip:hasUnit+ ?eh . } GRAPH ?g110 { ?eh aip:implementedBy ?ans . } GRAPH ?g111 { ?ans aip:articleTitle ?eat . FILTER(CONTAINS(STR(?eat), "너비")) } GRAPH ?g112 { ?en_L (aip:hasArticle|aip:hasAppendix) ?ans . ?en_L aip:hierarchy ?en_h . FILTER(?en_h <= 3) } } UNION { GRAPH ?g113 { ?L_r aip:lawName "건축법 시행령" . ?L_r aip:hasArticle ?r . ?r aip:articleTitle ?t_r . FILTER(CONTAINS(REPLACE(STR(?t_r), " ", ""), "대지와도로의관계")) } GRAPH ?g114 { ?r aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } GRAPH ?g115 { ?ans aip:implementedBy ?rc . } GRAPH ?g116 { ?rc ^aip:hasArticle/aip:lawName ?rcn . FILTER(CONTAINS(?rcn, "조례")) } } }

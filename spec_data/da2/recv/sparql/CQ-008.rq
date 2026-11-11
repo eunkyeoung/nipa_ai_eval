@@ -1,0 +1,7 @@
+# CQ-008 건축법에서 정하는 일반적인 도로의 최소 너비는 얼마인가?
+# 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
+PREFIX aip: <https://onto.go.kr/aip/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?ans WHERE { { GRAPH ?g64 { ?L_d aip:lawName "건축법" . ?L_d aip:hasArticle ?d . ?d aip:articleTitle ?t_d . FILTER(CONTAINS(REPLACE(STR(?t_d), " ", ""), "정의")) } GRAPH ?g65 { ?d aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } GRAPH ?g66 { ?ans aip:hasUnit ?dh . } GRAPH ?g67 { ?dh aip:implementedBy ?di . } GRAPH ?g68 { ?di aip:articleTitle ?dit . FILTER(CONTAINS(STR(?dit), "너비")) } } UNION { GRAPH ?g69 { ?L_e aip:lawName "건축법" . ?L_e aip:hasArticle ?e . ?e aip:articleTitle ?t_e . FILTER(CONTAINS(REPLACE(STR(?t_e), " ", ""), "정의")) } GRAPH ?g70 { ?e aip:hasUnit+ ?eh . } GRAPH ?g71 { ?eh aip:implementedBy ?ans . } GRAPH ?g72 { ?ans aip:articleTitle ?eat . FILTER(CONTAINS(STR(?eat), "너비")) } GRAPH ?g73 { ?en_L (aip:hasArticle|aip:hasAppendix) ?ans . ?en_L aip:hierarchy ?en_h . FILTER(?en_h <= 3) } } }
