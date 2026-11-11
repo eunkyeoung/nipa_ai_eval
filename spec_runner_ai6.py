@@ -6,7 +6,7 @@
 
   python spec_runner_ai6.py --testset spec_data/testset_ai6.csv --answer spec_data/answer_ai6.csv \
                             --intent-map spec_data/intent_map_ai6.csv [--cases AI6-0001,AI6-0002] \
-                            [--base http://192.168.200.115:17006] [--deadline 300]
+                            [--base http://192.168.200.115:17006] [--deadline 180]
   python spec_runner_ai6.py --rescore spec/AI6/20261110_150000 --answer ... --intent-map ...   # 다시 묻지 않고 원문으로 재채점(개발용)
 
 결과 폴더: spec/AI6/<시각>/
@@ -167,7 +167,7 @@ def score_run(run_dir, testset_path, quiet=False):
     planned = set(meta.get("cases") or [])
     if planned:                                            # 일부 ID만 실행한 경우 그 ID만 분모
         ts = [t for t in ts if str(t.get("사례ID")) in planned]
-    s = E.score(gis, ts)
+    s = E.score(gis, ts, parse_rows=read_jsonl(os.path.join(run_dir, E.PARSE_LOG)))   # 사례별 표에 규격 출력 4칸
     tables = {"총괄 결과": s["총괄"], "명령 유형 3종별 세부 결과": s["유형별"], "오류 원인 유형별 건수": s["오류원인별"],
               "사례별 판정": s["사례별"]}
     files = save_tables(os.path.join(run_dir, "result.xlsx"), tables)
@@ -189,6 +189,18 @@ def judge_one(case, gold, res, rules):
     ext = E.extract(turn, rules)
     verdict = E.judge(gold or {}, ext, res, turn)
     return E.parse_log_row(case, res, ext), E.gis_log_row(case, gold or {}, res, ext, verdict), verdict
+
+
+def progress_row(gr, pr=None):
+    """실행 중 화면 표(progress.xlsx) 한 줄 — 사례가 끝날 때마다 규격서 2-6 출력 항목(해석 의도·핵심 파라미터·실행 대상 기능·
+    지도 상태)과 판정(①②③ · 정상 수행/오류 · 오류 원인)을 바로 보여 줌. gr = 실행 결과 로그 행, pr = 명령 해석 로그 행"""
+    ox = lambda x: "O" if x is True else "X" if x is False else "-"
+    row = {"사례ID": gr.get("사례ID"), "회차": 1, "명령유형": gr.get("명령유형"), "질의": gr.get("명령문")}
+    row.update(E.spec_cells((pr or {}).get("규격출력")))
+    row.update({"①": ox(gr.get("①의도")), "②": ox(gr.get("②파라미터")), "③": ox(gr.get("③지도제어")),
+                "판정": gr.get("판정"), "오류원인": gr.get("오류원인") or "",
+                "불일치": " | ".join(gr.get("불일치내용") or []), "소요초": gr.get("소요초")})
+    return row
 
 
 def rescore(run_dir, answer, testset, intent_map):
@@ -413,8 +425,8 @@ def main():
         raise SystemExit(status["message"])
     write_status(a.status_file, status)
 
-    prog = [{"사례ID": r.get("사례ID"), "회차": 1, "명령유형": r.get("명령유형"), "질의": r.get("명령문"), "판단유형": r.get("판정"),
-             "오류원인": r.get("오류원인"), "소요초": r.get("소요초")} for r in read_jsonl(gis_path)]
+    parsed = {str(p.get("사례ID")): p for p in read_jsonl(parse_path)}     # 이어서 실행: 이미 끝난 사례도 같은 칸으로
+    prog = [progress_row(g, parsed.get(str(g.get("사례ID")))) for g in read_jsonl(gis_path)]
     print(f"[AI6] 명령 {len(plan)}건 · 공간오케 {base} · 대기 상한 {deadline:g}초 · 저장 위치 {run_dir}", flush=True)
     fails = 0
     try:
@@ -441,8 +453,7 @@ def main():
             pr, gr, v = judge_one(r, answers.get(cid), res, rules)
             append_jsonl(parse_path, pr)
             append_jsonl(gis_path, gr)
-            prog.append({"사례ID": cid, "회차": 1, "명령유형": r.get("명령유형"), "질의": cmd, "판단유형": gr["판정"],
-                         "오류원인": gr["오류원인"], "①": v["①"], "②": v["②"], "③": v["③"], "소요초": res.get("elapsed")})
+            prog.append(progress_row(gr, pr))
             try:
                 import pandas as pd
                 pd.DataFrame(prog).to_excel(status["out"], index=False)

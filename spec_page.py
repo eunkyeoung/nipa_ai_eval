@@ -43,6 +43,35 @@ def rows_height(n, cap=420):
     return min(cap, 38 + 35 * max(n, 1))
 
 
+AI6_LIVE_COLS = ["사례ID", "명령유형", "질의", "해석 의도", "핵심 파라미터", "실행 대상 기능", "지도 상태",
+                 "①", "②", "③", "판정", "오류원인", "불일치", "소요초"]
+
+
+def ai6_live(df, total):
+    """AI6 실행 중 화면 — 사례가 끝날 때마다(2초마다 다시 읽음) 규격서 2-6 출력 항목(해석 의도·핵심 파라미터·실행 대상 기능·
+    지도 상태)과 판정(①②③ · 정상 수행/오류 · 오류 원인), 지금까지의 정상 수행·오류 건수를 보여 줌. df = progress.xlsx"""
+    import ai6_eval as E6
+    m = len(df)
+    ok = int((df["판정"] == "정상 수행").sum())
+    k = st.columns(4)
+    k[0].metric("끝난 명령", f"{m} / {total}건")
+    k[1].metric("정상 수행", f"{ok}건")
+    k[2].metric("오류", f"{m - ok}건")
+    k[3].metric("지금까지 정확도", "-" if not m else f"{E6.floor_pct(ok, m, S.SPEC['AI6'].get('dec', 2)):.2f} %",
+                help="끝난 명령만으로 낸 중간 값이에요. 최종 정확도는 다 끝난 뒤 아래 결과 화면에서 전체 건수 기준으로 나와요.")
+    by_type = []
+    for t in E6.TYPES:
+        sub = df[df["명령유형"] == t] if "명령유형" in df else df.iloc[0:0]
+        by_type.append(f"{t} 정상 {int((sub['판정'] == '정상 수행').sum())} / 끝남 {len(sub)}")
+    st.caption("명령 유형별 — " + " · ".join(by_type))
+    cols = [c for c in AI6_LIVE_COLS if c in df]
+    view = df[cols].iloc[::-1].rename(columns={"질의": "명령문"})            # 방금 끝난 명령이 맨 위
+    view = view.astype(object).where(view.notna(), "")                      # 엑셀에서 빈칸만 있던 칸(오류원인·불일치)은 숫자형 NaN으로 읽힘
+    show_table(view, height=rows_height(len(view), cap=420))
+    st.caption("① 의도 · ② 핵심 파라미터 · ③ 지도 제어 — 셋 다 O 여야 정상 수행, 오류 원인은 ①→②→③ 중 처음 틀린 기준. "
+               "명령별 응답 원문·규격 출력 JSON 은 끝난 뒤 아래 '질의별 상세 결과'에서 봅니다.")
+
+
 SHORT = {"AI1": "AI 1 정확도", "AI2": "AI 2 F1", "AI3": "AI 3 일관성", "AI4": "AI 4 조건부", "AI5": "AI 5 환각",
          "AI6": "AI 6 지도 제어", "AI7": "AI 7 3D 시뮬레이션"}
 NOT_PROVIDED = [   # 시험의뢰서가 요구하지만 AIPS가 질의 응답(SSE)에 실어 보내지 않는 값 → 대신 쓰는 방법
@@ -411,7 +440,7 @@ def sidebar_ai6(side, launch, running, missing):
                              help="POST {주소}/api/chat 으로 명령을 보내요. 기본값은 환경변수 AI6_BASE")
         dl0 = int(fz.get("deadline_s") or C6.DEADLINE)
         deadline = st.number_input("사례당 응답 대기 상한(초)", 30, 1200, min(1200, max(30, dl0)), 10, key="ai6_deadline",
-                                   help="규격서 시험조건의 응답 대기 상한 — 넘기면 연결을 끊고 '응답 오류'로 집계 (회의에서 값 확정, 동결 대상)")
+                                   help="규격서 2-6 시험조건의 사례별 응답 대기 상한(180초) — 넘기면 연결을 끊고 '응답 오류'로 집계 (동결 대상)")
         if not 30 <= dl0 <= 1200:                                  # 범위 밖 기본값(AI6_DEADLINE)이면 화면이 멈추지 않게 맞춤
             st.caption(f"⚠️ 기본값 {dl0}초(AI6_DEADLINE)가 범위(30~1200초) 밖이라 {min(1200, max(30, dl0))}초로 맞췄어요.")
         probe = st.checkbox("사전 점검에 주소 검색 1건 포함 (V-World 경유)", value=True, key="ai6_probe",

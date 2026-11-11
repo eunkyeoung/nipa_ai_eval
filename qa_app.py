@@ -293,6 +293,9 @@ def progress_panel():
                 df = pd.read_excel(out)
                 if "질의" in df:
                     df = df[df["질의"].notna()]
+                if str(stt.get("mode", "")).endswith("AI6") and "판정" in df:   # AI6: 규격서 출력 항목·판정을 사례가 끝날 때마다
+                    spec_page.ai6_live(df, total)
+                    return
                 if "판단유형" in df:                              # 오류 칸: 종류 · 끊긴 위치 (통신 오류 + 응답 중단)
                     _ids = df["사례ID"] if "사례ID" in df else df.get("case_id", [""] * len(df))
                     _det = [spec_eval.error_detail({"오류": e if isinstance(e, str) else "", "판단유형": t,
@@ -304,7 +307,7 @@ def progress_panel():
                                     "근거법령", "근거조문", "소요초"] if c in df]   # 명령유형·오류원인 = AI6   # 적용룰셋은 결과 화면(사례별·상세)에서만 표시
                 if "오류" in df and (df["오류"] != "").any():
                     cols.insert(cols.index("판단유형") + 1, "오류")      # 오류가 있을 때만 판단유형 옆에 표시
-                _v = df[cols].tail(max(done, 1)).fillna("-")
+                _v = df[cols].tail(max(done, 1)).astype(object).fillna("-")   # 숫자 칸에 '-' 를 넣을 때 pandas 경고(향후 오류) 방지
                 spec_page.show_table(_v, height=180)
         except Exception:                                       # noqa: BLE001 (러너가 쓰는 중이면 다음 갱신 때 표시)
             pass

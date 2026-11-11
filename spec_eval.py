@@ -1058,7 +1058,16 @@ def score_ai6(run_dir, testset_path=None):
         ts = [t for t in ts if str(t.get("사례ID")) in planned]
     if not ts:                                                      # 시험셋을 못 찾으면 실행한 사례만으로
         ts = [{"사례ID": r.get("사례ID"), "명령유형": r.get("명령유형"), "명령문": r.get("명령문")} for r in rows]
-    s = A6.score(rows, ts, dec=SPEC["AI6"].get("dec", 2))
+    parse_rows = []                                                 # 명령 해석 로그 → 사례별 표에 규격 출력 4칸(의도·파라미터·기능·지도 상태)
+    pp = os.path.join(run_dir, A6.PARSE_LOG)
+    if os.path.exists(pp):
+        with open(pp, encoding="utf-8") as f:
+            for ln in f:
+                try:
+                    parse_rows.append(json.loads(ln))
+                except json.JSONDecodeError:
+                    pass
+    s = A6.score(rows, ts, dec=SPEC["AI6"].get("dec", 2), parse_rows=parse_rows)
     cases = pd.DataFrame(s["사례별"])
     if not cases.empty:
         cases.insert(cases.columns.get_loc("판정") + 1, "정상수행", cases["판정"] == "정상 수행")

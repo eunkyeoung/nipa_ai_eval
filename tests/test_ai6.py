@@ -638,6 +638,62 @@ class Score(unittest.TestCase):
         self.assertTrue(any("15건" in p for p in probs))
 
 
+SPEC_OUT = {"의도": ["지도 이동", "규제 저촉 분석", "분석 결과 표출"],
+            "핵심파라미터": {"위치": "경산시 신천동 31-1", "PNU": [PNU], "분석대상": ["용도지역·지구"], "반경(m)": [300.0], "확대레벨": []},
+            "실행대상기능": {"명령유형": "공간규제 분석", "Function": ["주소 검색(지오코딩)", "용도지역·지구 중첩 조회", "지도 표출"]},
+            "지도상태": {"지도제어명령": ["MOVE_TO", "SELECT"], "표출대상": [f"필지 {PNU}"],
+                       "분석결과표출": ["OVERLAP_GEOMETRY result_geojson×5"]}}
+
+
+class SpecCells(unittest.TestCase):                                # 규격서 2-6 '출력' 4항목을 실행 중 표·사례별 판정 표에 한 줄 글로
+    def test_cells(self):
+        c = E.spec_cells(SPEC_OUT)
+        self.assertEqual(list(c), list(E.SPEC_CELLS))
+        self.assertEqual(c["해석 의도"], "지도 이동, 규제 저촉 분석, 분석 결과 표출")
+        self.assertEqual(c["핵심 파라미터"], f"위치=경산시 신천동 31-1; PNU={PNU}; 분석대상=용도지역·지구; 반경=300m")   # 빈 확대레벨은 뺌
+        self.assertEqual(c["실행 대상 기능"], "[공간규제 분석] 주소 검색(지오코딩) → 용도지역·지구 중첩 조회 → 지도 표출")
+        self.assertEqual(c["지도 상태"], f"명령: MOVE_TO, SELECT / 표출대상: 필지 {PNU} / 분석결과표출: OVERLAP_GEOMETRY result_geojson×5")
+
+    def test_empty(self):                                          # 응답 오류(규격 출력 없음)·로그 없음 → 빈칸
+        self.assertEqual(set(E.spec_cells(None).values()), {""})
+        self.assertEqual(set(E.spec_cells({}).values()), {""})
+
+    def test_score_case_table_has_spec_cells(self):
+        ts = [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "x"},
+              {"사례ID": "AI6-0002", "명령유형": "공간규제 분석", "명령문": "y"}]
+        logs = [{"사례ID": "AI6-0001", "판정": "정상 수행", "오류원인": "", "불일치내용": []}]
+        cases = E.score(logs, ts, parse_rows=[{"사례ID": "AI6-0001", "규격출력": SPEC_OUT}])["사례별"]
+        self.assertEqual(cases[0]["해석 의도"], "지도 이동, 규제 저촉 분석, 분석 결과 표출")
+        self.assertEqual(cases[1]["해석 의도"], "")                     # 미실행 사례는 빈칸
+        cols = list(cases[0])
+        self.assertEqual(cols[cols.index("명령문") + 1: cols.index("명령문") + 5], list(E.SPEC_CELLS))   # 명령문 바로 뒤
+        self.assertEqual(list(cases[1]), cols)                          # 실행·미실행 사례의 칸이 같음
+        self.assertEqual(E.score(logs, ts)["사례별"][0]["해석 의도"], "")    # 해석 로그를 안 주면 빈칸(예전 호출 그대로 됨)
+
+    def test_progress_row(self):                                   # 실행 중 화면 표 한 줄
+        import spec_runner_ai6 as R
+        gr = {"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "x", "①의도": True, "②파라미터": False,
+              "③지도제어": None, "판정": "오류", "오류원인": "핵심 파라미터 추출 오류", "불일치내용": ["② 반경 다름", "② 위치 다름"],
+              "소요초": 12.3}
+        row = R.progress_row(gr, {"규격출력": SPEC_OUT})
+        self.assertEqual((row["①"], row["②"], row["③"]), ("O", "X", "-"))
+        self.assertEqual((row["판정"], row["오류원인"], row["불일치"], row["소요초"]),
+                         ("오류", "핵심 파라미터 추출 오류", "② 반경 다름 | ② 위치 다름", 12.3))
+        self.assertEqual(row["질의"], "x")
+        self.assertEqual(row["해석 의도"], "지도 이동, 규제 저촉 분석, 분석 결과 표출")
+        self.assertEqual(R.progress_row(gr)["지도 상태"], "")            # 해석 로그 행이 없으면 빈칸
+
+    def test_default_deadline_180(self):                           # 규격서 2-6 시험조건 '사례별 응답 대기 상한(180초)'
+        import importlib
+        old = os.environ.pop("AI6_DEADLINE", None)
+        try:
+            self.assertEqual(importlib.reload(C).DEADLINE, 180.0)
+        finally:
+            if old is not None:
+                os.environ["AI6_DEADLINE"] = old
+            importlib.reload(C)
+
+
 class ConnFailStop(unittest.TestCase):                             # 연결 실패 3회 연속으로 멈춤 → 이어서 실행 안 내고, 공식 아님
     def test_stop_is_not_resumable_and_not_official(self):
         import csv

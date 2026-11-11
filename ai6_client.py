@@ -23,7 +23,7 @@ import time
 import uuid
 
 BASE = os.environ.get("AI6_BASE", "http://192.168.200.115:17006").rstrip("/")   # 공간오케 (시험 때 설정 화면·실행 인자로 바꿈)
-DEADLINE = float(os.environ.get("AI6_DEADLINE", "300"))          # 사례당 응답 대기 상한(초) — 규격서 시험조건 '○○○초' (회의 확정 전 기본값)
+DEADLINE = float(os.environ.get("AI6_DEADLINE", "180"))          # 사례당 응답 대기 상한(초) — 규격서 2-6 시험조건 '180초' (2026-11-11 규격서 반영)
 ORIGIN = os.environ.get("AI6_ORIGIN", "qa-ai6")                   # X-Request-Origin — 공간오케 모니터 기록에서 QA 질의를 따로 모으는 표지 (빈 값이면 안 보냄)
 # 사전 점검 '주소 검색 1건' — 시험셋에 없는 필지(AI1-0037). 시험 문장이 시험 전에 공간오케 기록에 남지 않게
 PROBE_MESSAGE = os.environ.get("AI6_PROBE", "충청남도 아산시 둔포면 신남리 201-3번지로 지도 이동해줘")

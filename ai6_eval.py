@@ -925,10 +925,48 @@ def gis_log_row(case, gold, res, ext, verdict):
     ])
 
 
+# ---------------------------------------------------------------- 화면·결과표용 칸 (규격 출력 → 한 줄 글)
+SPEC_CELLS = ("해석 의도", "핵심 파라미터", "실행 대상 기능", "지도 상태")    # 규격서 2-6 '출력' 항목
+
+
+def _join(v, sep=", "):
+    if isinstance(v, (list, tuple)):
+        return sep.join(str(x) for x in v if x not in (None, ""))
+    return "" if v is None else str(v)
+
+
+def spec_cells(spec):
+    """규격 출력 JSON(의도·핵심파라미터·실행대상기능·지도상태) → 표 한 줄에 넣을 글 4칸.
+    실행 중 화면 표 · 사례별 판정 표(result.xlsx) 에 같이 씀. 판정에는 쓰지 않음(판정은 judge)"""
+    spec = spec if isinstance(spec, dict) else {}
+    kp = spec.get("핵심파라미터") or {}
+    params = []
+    for key, label, unit in (("위치", "위치", ""), ("PNU", "PNU", ""), ("분석대상", "분석대상", ""),
+                             ("반경(m)", "반경", "m"), ("확대레벨", "확대레벨", "")):
+        v = kp.get(key)
+        vals = [(f"{x:g}" if isinstance(x, float) else str(x)) + unit
+                for x in (v if isinstance(v, (list, tuple)) else [v]) if x not in (None, "")]
+        if vals:
+            params.append(f"{label}={', '.join(vals)}")
+    fn = spec.get("실행대상기능") or {}
+    ms = spec.get("지도상태") or {}
+    state = [f"{label}: {_join(ms.get(k))}" for k, label in (("지도제어명령", "명령"), ("표출대상", "표출대상"),
+                                                            ("분석결과표출", "분석결과표출")) if _join(ms.get(k))]
+    return OrderedDict([
+        ("해석 의도", _join(spec.get("의도"))),
+        ("핵심 파라미터", "; ".join(params)),
+        ("실행 대상 기능", (f"[{fn['명령유형']}] " if fn.get("명령유형") else "") + _join(fn.get("Function"), " → ")),
+        ("지도 상태", " / ".join(state)),
+    ])
+
+
 # ---------------------------------------------------------------- 집계
-def score(gis_rows, testset_rows, dec=DEC):
-    """판정 행(gis log) + 시험셋 → 총괄 · 유형별 · 오류 원인별 · 사례별 표. 시험셋에 있는데 결과가 없으면 '미실행'(응답 오류)"""
+def score(gis_rows, testset_rows, dec=DEC, parse_rows=None):
+    """판정 행(gis log) + 시험셋 → 총괄 · 유형별 · 오류 원인별 · 사례별 표. 시험셋에 있는데 결과가 없으면 '미실행'(응답 오류)
+    parse_rows(명령 해석 로그)를 주면 사례별 표에 규격 출력 4칸(해석 의도·핵심 파라미터·실행 대상 기능·지도 상태)을 채움"""
     by_id = {str(r.get("사례ID")): r for r in gis_rows}
+    spec_by = {str(p.get("사례ID")): spec_cells(p.get("규격출력")) for p in (parse_rows or [])}
+    blank = OrderedDict((k, "") for k in SPEC_CELLS)
     cases = []
     for t in testset_rows:
         cid = str(t.get("사례ID") or "").strip()
@@ -937,12 +975,14 @@ def score(gis_rows, testset_rows, dec=DEC):
         r = by_id.get(cid)
         if r is None:
             cases.append(OrderedDict([("사례ID", cid), ("명령유형", canon_type(t.get("명령유형"))), ("명령문", t.get("명령문")),
+                                      *blank.items(),
                                       ("①의도", None), ("②파라미터", None), ("③지도제어", None), ("판정", "오류"),
                                       ("오류원인", "응답 오류"), ("되묻기", False), ("세부원인", "미실행"), ("불일치내용", "미실행"),
                                       ("소요초", None)]))
             continue
         cases.append(OrderedDict([("사례ID", cid), ("명령유형", canon_type(t.get("명령유형") or r.get("명령유형"))),
-                                  ("명령문", t.get("명령문")), ("①의도", r.get("①의도")), ("②파라미터", r.get("②파라미터")),
+                                  ("명령문", t.get("명령문")), *spec_by.get(cid, blank).items(),
+                                  ("①의도", r.get("①의도")), ("②파라미터", r.get("②파라미터")),
                                   ("③지도제어", r.get("③지도제어")), ("판정", r.get("판정")), ("오류원인", r.get("오류원인")),
                                   ("되묻기", r.get("되묻기")), ("세부원인", r.get("세부원인") or ""),
                                   ("불일치내용", " | ".join(r.get("불일치내용") or [])), ("소요초", r.get("소요초"))]))
