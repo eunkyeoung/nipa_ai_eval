@@ -282,6 +282,18 @@ def map_response(events, base=None):
             for dp in z.get("decision_parts") or []:
                 if isinstance(dp, dict):
                     cond_src |= parse_citations(re.findall(r"〔([^〕]+)〕", str(dp.get("원문") or dp.get("text") or "")))
+    # [AI 4] 판정 기준 "정답 근거 조문 전부 포함"(2026-11-11) → 응답이 제시한 판정 근거를 빠짐없이 모음:
+    #   판정 검토 단계의 법령 목록(stage.detail.laws), 지역·지구 판정 근거(zone_results[].source), 중첩 규칙 근거(overlay_rules[].basis)
+    for s_ in st["stages"].values():
+        if s_.get("id") in CORE_STAGES and s_.get("status") == "done":
+            cond_src |= parse_citations([str(x).split(" — ")[0] for x in (s_.get("detail") or {}).get("laws") or []])
+    mg = j.get("matrix_gate") or {}
+    for z in mg.get("zone_results") or []:
+        if isinstance(z, dict) and str(z.get("in_combine")) == "True" and z.get("source"):
+            cond_src |= parse_citations(str(z["source"]).split(" — ")[0])
+    for o in mg.get("overlay_rules") or []:
+        if isinstance(o, dict) and o.get("basis"):
+            cond_src |= parse_citations(str(o["basis"]))
     laws = sorted({law_id(c[0]) for c in decisive})
     rep = diag.get("report") or {}
     recs = [r.get("question") for r in diag.get("recommendations") or [] if isinstance(r, dict) and r.get("question")]
