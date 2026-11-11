@@ -1009,8 +1009,8 @@ def score_ai4(log, answer, testset=None):
                         "부적합": int((~s["적합"]).sum()), "적합률(%)": pct(s["적합"].sum(), len(s))})
         return pd.DataFrame(out)
     t1 = grp("정답_판정결과", TYPE2)
-    etypes = [e for e in ["예외 조항", "단서 규정", "협의 대상", "심의 대상"] if (res["예외유형"] == e).any()] + \
-        sorted(set(res["예외유형"]) - {"예외 조항", "단서 규정", "협의 대상", "심의 대상"}) if n else []
+    etypes = ["예외 조항", "단서 규정", "협의 대상", "심의 대상"] + \
+        (sorted(set(res["예외유형"]) - {"예외 조항", "단서 규정", "협의 대상", "심의 대상", "-"}) if n else [])   # 규격서 4종은 0건이어도 항상 표시
     t2 = grp("예외유형", etypes) if n else pd.DataFrame()
     aux = []
     for name, col in [("필요 행정절차", "필요행정절차_일치")]:
