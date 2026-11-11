@@ -389,15 +389,17 @@ TOOL_LABEL = {                                   # AIPS 도구 호출(작업 이
 def _env_steps(parcel):
     """parcel.envelopes(도구 호출 기록) → 단계 분류"""
     out = {2: [], 3: [], 5: []}
-    for en in (parcel or {}).get("envelopes") or []:
-        args = en.get("args") or {}
-        plan = ((args.get("_metadata") or {}).get("plan") or [{}])[0]
+    _d = lambda x: x if isinstance(x, dict) else {}             # payload가 문자열로 오는 도구 호출도 있음 (AI1-0050)
+    for en in _d(parcel).get("envelopes") or []:
+        en = _d(en)
+        args = _d(en.get("args"))
+        plan = _d((_d(args.get("_metadata")).get("plan") or [{}])[0])
         tool = plan.get("tool") or en.get("tool")
-        pa = plan.get("args") or {}
+        pa = _d(plan.get("args"))
         op = pa.get("action") or pa.get("operation") or ""
-        pl = en.get("payload") or {}
-        rs = pl.get("resolve") or {}
-        facts = rs.get("facts") or {}
+        pl = _d(en.get("payload"))
+        rs = _d(pl.get("resolve"))
+        facts = _d(rs.get("facts"))
         src = f"{en.get('callee')}/{tool}:{op}".rstrip(":")
         key = pa.get("query") or pa.get("pnu") or pa.get("featureRef") or ""
         rec = dict(src=src, key=str(key), status=en.get("status"), facts=facts, op=str(op).upper(), cid=en.get("call_id") or "")
