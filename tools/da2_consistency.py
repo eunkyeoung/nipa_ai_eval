@@ -75,18 +75,75 @@ def oops(out_dir):
     r.raise_for_status()
     with open(os.path.join(out_dir, "oops_response.xml"), "w", encoding="utf-8") as f:   # 원문 응답 보관(증거)
         f.write(r.text)
+    return parse_oops(r.text)
+
+
+def parse_oops(text):
+    """OOPS! 응답(RDF/XML) → 함정 목록. 대상 요소는 전체 IRI.
+    P13 등은 대상이 '속성 쌍' 노드(mightBeInverseRelationship 등)로 따로 오므로 그 노드까지 따라가 'A ↔ B'로 적음"""
+    import rdflib
     O = rdflib.Namespace("http://oops.linkeddata.es/def#")
     rg = rdflib.Graph()
-    rg.parse(data=r.text, format="xml")
+    rg.parse(data=text, format="xml")
     pits = []
     for s in set(rg.subjects(O.hasCode, None)):
         code, lvl = str(rg.value(s, O.hasCode)), str(rg.value(s, O.hasImportanceLevel) or "")
         if lvl not in ("Critical", "Important", "Minor"):                      # SUGGESTION·경고는 함정 유형이 아님
             continue
+        el = sorted(str(x) for x in rg.objects(s, O.hasAffectedElement))
+        for p, o in rg.predicate_objects(s):                                   # 하위 노드(P13: 역관계 후보 쌍 / 후보 없는 속성 목록)
+            sub = sorted(str(x) for x in rg.objects(o, O.hasAffectedElement))
+            if p == O.hasAffectedElement or not sub:
+                continue
+            if str(p).endswith("noSuggestion"):
+                el += [x + " (역관계 후보 없음)" for x in sub]
+            else:
+                el.append(" ↔ ".join(sub) + " (서로 역관계일 수 있음)")
         pits.append(dict(code=code, name=str(rg.value(s, O.hasName)), level=lvl,
-                         affected=int(str(rg.value(s, O.hasNumberAffectedElements) or 0)),
-                         elements=sorted(str(x) for x in rg.objects(s, O.hasAffectedElement))))
+                         affected=int(str(rg.value(s, O.hasNumberAffectedElements) or 0)), elements=sorted(set(el))))
     return sorted(pits, key=lambda x: x["code"])
+
+
+def locate(iris):
+    """대상 요소 IRI → 동결 스키마 파일에서 선언된 줄('파일:줄'). 찾을 수 없으면 '(스키마 파일에 선언 없음)'"""
+    lines = open(SCHEMA, encoding="utf-8").read().splitlines()
+    pfx = {}
+    for ln in lines:
+        if ln.startswith("@prefix") or ln.upper().startswith("PREFIX"):
+            parts = ln.replace("@prefix", "").replace("PREFIX", "").strip().rstrip(".").split()
+            if len(parts) >= 2:
+                pfx[parts[1].strip("<>")] = parts[0]
+    out = []
+    for iri in iris:
+        first = iri.split(" ↔ ")[0].split(" (")[0]
+        cands = ["<" + first + ">"]
+        for ns, p in pfx.items():
+            if first.startswith(ns):
+                cands.append(p + first[len(ns):])
+        hit = next((i + 1 for i, ln in enumerate(lines) if ln.split(" ")[0] in cands), None)
+        out.append(f"{os.path.basename(SCHEMA)}:{hit}" if hit else "(스키마 파일에 선언 없음)")
+    return out
+
+
+def oops_rows(pits, t=None):
+    rows = []
+    for p in pits or []:
+        loc = locate(p["elements"])
+        rows.append(dict(check_id=f"OOPS-{p['code']}", category="OOPS!", item=f"{p['code']} {p['name']}", level=p["level"],
+                         detected="true", count=1, elements=json.dumps(p["elements"][:100], ensure_ascii=False),
+                         location=json.dumps([f"{e} @ {l}" for e, l in zip(p["elements"][:100], loc)], ensure_ascii=False),
+                         affected=p["affected"], elapsed_ms=int((time.time() - t) * 1000) if t else "", status="completed", error_message=""))
+    return rows
+
+
+def reparse(out_dir):
+    """보관한 oops_response.xml로 OOPS! 행만 다시 만듦(OOPS! 재요청 없음, 점수 계산 규칙·값은 그대로)"""
+    p = os.path.join(out_dir, "validation_result_da2.csv")
+    old = [r for r in csv.DictReader(open(p, encoding="utf-8-sig")) if not r["check_id"].startswith("OOPS")]
+    pits = parse_oops(open(os.path.join(out_dir, "oops_response.xml"), encoding="utf-8").read())
+    rows = old + oops_rows(pits)
+    _write(out_dir, rows)
+    print("다시 만듦", len(rows), "행")
 
 
 def run(out_dir):
@@ -122,10 +179,7 @@ def run(out_dir):
     if pits is None:
         rows.append(dict(check_id="OOPS", category="OOPS!", item="함정 검사", level="", detected="", count="", elements="",
                          elapsed_ms=int((time.time() - t) * 1000), status="error", error_message=oerr))
-    for p in pits or []:
-        rows.append(dict(check_id=f"OOPS-{p['code']}", category="OOPS!", item=f"{p['code']} {p['name']}", level=p["level"],
-                         detected="true", count=1, elements=json.dumps([e.split("/")[-1] for e in p["elements"]][:20], ensure_ascii=False),
-                         affected=p["affected"], elapsed_ms=int((time.time() - t) * 1000), status="completed", error_message=""))
+    rows += oops_rows(pits, t)
     # 점수
     err = None if rz["consistent"] is None or cerr else len(rz["unsat"]) + sum(len(v) for v in cy.values())
     cons = None if err is None else (0 if not rz["consistent"] else max(0, 100 - err * 5))
@@ -136,17 +190,23 @@ def run(out_dir):
                    error_count=err, consistency_score=cons, pitfall_types=lv, pitfall_score=pit,
                    value=None if total is None else int(total * 100) / 100,
                    tools=dict(reasoner="Pellet 2.3.1 (owlready2 0.51)", oops=OOPS_URL))
-    cols = ["check_id", "category", "item", "level", "detected", "count", "affected", "elements", "elapsed_ms", "status", "error_message"]
-    with open(os.path.join(out_dir, "validation_result_da2.csv"), "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(rows)
+    _write(out_dir, rows)
     with open(os.path.join(out_dir, "summary_da2_4.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=1)
     print(json.dumps(summary, ensure_ascii=False))
     return summary
 
 
+def _write(out_dir, rows):
+    cols = ["check_id", "category", "item", "level", "detected", "count", "affected", "elements", "location", "elapsed_ms", "status", "error_message"]
+    with open(os.path.join(out_dir, "validation_result_da2.csv"), "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "run":
         run(sys.argv[2])
+    elif sys.argv[1] == "reparse":                 # python tools/da2_consistency.py reparse <out_dir>/da2-4
+        reparse(sys.argv[2])

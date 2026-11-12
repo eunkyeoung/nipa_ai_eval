@@ -701,6 +701,57 @@ def _rate(ok, n):
     return f"{int(ok / n * 10000) / 100:.2f} %" if n else "-"
 
 
+_OOPS_KO = {   # OOPS! 함정 코드 → 뜻(한국어)
+    "P04": "다른 요소와 연결되지 않은 요소가 있음", "P08": "라벨·설명(rdfs:label·comment) 주석이 없는 요소가 있음",
+    "P10": "클래스 간 서로소(disjoint) 선언이 없음", "P11": "속성에 domain 또는 range 선언이 없음",
+    "P13": "역관계(owl:inverseOf)가 선언되지 않은 속성이 있음", "P34": "타입 선언 없이 클래스로 쓰이는 요소가 있음",
+    "P41": "라이선스 선언이 없음", "P22": "명명 규칙이 섞여 있음", "P02": "같은 라벨을 가진 서로 다른 요소가 있음",
+}
+
+
+def _da2_cause(i, r):
+    """DA2 구성지표별 행 → 문제 원인(문제가 없으면 빈 문자열)"""
+    g = lambda c: str(r.get(c, "") if r.get(c, "") is not None else "").strip()
+    if g("status") == "error":
+        return "실행 오류: " + (g("error_message") or "-")
+    if i == 0:                                                              # 2-1 CQ
+        if g("match") == "true":
+            return ""
+        out = []
+        if g("missing_bindings"):
+            out.append(f"정답 중 못 찾은 조문: {g('missing_bindings')}")
+        if g("extra_bindings"):
+            out.append(f"정답에 없는 조문이 나옴: {g('extra_bindings')}")
+        return " / ".join(out) or "결과 불일치"
+    if i == 1:                                                              # 2-2 스키마
+        return "" if g("conforms") == "true" else ("부적합: " + (g("message") or g("actual") or "-"))
+    if i == 2:                                                              # 2-3 매핑
+        if g("exact_match") == "true":
+            return ""
+        if g("lookup_path"):                                                # 확인 경로(원천 → 대상 IRI → 파일 → 결과)
+            return g("lookup_path")
+        try:
+            ex, ac = json.loads(g("expected_mapping") or "{}"), json.loads(g("actual_mapping") or "{}")
+        except Exception:
+            return "매핑 불일치"
+        if "노드 없음" in str(ac.get("class", "")):
+            return f"온톨로지에 대상 노드가 없음 ({g('target_element') or g('source_value')}) — 원천 값 '{g('source_value')}'에 해당하는 노드 누락"
+        nm = {"class": "클래스", "property": "속성", "relation": "관계", "datatype": "자료형"}
+        diff = [f"{nm[k]} 다름(정답 {ex.get(k) or '-'} / 실제 {ac.get(k) or '-'})" for k in nm if str(ex.get(k, "")) != str(ac.get(k, ""))]
+        return " / ".join(diff) or "매핑 불일치"
+    if g("detected") == "true" or (g("count") not in ("", "0") and g("check_id").startswith(("CON", "CYC"))):   # 2-4
+        code = g("check_id").replace("OOPS-", "")
+        what = _OOPS_KO.get(code, g("item"))
+        lv = f"[{g('level')}] " if g("level") else ""
+        tgt = g("elements")
+        try:
+            n = len(json.loads(tgt)) if tgt else 0
+        except Exception:
+            n = 0
+        return f"{lv}{what}" + (f" — 대상 {n}개(전체 IRI·스키마 파일 줄은 '대상 위치' 열)" if n else "")
+    return ""
+
+
 def render_da2(item, sp, area):
     """[DA 2] 온톨로지(ODP) 설계 완성도 — 구성지표 2-1 ~ 2-4 결과 (tools/da2_run.py 산출물)"""
     rs = runs(item)
@@ -763,16 +814,25 @@ def render_da2(item, sp, area):
             st.caption(f"로그 파일: `{p.replace(os.sep, '/')}`")
             st.download_button("⬇ [로그] validation_result_da2.csv", open(p, "rb").read(), file_name=f"validation_result_da2_{k.replace(' ', '')}.csv",
                                mime="text/csv", key=f"dl_da2_{i}")
+            df = df.copy()
+            df["원인"] = [_da2_cause(i, r) for _, r in df.iterrows()]
+            bad = df["원인"] != ""
+            only = st.toggle(f"문제 사례만 보기 (문제 {int(bad.sum())}건)", key=f"da2_only_{i}")
+            full = df
+            if only:
+                df = df[bad]
+                if df.empty:
+                    st.success("문제 사례가 없어요.")
             if i == 0:                                                      # 2-1 CQ: ODP 유형별 일치·불일치
-                g = df.groupby("odp_type")["match"].agg(lambda s: (s == "true").sum()).rename("일치").to_frame()
-                g["전체"] = df.groupby("odp_type").size()
+                g = full.groupby("odp_type")["match"].agg(lambda s: (s == "true").sum()).rename("일치").to_frame()
+                g["전체"] = full.groupby("odp_type").size()
                 g["불일치"] = g["전체"] - g["일치"]
                 g["일치율"] = [_rate(a, b) for a, b in zip(g["일치"], g["전체"])]
                 show_table(g.reset_index().rename(columns={"odp_type": "ODP 유형"}))
                 show_table(df.rename(columns={"cq_id": "CQ ID", "odp_type": "ODP 유형", "municipality": "지자체", "question": "질문",
                                               "expected_bindings": "정답", "actual_bindings": "실제 결과", "missing_bindings": "누락",
                                               "extra_bindings": "추가", "match": "일치"})[
-                    ["CQ ID", "ODP 유형", "지자체", "질문", "정답", "실제 결과", "누락", "추가", "일치", "status", "error_message"]])
+                    ["CQ ID", "ODP 유형", "지자체", "질문", "원인", "정답", "실제 결과", "누락", "추가", "일치", "status", "error_message"]])
                 with st.expander("CQ별 SPARQL 질의"):
                     import zipfile
                     zp = os.path.join(run_dir, "data", "aips_da2_cq_testset.zip")
@@ -782,28 +842,29 @@ def render_da2(item, sp, area):
                                 st.markdown(f"**{r['cq_id']}** {r['question']}")
                                 st.code(z.read(r["query_file"]).decode("utf-8"), language="sparql")
             elif i == 1:                                                    # 2-2 스키마: 항목군별 적합·부적합
-                g = df.groupby("item_group")["conforms"].agg(lambda s: (s == "true").sum()).rename("적합").to_frame()
-                g["전체"] = df.groupby("item_group").size()
+                g = full.groupby("item_group")["conforms"].agg(lambda s: (s == "true").sum()).rename("적합").to_frame()
+                g["전체"] = full.groupby("item_group").size()
                 g["부적합"] = g["전체"] - g["적합"]
                 g["적합률"] = [_rate(a, b) for a, b in zip(g["적합"], g["전체"])]
                 show_table(g.reset_index().rename(columns={"item_group": "항목군"}))
                 show_table(df.rename(columns={"check_id": "평가항목", "item_group": "항목군", "description": "점검 내용", "method": "방법",
                                               "actual": "결과", "conforms": "적합", "focus_node": "위반 노드", "message": "내용"})[
-                    ["평가항목", "항목군", "점검 내용", "방법", "결과", "적합", "위반 노드", "내용", "status", "error_message"]])
+                    ["평가항목", "항목군", "점검 내용", "원인", "방법", "결과", "적합", "위반 노드", "내용", "status", "error_message"]])
             elif i == 2:                                                    # 2-3 매핑: 검증 단위별 일치·불일치
                 units = [("class_match", "클래스 매핑"), ("property_match", "속성 매핑"), ("relation_match", "관계 매핑"),
                          ("datatype_match", "자료형"), ("exact_match", "정확 매핑(4개 모두)")]
-                show_table(pd.DataFrame([{"검증 단위": nm, "일치": int((df[c] == "true").sum()), "불일치": int((df[c] == "false").sum()),
-                                          "일치율": _rate(int((df[c] == "true").sum()), len(df))} for c, nm in units]))
-                if "value_match" in df:
-                    vm = df[df["value_match"] != ""]
+                show_table(pd.DataFrame([{"검증 단위": nm, "일치": int((full[c] == "true").sum()), "불일치": int((full[c] == "false").sum()),
+                                          "일치율": _rate(int((full[c] == "true").sum()), len(full))} for c, nm in units]))
+                if "value_match" in full:
+                    vm = full[full["value_match"] != ""]
                     st.caption(f"(보조) 값 일치 {int((vm['value_match'] == 'true').sum())} / {len(vm)} — 판정에는 넣지 않음. "
                                "원천 최신본과 온톨로지 판 차이 등을 드러내기 위한 참고 값")
                 show_table(df.rename(columns={"mapping_id": "매핑 ID", "source_field": "원천 필드", "source_value": "원천 값",
                                               "target_element": "대상 요소", "expected_mapping": "정답 매핑", "actual_mapping": "실제 매핑",
-                                              "exact_match": "정확 매핑", "value_match": "(보조) 값 일치", "actual_value": "온톨로지 값"})[
-                    ["매핑 ID", "원천 필드", "원천 값", "대상 요소", "정답 매핑", "실제 매핑", "class_match", "property_match",
-                     "relation_match", "datatype_match", "정확 매핑", "(보조) 값 일치", "온톨로지 값"]])
+                                              "exact_match": "정확 매핑", "value_match": "(보조) 값 일치", "actual_value": "온톨로지 값",
+                                              "lookup_path": "확인 경로", "source_key": "원천 레코드"}).reindex(
+                    columns=["매핑 ID", "원천 필드", "원천 값", "원인", "원천 레코드", "대상 요소", "정답 매핑", "실제 매핑", "class_match",
+                             "property_match", "relation_match", "datatype_match", "정확 매핑", "(보조) 값 일치", "온톨로지 값"], fill_value=""))
             else:                                                           # 2-4 일관성·무결성
                 s4 = read_json(os.path.join(d, "summary_da2_4.json"))
                 if s4:
@@ -815,8 +876,18 @@ def render_da2(item, sp, area):
                          "오류 건수": str(sum((s4.get("pitfall_types") or {}).values())), "점수": str(s4.get("pitfall_score"))},
                         {"구분": "논리적 일관성·무결성", "내용": "(일관성 점수 + 함정 점수) / 2", "오류 건수": "", "점수": str(s4.get("value"))}]))
                 show_table(df.rename(columns={"check_id": "항목", "category": "구분", "item": "내용", "level": "중요도", "detected": "검출",
-                                              "count": "건수", "affected": "영향 요소 수(계수 안 함)", "elements": "대상"})[
-                    ["항목", "구분", "내용", "중요도", "검출", "건수", "영향 요소 수(계수 안 함)", "대상", "status", "error_message"]])
+                                              "count": "건수", "affected": "영향 요소 수(계수 안 함)", "elements": "대상",
+                                              "location": "대상 위치(IRI @ 파일:줄)"}).reindex(
+                    columns=["항목", "구분", "내용", "중요도", "원인", "검출", "건수", "영향 요소 수(계수 안 함)", "대상 위치(IRI @ 파일:줄)",
+                             "대상", "status", "error_message"], fill_value=""))
+                for _, r in df[df["check_id"].astype(str).str.startswith("OOPS")].iterrows():
+                    try:
+                        locs = json.loads(r.get("location") or "[]")
+                    except Exception:
+                        locs = []
+                    if locs:
+                        with st.expander(f"{r['check_id']} 대상 {len(locs)}개 — 전체 IRI와 스키마 파일 위치"):
+                            show_table(pd.DataFrame([{"대상(IRI)": x.split(" @ ")[0], "위치(파일:줄)": x.split(" @ ")[-1]} for x in locs]))
                 op = os.path.join(d, "oops_response.xml")
                 if os.path.exists(op):
                     st.download_button("⬇ OOPS! 응답 원문", open(op, "rb").read(), file_name="oops_response.xml", key="dl_oops")
