@@ -569,11 +569,16 @@ def render_da2(item, sp, area):
     xbytes, zbytes = _da2_xlsx(run_dir, sp, sm, rows), _da2_logzip(run_dir)
 
     def dl(i):
-        """상세 표 바로 아래: 결과 엑셀 · 로그 (AI 1 ~ 5 화면과 같은 자리). 보조 자료(펼침)는 그 아래"""
-        d1, d2 = st.columns(2)
-        d1.download_button("⬇ 결과 엑셀 (DA2_result.xlsx)", xbytes, file_name=f"DA2_result_{os.path.basename(run_dir)}.xlsx",
+        """상세 표 바로 아래: 결과 엑셀(전체) · 로그 묶음(전체) · 이 구성지표 검증 로그(csv). 보조 자료(펼침)는 그 아래"""
+        k = sp["parts"][i][0]
+        pc = os.path.join(run_dir, f"da2-{i + 1}", "validation_result_da2.csv")
+        d1, d2, d3 = st.columns(3)
+        d3.download_button(f"⬇ {k} 검증 로그 (csv)", open(pc, "rb").read(), file_name=f"validation_result_{k.replace(' ', '')}.csv",
+                           mime="text/csv", key=f"dl_da2_{i}", width="stretch",
+                           help=f"이 탭({k})만의 검증 결과: {pc.replace(os.sep, '/')}")
+        d1.download_button("⬇ 결과 엑셀 (DA2 전체)", xbytes, file_name=f"DA2_result_{os.path.basename(run_dir)}.xlsx",
                            key=f"dl_da2_xlsx_{i}", width="stretch", help="요약 + 구성지표별 시트(전체 행, 문제·사유 열 포함)")
-        d2.download_button("⬇ 로그 (DA2 실행 로그 zip)", zbytes, file_name=f"DA2_log_{os.path.basename(run_dir)}.zip",
+        d2.download_button("⬇ 로그 묶음 (DA2 전체, zip)", zbytes, file_name=f"DA2_log_{os.path.basename(run_dir)}.zip",
                            key=f"dl_da2_log_{i}", width="stretch",
                            help="구성지표별 validation_result_da2.csv · summary.json · meta.json · OOPS! 응답 원문")
 
@@ -586,9 +591,6 @@ def render_da2(item, sp, area):
             if df is None:
                 st.info("이 실행에서는 수행하지 않았어요.")
                 continue
-            st.caption(f"로그 파일: `{p.replace(os.sep, '/')}`")
-            st.download_button("⬇ [로그] validation_result_da2.csv", open(p, "rb").read(), file_name=f"validation_result_da2_{k.replace(' ', '')}.csv",
-                               mime="text/csv", key=f"dl_da2_{i}")
             df = df.copy()
             df["문제"] = [_da2_cause(i, r) for _, r in df.iterrows()]
             df["사유"] = [_da2_reason(i, r) for _, r in df.iterrows()]
