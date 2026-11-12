@@ -39,3 +39,5 @@ spec_data/da2/landcheck_instance_v1.0.ttl
 backup/중지된_실행/
 # [DA 2] 법령 원문 조회 캐시
 spec_data/da2/_law_cache/
+# DA2 인스턴스 백업(155MB) — git 제외
+backup/**/landcheck_instance_*.ttl
