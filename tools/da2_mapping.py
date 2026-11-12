@@ -184,7 +184,7 @@ def run(out_dir, testset=OUT, only=None):
         field = r["source_field"].split(".", 1)[1]
         tgt = ox.NamedNode(r["target_element"])
         rec = dict(r, actual_mapping="", class_match="", property_match="", relation_match="", datatype_match="", exact_match="",
-                   value_match="", actual_value="", status="completed", error_message="")
+                   value_match="", actual_value="", lookup_path="", status="completed", error_message="")
         try:
             types = sorted(_pfx(q.object.value) for q in st.quads_for_pattern(tgt, ox.NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), None)
                            if q.object.value.startswith((AIP, SKOS)))
@@ -205,6 +205,21 @@ def run(out_dir, testset=OUT, only=None):
             m["exact_match"] = all(m.values())
             rec.update({k: str(v).lower() for k, v in m.items()})
             rec["actual_mapping"] = json.dumps(act, ensure_ascii=False)
+            # 확인 경로: 원천 레코드 → 대상 IRI → 조회한 파일 → 결과 (문제 원인을 따라가기 위한 기록)
+            step = [f"원천 {r['source_field']} = '{r['source_value']}' ({r.get('source_key', '')})", f"대상 {_pfx(r['target_element'])}",
+                    f"{os.path.basename(TTL['instance'])} 조회"]
+            if not types:
+                cls = ox.NamedNode(exp["class"].replace("aip:", AIP).replace("skos:", SKOS))
+                same_cls = sorted(_pfx(q.subject.value) for q in st.quads_for_pattern(None, ox.NamedNode(
+                    "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), cls))
+                step.append(f"노드 없음 — 같은 클래스 {exp['class']} 노드 {len(same_cls)}개는 있음: {', '.join(same_cls[:20])}")
+            else:
+                miss = [nm for k, nm in (("class_match", "클래스"), ("property_match", "속성"), ("relation_match", "관계"),
+                                         ("datatype_match", "자료형")) if not m[k]]
+                step.append("노드 있음 · " + (f"다른 항목: {', '.join(miss)}" if miss else "4개 모두 일치"))
+                if not m["relation_match"] and r["parent_element"]:
+                    step.append(f"상위 {_pfx(r['parent_element'])} → 대상 연결: {rel}")
+            rec["lookup_path"] = " → ".join(step)
         except Exception as e:                                             # noqa: BLE001
             rec.update(status="error", error_message=f"{type(e).__name__}: {e}")
         rec["elapsed_ms"] = int((time.time() - t) * 1000)
@@ -214,7 +229,7 @@ def run(out_dir, testset=OUT, only=None):
     os.makedirs(out_dir, exist_ok=True)
     cols = ["mapping_id", "source_field", "source_key", "source_value", "target_element", "expected_mapping", "actual_mapping",
             "class_match", "property_match", "relation_match", "datatype_match", "exact_match", "value_match", "actual_value",
-            "elapsed_ms", "status", "error_message"]
+            "lookup_path", "elapsed_ms", "status", "error_message"]
     with open(os.path.join(out_dir, "validation_result_da2.csv"), "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()

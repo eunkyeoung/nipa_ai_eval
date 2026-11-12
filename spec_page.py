@@ -420,6 +420,8 @@ def _da2_cause(i, r):
     if i == 2:                                                              # 2-3 매핑
         if g("exact_match") == "true":
             return ""
+        if g("lookup_path"):                                                # 확인 경로(원천 → 대상 IRI → 파일 → 결과)
+            return g("lookup_path")
         try:
             ex, ac = json.loads(g("expected_mapping") or "{}"), json.loads(g("actual_mapping") or "{}")
         except Exception:
@@ -434,7 +436,11 @@ def _da2_cause(i, r):
         what = _OOPS_KO.get(code, g("item"))
         lv = f"[{g('level')}] " if g("level") else ""
         tgt = g("elements")
-        return f"{lv}{what}" + (f" — 대상: {tgt[:200]}" if tgt and tgt != "[]" else "")
+        try:
+            n = len(json.loads(tgt)) if tgt else 0
+        except Exception:
+            n = 0
+        return f"{lv}{what}" + (f" — 대상 {n}개(전체 IRI·스키마 파일 줄은 '대상 위치' 열)" if n else "")
     return ""
 
 
@@ -547,9 +553,10 @@ def render_da2(item, sp, area):
                                "원천 최신본과 온톨로지 판 차이 등을 드러내기 위한 참고 값")
                 show_table(df.rename(columns={"mapping_id": "매핑 ID", "source_field": "원천 필드", "source_value": "원천 값",
                                               "target_element": "대상 요소", "expected_mapping": "정답 매핑", "actual_mapping": "실제 매핑",
-                                              "exact_match": "정확 매핑", "value_match": "(보조) 값 일치", "actual_value": "온톨로지 값"})[
-                    ["매핑 ID", "원천 필드", "원천 값", "원인", "대상 요소", "정답 매핑", "실제 매핑", "class_match", "property_match",
-                     "relation_match", "datatype_match", "정확 매핑", "(보조) 값 일치", "온톨로지 값"]])
+                                              "exact_match": "정확 매핑", "value_match": "(보조) 값 일치", "actual_value": "온톨로지 값",
+                                              "lookup_path": "확인 경로", "source_key": "원천 레코드"}).reindex(
+                    columns=["매핑 ID", "원천 필드", "원천 값", "원인", "원천 레코드", "대상 요소", "정답 매핑", "실제 매핑", "class_match",
+                             "property_match", "relation_match", "datatype_match", "정확 매핑", "(보조) 값 일치", "온톨로지 값"], fill_value=""))
             else:                                                           # 2-4 일관성·무결성
                 s4 = read_json(os.path.join(d, "summary_da2_4.json"))
                 if s4:
@@ -561,8 +568,18 @@ def render_da2(item, sp, area):
                          "오류 건수": str(sum((s4.get("pitfall_types") or {}).values())), "점수": str(s4.get("pitfall_score"))},
                         {"구분": "논리적 일관성·무결성", "내용": "(일관성 점수 + 함정 점수) / 2", "오류 건수": "", "점수": str(s4.get("value"))}]))
                 show_table(df.rename(columns={"check_id": "항목", "category": "구분", "item": "내용", "level": "중요도", "detected": "검출",
-                                              "count": "건수", "affected": "영향 요소 수(계수 안 함)", "elements": "대상"})[
-                    ["항목", "구분", "내용", "중요도", "원인", "검출", "건수", "영향 요소 수(계수 안 함)", "대상", "status", "error_message"]])
+                                              "count": "건수", "affected": "영향 요소 수(계수 안 함)", "elements": "대상",
+                                              "location": "대상 위치(IRI @ 파일:줄)"}).reindex(
+                    columns=["항목", "구분", "내용", "중요도", "원인", "검출", "건수", "영향 요소 수(계수 안 함)", "대상 위치(IRI @ 파일:줄)",
+                             "대상", "status", "error_message"], fill_value=""))
+                for _, r in df[df["check_id"].astype(str).str.startswith("OOPS")].iterrows():
+                    try:
+                        locs = json.loads(r.get("location") or "[]")
+                    except Exception:
+                        locs = []
+                    if locs:
+                        with st.expander(f"{r['check_id']} 대상 {len(locs)}개 — 전체 IRI와 스키마 파일 위치"):
+                            show_table(pd.DataFrame([{"대상(IRI)": x.split(" @ ")[0], "위치(파일:줄)": x.split(" @ ")[-1]} for x in locs]))
                 op = os.path.join(d, "oops_response.xml")
                 if os.path.exists(op):
                     st.download_button("⬇ OOPS! 응답 원문", open(op, "rb").read(), file_name="oops_response.xml", key="dl_oops")
