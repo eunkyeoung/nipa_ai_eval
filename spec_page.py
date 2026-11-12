@@ -510,8 +510,8 @@ def _da2_xlsx(run_dir, sp, sm, rows):
             if not os.path.exists(p):
                 continue
             df = _read_csv(p).copy()
-            df.insert(0, "사유", [_da2_reason(i, r) for _, r in df.iterrows()])
-            df.insert(0, "문제", [_da2_cause(i, r) for _, r in df.iterrows()])
+            df["문제"] = [_da2_cause(i, r) for _, r in df.iterrows()]          # 화면과 같이 오른쪽 끝(11-12 사용자)
+            df["사유"] = [_da2_reason(i, r) for _, r in df.iterrows()]
             df.to_excel(w, sheet_name=k.replace("DA ", "DA"), index=False)
     return buf.getvalue()
 
@@ -610,7 +610,7 @@ def render_da2(item, sp, area):
                 _da2_table(df.rename(columns={"cq_id": "CQ ID", "odp_type": "ODP 유형", "municipality": "지자체", "question": "질문",
                                               "expected_bindings": "정답", "actual_bindings": "실제 결과", "missing_bindings": "누락",
                                               "extra_bindings": "추가", "match": "일치"})[
-                    ["CQ ID", "ODP 유형", "지자체", "질문", "문제", "사유", "정답", "실제 결과", "누락", "추가", "일치", "status", "error_message"]])
+                    ["CQ ID", "ODP 유형", "지자체", "질문", "정답", "실제 결과", "누락", "추가", "일치", "문제", "사유", "status", "error_message"]])
                 dl(i)
                 zp = os.path.join(run_dir, "data", "aips_da2_cq_testset.zip")
                 if os.path.exists(zp):
@@ -628,7 +628,7 @@ def render_da2(item, sp, area):
                 show_table(g.reset_index().rename(columns={"item_group": "항목군"})[["항목군", "전체", "적합", "부적합", "적합률"]])
                 _da2_table(df.rename(columns={"check_id": "평가항목", "item_group": "항목군", "description": "점검 내용", "method": "방법",
                                               "actual": "결과", "conforms": "적합", "focus_node": "위반 노드", "message": "내용"})[
-                    ["평가항목", "항목군", "점검 내용", "문제", "사유", "방법", "결과", "적합", "위반 노드", "내용", "status", "error_message"]])
+                    ["평가항목", "항목군", "점검 내용", "방법", "결과", "적합", "위반 노드", "내용", "문제", "사유", "status", "error_message"]])
                 dl(i)
             elif i == 2:                                                    # 2-3 매핑: 검증 단위별 일치·불일치
                 units = [("class_match", "클래스 매핑"), ("property_match", "속성 매핑"), ("relation_match", "관계 매핑"),
@@ -643,8 +643,8 @@ def render_da2(item, sp, area):
                                               "target_element": "대상 요소", "expected_mapping": "정답 매핑", "actual_mapping": "실제 매핑",
                                               "exact_match": "정확 매핑", "value_match": "(보조) 값 일치", "actual_value": "온톨로지 값",
                                               "lookup_path": "확인 경로", "source_key": "원천 레코드"}).reindex(
-                    columns=["매핑 ID", "원천 필드", "원천 값", "문제", "사유", "원천 레코드", "대상 요소", "정답 매핑", "실제 매핑", "class_match",
-                             "property_match", "relation_match", "datatype_match", "정확 매핑", "(보조) 값 일치", "온톨로지 값"], fill_value=""))
+                    columns=["매핑 ID", "원천 필드", "원천 값", "원천 레코드", "대상 요소", "정답 매핑", "실제 매핑", "class_match",
+                             "property_match", "relation_match", "datatype_match", "정확 매핑", "(보조) 값 일치", "온톨로지 값", "문제", "사유"], fill_value=""))
                 dl(i)
             else:                                                           # 2-4 일관성·무결성
                 s4 = read_json(os.path.join(d, "summary_da2_4.json"))
@@ -670,8 +670,8 @@ def render_da2(item, sp, area):
                 _da2_table(df.rename(columns={"check_id": "항목", "category": "구분", "item": "내용", "level": "중요도", "detected": "검출",
                                               "count": "건수", "affected": "영향 요소 수(계수 안 함)", "elements": "대상",
                                               "location": "대상 위치(IRI @ 파일:줄)"}).reindex(
-                    columns=["항목", "구분", "내용", "중요도", "문제", "사유", "검출", "건수", "영향 요소 수(계수 안 함)",
-                             "대상", "status", "error_message"], fill_value=""))
+                    columns=["항목", "구분", "내용", "중요도", "검출", "건수", "영향 요소 수(계수 안 함)",
+                             "대상", "문제", "사유", "status", "error_message"], fill_value=""))
                 dl(i)
                 st.caption("아래 펼침 표는 검출된 함정(문제)마다 그 함정에 걸린 요소 목록이라, '문제 사례만 보기'와 관계없이 같아요. 목록의 요소는 모두 문제 대상이에요.")
                 for _, r in df[df["check_id"].astype(str).str.startswith("OOPS")].iterrows():
