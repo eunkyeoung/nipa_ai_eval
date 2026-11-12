@@ -321,11 +321,10 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
 
     need = FILES[item]
     with side.popover("📂 시험 데이터", width="stretch"):
-        st.caption(f"폴더 `{DATA}/` 의 CSV(UTF-8) 또는 XLSX를 사용해요. 올리면 같은 이름으로 저장돼요.")
-        if item == "AI6":
-            st.caption("작성 규칙 — 정답의도는 세미콜론(;)으로 구분 · 정답파라미터·정답시나리오는 `키=값; 키=값` (여러 값은 쉼표) · "
-                       "참조PNU는 19자리(시스템에 보내지 않고 위치 대조에만 씀) · 의도 대응표가 없으면 기본 대응표로 판정 (README 12)")
+        if item == "AI6":                                         # 시험관 화면 — 확인만 (동결한 시험 데이터를 화면에서 바꾸지 않게)
+            st.caption("시험에 쓰는 파일과 SHA-256입니다. 규격서에 적힌 값과 같은지 확인하세요.")
         else:
+            st.caption(f"폴더 `{DATA}/` 의 CSV(UTF-8) 또는 XLSX를 사용해요. 올리면 같은 이름으로 저장돼요.")
             st.caption("작성 규칙 — 여러 값은 세미콜론(;)으로 구분 · 근거조문은 `법령명.조.항` (예: `건축법.2.1; 건축법.44`) "
                        "또는 `건축법 제44조 제1항`처럼 '제'를 붙여 표기 (자세한 내용: README 9-2)")
         for stem in need:
@@ -336,6 +335,12 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
             n = len(S.read_table(p)) if p else 0
             st.markdown(f"**{kind}** `{stem}` — " + (f"✅ {n}건" if p else ("기본 대응표 사용" if stem.startswith("intent_") else "❌ 없음"))
                         + (f" · SHA-256 `{S.sha256(p)}`" if p and item == "AI6" else ""))   # 규격서에 적힌 64자리와 그대로 대조
+            if item == "AI6":
+                if p:
+                    with open(p, "rb") as f_:
+                        st.download_button(f"⬇ {os.path.basename(p)}", f_.read(), file_name=os.path.basename(p),
+                                           width="stretch", key=f"dl_{stem}")
+                continue
             up = st.file_uploader(stem, type=["csv", "xlsx"], key=f"up_{stem}", label_visibility="collapsed")
             if up is not None and st.session_state.get(f"up_done_{stem}") != up.file_id:   # 올린 파일은 한 번만 저장 (다시 그릴 때 덮어쓰지 않게)
                 ext = os.path.splitext(up.name)[1].lower()
@@ -347,19 +352,6 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                 st.session_state[f"up_done_{stem}"] = up.file_id
                 st.cache_data.clear()
                 st.success(f"{stem}{ext} 저장")
-        if item == "AI6":
-            st.divider()
-            st.markdown("**엑셀 한 파일에서 가져오기** — 시트 이름에 `testset`·`answer`(또는 질문지·정답지)가 들어간 통합 문서. "
-                        "`대응표` 시트가 있으면 의도 대응표도 가져와요. 기존 파일은 덮어써요.")
-            wb = st.file_uploader("ai6_workbook", type=["xlsx"], key="up_ai6_wb", label_visibility="collapsed")
-            if wb is not None and st.session_state.get("ai6_wb_done") != (wb.name, wb.size):
-                try:
-                    msg = import_ai6_workbook(wb.getvalue())
-                    st.session_state["ai6_wb_done"] = (wb.name, wb.size)   # 다시 그릴 때 같은 파일을 또 쓰지 않도록
-                    st.cache_data.clear()
-                    st.success(msg)
-                except Exception as e:                            # noqa: BLE001
-                    st.error(f"가져오지 못했어요: {e}")
         if item == "AI4":                       # 규격서 [AI 4] 시험방법 (2): 판정 결과별·예외 유형별 개수 확인
             t4, a4 = S.read_table(data_path("testset_ai4")), S.read_table(data_path("answer_ai4"))
             if t4 is not None and "예외유형" in t4:
@@ -368,14 +360,13 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
             if a4 is not None and "판정결과" in a4:
                 vc = a4["판정결과"].map(S.type2).value_counts()
                 st.markdown("**판정 결과별 개수** — " + " / ".join(f"{k} {int(vc.get(k, 0))}건" for k in S.TYPE2))
-        st.divider()
-        st.markdown("**양식**")
-        for stem in need:
-            if item == "AI6" and stem.startswith("result_"):         # AI6 는 자동 실행 — 결과 파일 양식은 쓰지 않음
-                continue
-            cols, rows = S.TEMPLATES[item][stem + ".csv"]
-            st.download_button(f"⬇ {stem}.csv 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
-                               file_name=f"{stem}.csv", mime="text/csv", width="stretch", key=f"tpl_{stem}")
+        if item != "AI6":                                         # AI6 시험관 화면에는 양식 없음
+            st.divider()
+            st.markdown("**양식**")
+            for stem in need:
+                cols, rows = S.TEMPLATES[item][stem + ".csv"]
+                st.download_button(f"⬇ {stem}.csv 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
+                                   file_name=f"{stem}.csv", mime="text/csv", width="stretch", key=f"tpl_{stem}")
         if item == "AI1" and os.path.exists("gold.xlsx"):
             if st.button("gold.xlsx → AI1 시험셋·정답셋 만들기", width="stretch",
                          help="기존 정답셋(주소·시설물·정답판정·근거)으로 testset_ai1.csv / answer_ai1.csv 생성 (기존 파일 덮어씀)"):
@@ -450,73 +441,9 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
 
 
 # ---------------------------------------------------------------- [AI 6] 지도 제어 — 자동 실행
-AI6_COLS = {"testset_ai6": ["사례ID", "명령유형", "명령문"],
-            "answer_ai6": ["사례ID", "명령유형", "정답의도", "정답파라미터", "정답시나리오", "참조PNU"],
-            "intent_map_ai6": ["정답의도", "근거", "값", "비고"]}
-AI6_OPT_COLS = {"answer_ai6": ["검증자", "교차검증자", "검증일"]}   # 선택 칸 — 있으면 그대로 옮김
-AI6_SHEET_KEYS = {"testset_ai6": ("testset", "질문지", "시험셋"), "answer_ai6": ("answer", "정답지", "정답셋"),
-                  "intent_map_ai6": ("intent_map", "대응표")}
-
-
-def import_ai6_workbook(data):
-    """질문지·정답지(·대응표) 시트가 든 엑셀 한 파일 → spec_data/testset_ai6.csv · answer_ai6.csv (· intent_map_ai6.csv)
-    양식 밖의 칸(검토용 메모 등)은 버리고 양식 칸만 UTF-8(BOM) CSV 로 저장"""
-    import csv
-    import tempfile
-
-    import ai6_eval as E6
-    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
-        tf.write(data)
-        tmp = tf.name
-    try:
-        names = E6.sheet_names(tmp)
-        plan, notes = {}, []                                       # 1단계: 모든 시트를 읽고 확인만 (아직 저장 안 함)
-        for stem, keys in AI6_SHEET_KEYS.items():
-            sheet = next((n for n in names if any(k.lower() in n.lower() for k in keys)), None)
-            if sheet is None:
-                if stem == "intent_map_ai6":
-                    continue
-                raise ValueError(f"'{'/'.join(keys)}' 시트를 찾지 못했어요 (시트: {', '.join(names)})")
-            rows = E6.read_rows(tmp, sheet=sheet)
-            cols = AI6_COLS[stem]
-            lack = [c for c in cols if not rows or c not in rows[0]]
-            if lack and stem == "intent_map_ai6":                  # 대응표는 선택 — 형식이 다르면(설명용 표 등) 건너뛰고 기본 대응표
-                notes.append(f"'{sheet}' 시트는 대응표 양식(정답의도·근거·값·비고)이 아니라 건너뜀")
-                continue
-            if lack:
-                raise ValueError(f"'{sheet}' 시트에 칸이 없어요: {', '.join(lack)}")
-            plan[stem] = (sheet, cols + [c for c in AI6_OPT_COLS.get(stem, []) if rows and c in rows[0]], rows)
-        if "intent_map_ai6" in plan:                               # 대응표 형식(근거 종류 등)까지 확인
-            import io as _io
-            buf = _io.StringIO()
-            w = csv.writer(buf, lineterminator="\n")
-            w.writerow(AI6_COLS["intent_map_ai6"])
-            for r in plan["intent_map_ai6"][2]:
-                w.writerow([r.get(c, "") for c in AI6_COLS["intent_map_ai6"]])
-            with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8-sig") as tf2:
-                tf2.write(buf.getvalue())
-            try:
-                E6.load_rules(tf2.name)
-            finally:
-                os.remove(tf2.name)
-        done = []
-        for stem, (sheet, cols, rows) in plan.items():             # 2단계: 전부 통과했을 때만 저장
-            for e in (".csv", ".xlsx"):
-                if os.path.exists(os.path.join(DATA, stem + e)):
-                    os.remove(os.path.join(DATA, stem + e))
-            with open(os.path.join(DATA, stem + ".csv"), "w", encoding="utf-8-sig", newline="") as f:
-                w = csv.writer(f, lineterminator="\n")
-                w.writerow(cols)
-                for r in rows:
-                    w.writerow([r.get(c, "") for c in cols])
-            done.append(f"{stem}.csv {len(rows)}건 ← '{sheet}'")
-        return " · ".join(done + notes)
-    finally:
-        os.remove(tmp)
-
-
 def sidebar_ai6(side, launch, running, missing):
-    """AI6 사이드바: 데이터 점검(15/15/20 · 정답 짝 · PNU · 대응표 어휘) → 공간오케 주소·대기 상한 → 사전 점검 → 실행"""
+    """AI6 사이드바(시험관 화면): 시험 데이터 점검 → 사전 점검 → 동결 상태(보기만) → 실행.
+    주소·대기 상한·LLM 키는 서버 환경변수, 동결은 운영자 명령(python spec_runner_ai6.py --freeze) — README_QA 12-0"""
     from collections import Counter
 
     import ai6_client as C6
@@ -531,88 +458,53 @@ def sidebar_ai6(side, launch, running, missing):
     probs = ([f"❌ {rule_err}"] if rule_err else []) + (E6.validate(ts_rows, ans_rows, rules) if ts_rows else [])
     cnt = Counter(E6.canon_type(r.get("명령유형")) for r in ts_rows)
     if ts_rows:
-        side.caption("명령 유형 " + " / ".join(f"{t.split()[0]} {cnt.get(t, 0)}" for t in E6.TYPES) + " (규격 15 / 15 / 20)")
+        side.caption(f"시험 명령 {len(ts_rows)}건 — " + " · ".join(f"{t} {cnt.get(t, 0)}" for t in E6.TYPES))
     if probs:
         with side.expander(f"⚠️ 시험 데이터 점검 {len(probs)}건", expanded=bool(rule_err)):
             st.markdown("\n".join(f"- {p}" for p in probs[:60]) + ("\n- …" if len(probs) > 60 else ""))
     import spec_runner_ai6 as R6
-    fz_path = os.path.join(DATA, R6.FREEZE_FILE)
-    fz = read_json(fz_path) if os.path.exists(fz_path) else {}
-    with side.expander("공간오케 · 응답 대기 상한", expanded=False):
-        base = st.text_input("공간오케 주소 (지도제어·공간분석 Sub 오케스트레이터)", C6.BASE, key="ai6_base",
-                             help="POST {주소}/api/chat 으로 명령을 보내요. 기본값은 환경변수 AI6_BASE")
-        dl0 = int(fz.get("deadline_s") or C6.DEADLINE)
-        deadline = st.number_input("사례당 응답 대기 상한(초)", 30, 1200, min(1200, max(30, dl0)), 10, key="ai6_deadline",
-                                   help="규격서 2-6 시험조건의 사례별 응답 대기 상한(180초) — 넘기면 연결을 끊고 '응답 오류'로 집계 (동결 대상)")
-        if not 30 <= dl0 <= 1200:                                  # 범위 밖 기본값(AI6_DEADLINE)이면 화면이 멈추지 않게 맞춤
-            st.caption(f"⚠️ 기본값 {dl0}초(AI6_DEADLINE)가 범위(30~1200초) 밖이라 {min(1200, max(30, dl0))}초로 맞췄어요.")
-        probe = st.checkbox("사전 점검에 주소 검색 1건 포함 (V-World 경유)", value=True, key="ai6_probe",
-                            help=f"공간오케에 시험셋에 없는 명령 1건('{C6.PROBE_MESSAGE}')을 보내 위치 검색이 되는지 확인해요")
-        llm_key = st.text_input("LLM 키 (모델 확인용)", C6.llm_key_env(), type="password", key="ai6_llm_key",
-                                help=f"LLM 서버 /v1/models 로 지금 띄운 모델이 시험 조건({C6.LLM_MODEL})·공간오케 설정과 같은지 확인해요. "
-                                     f"비우면 모델 목록은 못 보고 vLLM 버전(시험 조건 {C6.VLLM_VERSION or '-'})과 공간오케 설정만 확인해요. "
-                                     "키는 실행 기록에 남기지 않아요.")
+    base, deadline = C6.BASE, C6.DEADLINE                          # 시험 조건(동결 대상) — 화면에서 바꾸지 않음(운영자는 AI6_BASE·AI6_DEADLINE)
     if side.button("사전 점검", width="stretch", disabled=running,
-                   help="공간오케 /health·/ready, LLM, 공간분석 API 응답을 확인해요. 실행할 때도 다시 점검하고, 실패하면 실행하지 않아요."):
+                   help="공간오케·LLM·공간분석 API 상태와 버전을 확인해요. 실행할 때도 다시 점검하고, 실패하면 실행하지 않아요."):
         with st.spinner("사전 점검 중…"):
             st.session_state["ai6_precheck"] = dict(at=time.strftime("%H:%M:%S"),
-                                                    rows=C6.precheck(base, probe_message=C6.PROBE_MESSAGE if probe else None,
-                                                                     llm_key=llm_key),
-                                                    llm=C6.llm_info(base, llm_key=llm_key))   # 키는 저장하지 않음(모델 목록·vLLM 버전만)
+                                                    rows=C6.precheck(base, probe_message=C6.PROBE_MESSAGE),
+                                                    llm=C6.llm_info(base))      # LLM 키는 서버 환경변수(AI6_LLM_KEY)만 씀 — 화면·기록에 없음
     pc = st.session_state.get("ai6_precheck")
     if pc:
         bad = [r for r in pc["rows"] if r["결과"] != "정상"]
         side.caption(("✅ 사전 점검 정상" if not bad else f"❌ 사전 점검 실패 {len(bad)}건 — 실행하면 시작하지 않고 멈춰요") + f" · {pc['at']}")
         with side.expander("사전 점검 결과", expanded=bool(bad)):
             show_table(pd.DataFrame(pc["rows"]))
-            st.markdown("**동결 버전 확인** (규격 시험방법 (2) — 선언값 = 시스템이 알려 주지 않아 의뢰기업 선언값으로 기록)")
+            st.markdown("**동결 버전 확인**")
             show_table(pd.DataFrame(C6.version_rows(pc["rows"], llm=pc.get("llm")))[["항목", "시험 조건", "확인값", "결과", "확인 방법"]])
+    fz_path = os.path.join(DATA, R6.FREEZE_FILE)
+    fz = read_json(fz_path) if os.path.exists(fz_path) else {}
     cur = R6.freeze_record(ts_p, ans_p, map_p, deadline, base) if ts_p and ans_p else None
     diff = R6.freeze_check(fz_path, cur) if cur else None
-    if fz:                                                         # 규격: 의도 대응표는 시험 전에 확정, 시험 기간 중 변경 안 함
-        side.caption(f"🔒 동결됨 · {fz.get('frozen_at', '')}" + (f" — ❌ 바뀐 항목: {', '.join(diff)} (실행 안 됨)" if diff else
-                                                                 " — 시험셋·정답셋·의도 대응표·판정 기준·대기 상한 고정"))
-        if side.button("동결 해제", width="stretch", disabled=running, help="시험 기간 중에는 풀지 마세요. 풀고 돌린 실행은 '동결 전 실행(예비)'으로 기록돼요."):
-            os.remove(fz_path)
-            st.rerun()
-    elif side.button("🔒 시험 데이터·대응표 동결", width="stretch", disabled=running or not cur or bool(rule_err),
-                     help="예비 실측을 마친 뒤 누르세요. 지금 시험셋·정답셋·의도 대응표·판정 기준·대기 상한의 해시를 저장하고, "
-                          "그 뒤로 하나라도 바뀌면 실행을 거부해요."):
-        with open(fz_path, "w", encoding="utf-8") as f:
-            json.dump({**cur, "frozen_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                       "files": {"testset": ts_p, "answer": ans_p, "intent_map": map_p or "기본 대응표"}}, f, ensure_ascii=False, indent=1)
-        st.rerun()
-    ids = side.multiselect("실행할 ID (비우면 전체)", [r.get("사례ID") for r in ts_rows], key="spec_ids_AI6")
-    n = len(ids) or len(ts_rows)
-    side.caption(f"명령 {n}건 · 예상 약 {max(1, n * 20 // 60)}분 (2026-11-10 실측 명령당 4~19초 + 간격, 최대 {n * int(deadline) // 60}분)"
-                 + (" · ID를 골라 돌리면 '예비 실행'으로 기록돼요(공식 결과 아님)" if ids else ""))
-    data_block = bool(E6.blocking(probs)) and not ids                 # 데이터 문제가 있으면 공식(전체) 실행은 막고, ID를 고른 예비 실행만
+    if fz:                                                         # 규격: 의도 대응표는 시험 전에 확정, 시험 기간 중 변경 안 함 — 화면은 상태만
+        side.caption(f"🔒 동결됨 · {fz.get('frozen_at', '')}" + (f" — ❌ 바뀐 항목: {', '.join(diff)} (실행할 수 없음)" if diff else
+                                                                 " — 시험셋·정답셋·의도 대응표·판정 기준 고정"))
+    elif ts_rows:
+        side.caption("⚠️ 동결 기록이 없어요 — 이대로 실행하면 '예비'로 기록돼요")
+    data_block = bool(E6.blocking(probs))
     blocked = bool(missing) or not ts_rows or not ans_rows or bool(rule_err) or bool(diff) or data_block
     run = side.button("⏳ 실행 중…" if running else "AI 6 지도 제어 시험 실행", type="primary", width="stretch",
-                      disabled=running or blocked,
-                      help="결과는 spec/AI6/<시각>/ 에 저장돼요(명령 해석 로그 · 실행 결과 로그 · 결과표). 백그라운드에서 실행됩니다.")
+                      disabled=running or blocked, help="시험 명령을 차례로 보내 판정해요. 진행 상황과 결과는 오른쪽 화면에 나와요.")
     if missing:
-        side.caption("❌ 표시된 파일을 먼저 올려 주세요 (📂 시험 데이터).")
-    if not fz and ts_rows and not ids:
-        side.caption("ℹ️ 동결하지 않고 돌린 실행은 '예비'로 기록돼요 — 예비 실측을 마친 뒤 🔒 동결하고 공식 실행하세요.")
+        side.caption("❌ 시험 데이터 파일이 없어요 (📂 시험 데이터).")
     if rule_err:
         side.caption("❌ 의도 대응표 형식이 달라 실행할 수 없어요 — 위 '시험 데이터 점검'을 보세요.")
     elif data_block:
-        side.caption("❌ 시험 데이터 점검 문제가 있어 전체(공식) 실행은 막혀요 — 고친 뒤 실행하거나, ID를 골라 예비로 돌려 보세요.")
+        side.caption("❌ 시험 데이터에 문제가 있어 실행할 수 없어요 — 위 '시험 데이터 점검'을 보세요.")
     if run and not blocked and not running:                        # 비활성 버튼이 눌린 것처럼 와도 한 번 더 막음
         import qa_runner
         cmd = [sys.executable, "-u", S.SPEC["AI6"]["runner"], "--testset", ts_p, "--answer", ans_p,
-               "--status-file", qa_runner.STATUS_FILE, "--base", base, "--deadline", str(deadline)]
+               "--status-file", qa_runner.STATUS_FILE, "--base", base, "--deadline", f"{deadline:g}", "--probe", C6.PROBE_MESSAGE]
         if map_p:
             cmd += ["--intent-map", map_p]
-        if ids:
-            cmd += ["--cases", ",".join(ids)]
-        if probe:
-            cmd += ["--probe", C6.PROBE_MESSAGE]
         st.session_state["spec_run_dir"] = None
-        launch(cmd, n, env={"AI6_LLM_KEY": llm_key, "VLLM_API_KEY": ""})  # 키는 러너 환경변수로만 넘김(명령줄·기록에 안 남김), 비우면 확인 안 함
-    if data_path("result_ai6"):
-        side.caption("ℹ️ result_ai6(수동 결과 파일)는 쓰지 않아요 — AI6 는 위 버튼으로 공간오케에 직접 보내 판정합니다.")
+        launch(cmd, len(ts_rows))
     return "AI6"
 
 
@@ -946,15 +838,6 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
         import spec_runner
         spec_runner.run_score(item, run_dir, ans, ts, law)
         st.toast("저장했어요")
-    if auto6 and c2.button("🔁 다시 판정", width="stretch", disabled=busy,
-                              help="공간오케에 다시 묻지 않고, 저장된 응답 원문을 지금 spec_data 의 정답셋·의도 대응표로 다시 판정해 "
-                                   "새 폴더 '<이 폴더>_재판정_<시각>'에 '예비'로 남겨요. 이 실행 폴더(공식 결과)는 바뀌지 않아요."):
-        import spec_runner_ai6
-        new, _ = spec_runner_ai6.rescore(run_dir, data_path("answer_ai6"), None, data_path("intent_map_ai6"))
-        st.session_state["spec_run_dir"] = new
-        st.cache_data.clear()
-        st.toast(f"다시 판정 결과를 새 폴더에 남겼어요: {os.path.basename(new)}")
-        st.rerun()
 
     # ---- 핵심 지표
     log = S.read_log(run_dir, item)
@@ -971,8 +854,7 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
     with area("kpi_spec_main"):
         st.markdown(f"#### {sp['no']} {sp['name']}")
         if busy:
-            st.info("실행 중인 폴더예요 — 아래 지표는 지금까지 받은 결과로 낸 중간 값이에요(AI 6 은 아직 보내지 않은 사례를 응답 오류로 셈). "
-                    "끝나면 다시 계산돼요.")
+            st.info("실행 중이에요 — 아래 값은 지금까지 끝난 명령 기준이고, 다 끝나면 다시 계산돼요.")
         k = st.columns([1.3, 1, 1, 1, 1])
         k[0].metric(sp["metric"], fmt_pct(r["value"], item), help=f"**{sp['formula']}**\n\n{trunc_txt(item)}")
         k[1].metric("목표", target_txt(item))

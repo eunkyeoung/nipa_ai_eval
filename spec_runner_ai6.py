@@ -54,6 +54,8 @@ SCRIPT = "spec_runner_ai6.py"
 GAP = float(os.environ.get("AI6_GAP", "2"))                # 사례 사이 쉬는 시간(초) — 공간오케에 몰아 보내지 않게
 COOLDOWN = float(os.environ.get("AI6_COOLDOWN", "10"))     # 대기 상한 초과(취소) 뒤 쉬는 시간(초)
 MAX_CONN_FAILS = 3                                          # 연결 실패가 이만큼 이어지면 환경 문제로 보고 멈춤(전체 재수행 대상)
+MAX_RESP_ERRORS = 3                                         # 응답 오류(시스템 오류·시간 초과 등)가 이만큼 이어지면 시스템 장애로 보고 멈춤(전체 재수행 대상)
+#                                                             2026-11-12 공간분석 API(KGEOP) 시간 초과 때 22건이 모두 응답 오류였음
 FREEZE_FILE = "freeze_ai6.json"                             # 시험 데이터 폴더의 동결 기록 — 있으면 해시가 같아야 실행
 STOP_NOTE = "사용자 중지 — 끝까지 돌리기 전(↻ 이어서로 마저 돌리면 공식)"   # 동결한 전체 실행을 멈췄을 때의 예비 사유
 RUN_NOTE = "끝까지 실행하기 전(실행 중이거나 중간에 멈춤)"   # 공식 조건 실행은 시작 때 예비로 쓰고, 정상으로 끝날 때만 공식으로 바꿈
@@ -283,7 +285,30 @@ def main():
     ap.add_argument("--no-precheck", action="store_true", help="사전 점검을 건너뜀(개발용)")
     ap.add_argument("--probe", help="사전 점검 때 공간오케에 보낼 주소 검색 명령 1건(V-World 경유 확인)")
     ap.add_argument("--status-file")
+    ap.add_argument("--freeze", action="store_true",
+                    help="운영자용: spec_data 의 시험셋·정답셋·의도 대응표와 지금 판정 기준·대기 상한·공간오케 주소로 동결 기록을 새로 씀 "
+                         "(시험관 화면에는 동결 버튼이 없음 · 풀려면 spec_data/freeze_ai6.json 을 지움)")
     a = ap.parse_args()
+    if a.freeze:                                           # 운영자 동결 — 화면의 옛 '🔒 동결' 버튼과 같은 기록
+        ts_p = a.testset or os.path.join("spec_data", "testset_ai6.csv")
+        d = os.path.dirname(ts_p) or "."                    # 정답셋·대응표 기본값은 시험셋과 같은 폴더
+        an_p = a.answer or os.path.join(d, "answer_ai6.csv")
+        im_p = a.intent_map or (os.path.join(d, "intent_map_ai6.csv") if os.path.exists(os.path.join(d, "intent_map_ai6.csv")) else None)
+        if not (os.path.exists(ts_p) and os.path.exists(an_p)):
+            raise SystemExit(f"시험셋·정답셋 파일이 없어요: {ts_p}, {an_p}")
+        rules = E.load_rules(im_p) if im_p else E.load_rules()     # 대응표 형식이 틀리면 여기서 멈춤
+        probs = E.blocking(E.validate(E.read_rows(ts_p), E.read_rows(an_p), rules))
+        if probs:
+            raise SystemExit(f"시험 데이터 점검 문제 {len(probs)}건이 있어 동결하지 않아요: " + " / ".join(probs[:3]))
+        rec = freeze_record(ts_p, an_p, im_p, float(a.deadline or C.DEADLINE), a.base)
+        path = os.path.join(os.path.dirname(os.path.abspath(ts_p)), FREEZE_FILE)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({**rec, "frozen_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                       "files": {"testset": ts_p, "answer": an_p, "intent_map": im_p or "기본 대응표"}}, f, ensure_ascii=False, indent=1)
+        print(f"[AI6] 동결 기록 저장: {path}", flush=True)
+        for k, v in rec.items():
+            print(f"  {k}: {v}", flush=True)
+        return
     if a.rescore:
         new, _ = rescore(a.rescore, a.answer, a.testset, a.intent_map)
         print(f"[AI6] 다시 판정 결과 폴더: {new} (예비 — 원래 실행 폴더는 그대로)", flush=True)
@@ -317,7 +342,7 @@ def main():
     frozen = freeze_check(freeze_path, freeze_record(*live, deadline, base))
     if frozen:                                             # 규격: 의도 대응표는 시험 전에 확정하고 시험 기간 중 바꾸지 않음
         refuse(a.status_file, "동결 이후 바뀐 항목이 있어 실행하지 않아요: " + ", ".join(frozen)
-               + " — 의도한 변경이면 화면에서 동결을 풀고 다시 동결하세요.")
+               + " — 의도한 변경이면 운영자가 다시 동결하세요(python spec_runner_ai6.py --freeze).")
 
     run_dir = a.run_dir or os.path.join("spec", "AI6", time.strftime("%Y%m%d_%H%M%S"))
     raw_dir = os.path.join(run_dir, "raw")
@@ -457,7 +482,7 @@ def main():
     parsed = {str(p.get("사례ID")): p for p in read_jsonl(parse_path)}     # 이어서 실행: 이미 끝난 사례도 같은 칸으로
     prog = [progress_row(g, parsed.get(str(g.get("사례ID")))) for g in read_jsonl(gis_path)]
     print(f"[AI6] 명령 {len(plan)}건 · 공간오케 {base} · 대기 상한 {deadline:g}초 · 저장 위치 {run_dir}", flush=True)
-    fails = 0
+    fails = errs = 0
     try:
         for r in plan:
             if os.path.exists(STOP_FILE):
@@ -493,6 +518,16 @@ def main():
             write_status(a.status_file, status)
             conn_fail = res.get("ended_by") == "exception" or (res.get("ended_by") == "http" and (res.get("http_status") or 0) >= 500)
             fails = fails + 1 if conn_fail else 0
+            errs = errs + 1 if gr.get("오류원인") == "응답 오류" else 0
+            if errs >= MAX_RESP_ERRORS and fails < MAX_CONN_FAILS:   # 시스템 장애 — 남은 사례도 같은 오류가 날 것이라 멈춤(이어서 실행 없음)
+                status.update(state="error", message=f"응답 오류 {errs}건 연속 ({status['done']}/{total}건) — 시스템 장애로 보고 멈췄어요. "
+                                                     f"원인을 고친 뒤 전체를 다시 실행하세요. 마지막 오류: {str(gr.get('응답오류') or '')[:120]}")
+                status.pop("argv", None)
+                meta.pop("완료전", None)
+                meta.update(공식=False, 예비사유=[w for w in meta.get("예비사유") or [] if w not in PENDING_NOTES]
+                            + [f"응답 오류 {errs}건 연속으로 멈춤(시스템 장애) — 전체 재수행 대상"])
+                save_meta(mp, meta)
+                break
             if fails >= MAX_CONN_FAILS:
                 status.update(state="error", message=f"연결 실패 {fails}회 연속 ({status['done']}/{total}건) — 시험 환경 문제로 보고 멈췄어요. "
                                                      "원인을 고친 뒤 전체를 다시 실행하세요(규격: 환경이 바뀌면 전체 재수행).")

@@ -393,6 +393,15 @@ def _get(url, timeout=8, headers=None):
         return dict(ok=False, status=None, ms=round((time.monotonic() - t0) * 1000), body=f"{type(e).__name__}: {str(e)[:200]}")
 
 
+def _call_err(c):
+    """호출 실패 메시지 한 줄 (payload.errors[].message 또는 error)"""
+    pay = c.get("payload") if isinstance(c.get("payload"), dict) else {}
+    e = pay.get("errors") or c.get("error") or ""
+    if isinstance(e, list):
+        e = "; ".join(str(x.get("message") or x) if isinstance(x, dict) else str(x) for x in e)
+    return str(e)[:120]
+
+
 def precheck(base=None, checks=None, probe_message=None, deadline=120, llm_key=None):
     """실행 전 점검 — [{항목, 주소, 결과(정상/실패), 응답(ms), 내용}].
     probe_message 를 주면 공간오케에 실제 명령 1건을 보내 V-World 주소 검색까지 확인(위치 확정 호출이 성공했는지).
@@ -453,10 +462,12 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120, llm_key=N
         res = stream_chat(probe_message, base=base, deadline=deadline)
         turn = gather(res["events"])
         loc = [c for c in turn["calls"] if c.get("callee") == "map_navigation_b"]
-        ok = res["ended_by"] == "turn.finished" and any(c.get("status") == "ok" for c in loc)
+        bad = [c for c in loc if str(c.get("status") or "").lower() != "ok"]
+        ok = res["ended_by"] == "turn.finished" and bool(loc) and not bad   # 검색만 되고 필지 선택(도형 조회)이 실패해도 실패 — 2026-11-12 KGEOP 시간 초과
+        why = "; ".join(f"{c.get('tool') or c.get('callee')} {c.get('status')}: {_call_err(c)}" for c in bad)
         rows.append({"항목": "주소 검색 1건 (V-World 경유)", "주소": res["url"], "결과": "정상" if ok else "실패",
                      "응답(ms)": round((res["elapsed"] or 0) * 1000),
-                     "내용": (res["error"] or f"위치 확정 호출 {len(loc)}건 · 상태 {turn['status']}")[:200]})
+                     "내용": (res["error"] or f"위치 확정 호출 {len(loc)}건 · 상태 {turn['status']}" + (f" — 실패 {why}" if why else ""))[:200]})
     return rows
 
 

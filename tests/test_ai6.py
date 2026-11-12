@@ -1180,6 +1180,39 @@ class Runner(unittest.TestCase):                                   # 실행기 m
         self.assertIn(self.R6.INCOMPLETE_NOTE, m["예비사유"])
         self.assertNotIn("완료전", m)
 
+    def test_freeze_cli_writes_record(self):                     # 운영자 동결 명령 — 화면 동결과 같은 기록, 바로 동결 확인 통과
+        args = self._data(1, freeze=False)
+        self._main("--freeze", *args)
+        fz = os.path.join(self.tmp, self.R6.FREEZE_FILE)
+        with open(fz, encoding="utf-8") as f:
+            rec = json.load(f)
+        self.assertEqual({k: rec[k] for k in self.R6.freeze_record(args[1], args[3], None, 5, self.BASE)},
+                         self.R6.freeze_record(args[1], args[3], None, 5, self.BASE))
+        self.assertIn("frozen_at", rec)
+        self.assertEqual(self.R6.freeze_check(fz, self.R6.freeze_record(args[1], args[3], None, 5, self.BASE)), [])
+
+    def test_consecutive_response_errors_stop_run(self):        # 시스템 장애(응답 오류 3건 연속) → 멈춤 · 이어서 없음 · 예비 (11-12 KGEOP 장애)
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        ev = [("turn.started", {"thread_id": "t1"}),
+              ("call.started", {"call_id": "c1", "callee": "map_navigation_b", "tool": "mapFeature",
+                                "args": plan("mapFeature", action="SELECT", featureRef=PNU)}),
+              ("call.finished", {"call_id": "c1", "callee": "map_navigation_b", "tool": "mapFeature", "status": "error",
+                                 "reason_code": "rejected", "payload": {"status": "error", "errors": [
+                                     {"kind": "tool_error", "message": "공간분석 API 오류 (code=500): KGEOP 응답 시간 초과 (2회 시도)"}],
+                                     "resolve": {"status": "failed"}}})] + finish(answer="처리하지 못함")
+        chat = lambda *a, **k: dict(OK_RES, url=self.BASE + "/api/chat", request={}, http_status=200, t_first_event=0.1, deadline=5,
+                                    error=None, events=list(ev))
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=chat):
+            self._main(*self._data(5), "--run-dir", rd)
+        st, m = self._status(), self._meta(rd)
+        self.assertEqual((st["state"], st["done"]), ("error", 3))
+        self.assertIn("KGEOP", st["message"])
+        self.assertNotIn("argv", st)
+        self.assertFalse(m["공식"])
+        self.assertNotIn("완료전", m)
+        self.assertTrue(any("응답 오류 3건 연속" in w for w in m["예비사유"]), m["예비사유"])
+
     def test_unfrozen_run_stays_preliminary(self):              # 동결 안 한 실행은 끝까지 돌아도 예비
         import unittest.mock as um
         rd = os.path.join(self.tmp, "run")
@@ -1377,6 +1410,21 @@ class GisVersion(unittest.TestCase):
         self.assertEqual(r["결과"], "실패")
         self.assertIn("시험 조건(v0.1)과 다름", r["내용"])
         self.assertEqual((self._pre(None)[0]["결과"], self._pre(None)[0]["내용"]), ("정상", "GIS API 버전 미제공"))   # 못 읽으면 기록만
+
+    def test_probe_fails_when_parcel_select_fails(self):       # 주소 검색은 되고 필지 선택이 실패(도형 조회 장애)하면 사전 점검 실패
+        import unittest.mock as um
+        sel_fail = [("turn.started", {"thread_id": "t1"})] + locate_events()[1:4] + [
+            ("call.started", {"call_id": "c2", "callee": "map_navigation_b", "tool": "mapFeature",
+                              "args": plan("mapFeature", action="SELECT", featureRef=PNU)}),
+            ("call.finished", {"call_id": "c2", "callee": "map_navigation_b", "tool": "mapFeature", "status": "error",
+                               "payload": {"status": "error", "errors": [{"message": "KGEOP 응답 시간 초과"}]}})] + finish()
+        res = lambda ev: dict(url="http://x/api/chat", ended_by="turn.finished", elapsed=1.0, error=None, events=ev)
+        with um.patch.object(C, "stream_chat", return_value=res(sel_fail)):
+            r = C.precheck("http://127.0.0.1:1", checks={}, probe_message="주소로 이동해줘")[-1]
+        self.assertEqual(r["결과"], "실패")
+        self.assertIn("KGEOP", r["내용"])
+        with um.patch.object(C, "stream_chat", return_value=res(locate_events() + finish())):
+            self.assertEqual(C.precheck("http://127.0.0.1:1", checks={}, probe_message="주소로 이동해줘")[-1]["결과"], "정상")
 
     def test_version_rows(self):                                 # 규격 시험방법 (2) 동결 버전 확인 표 — 사전 점검·실행 기록 값으로(네트워크 없음)
         pre = [{"항목": "공간오케 준비 상태 (/ready)", "결과": "정상", "내용": "ready=True · 모델=gpt-oss-120b"},
