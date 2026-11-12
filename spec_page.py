@@ -649,13 +649,24 @@ def render_da2(item, sp, area):
             else:                                                           # 2-4 일관성·무결성
                 s4 = read_json(os.path.join(d, "summary_da2_4.json"))
                 if s4:
-                    show_table(pd.DataFrame([
-                        {"구분": "일관성 (OWL Reasoner)", "내용": f"consistent={s4.get('consistent')}, unsatisfiable class {s4.get('unsatisfiable')}개, "
-                                                         f"계층 순환 {sum((s4.get('cycles') or {}).values())}건", "오류 건수": str(s4.get("error_count")),
-                         "점수": str(s4.get("consistency_score"))},
-                        {"구분": "무결성 (OOPS! 함정)", "내용": " · ".join(f"{k} {v}개" for k, v in (s4.get("pitfall_types") or {}).items()),
-                         "오류 건수": str(sum((s4.get("pitfall_types") or {}).values())), "점수": str(s4.get("pitfall_score"))},
-                        {"구분": "논리적 일관성·무결성", "내용": "(일관성 점수 + 함정 점수) / 2", "오류 건수": "", "점수": str(s4.get("value"))}]))
+                    # 합계 행은 내용·오류 건수 칸을 합치고 색을 달리함(11-12 사용자) → st.dataframe은 병합이 안 되어 HTML 표로
+                    import html as _h
+                    rows4 = [("일관성 (OWL Reasoner)", f"consistent={s4.get('consistent')}, unsatisfiable class {s4.get('unsatisfiable')}개, "
+                                                    f"계층 순환 {sum((s4.get('cycles') or {}).values())}건", s4.get("error_count"), s4.get("consistency_score")),
+                             ("무결성 (OOPS! 함정)", " · ".join(f"{k} {v}개" for k, v in (s4.get("pitfall_types") or {}).items()),
+                              sum((s4.get("pitfall_types") or {}).values()), s4.get("pitfall_score"))]
+                    td = "padding:8px 12px;border:1px solid #e5e7eb"
+                    body = "".join(f"<tr><td style='{td}'>{_h.escape(str(a))}</td><td style='{td}'>{_h.escape(str(b))}</td>"
+                                   f"<td style='{td};text-align:right'>{_h.escape(str(c))}</td><td style='{td};text-align:right'>{_h.escape(str(e))}</td></tr>"
+                                   for a, b, c, e in rows4)
+                    tot = "background:#eff6ff;color:#1d4ed8;font-weight:700"
+                    body += (f"<tr style='{tot}'><td style='{td}'>논리적 일관성·무결성</td>"
+                             f"<td style='{td}' colspan='2'>(일관성 점수 + 함정 점수) / 2</td>"
+                             f"<td style='{td};text-align:right'>{_h.escape(str(s4.get('value')))}</td></tr>")
+                    head = "".join(f"<th style='{td};background:#f8fafc;font-weight:500;color:#64748b;text-align:left'>{x}</th>"
+                                   for x in ("구분", "내용", "오류 건수", "점수"))
+                    st.markdown(f"<table style='width:100%;border-collapse:collapse;font-size:14px;margin-bottom:1rem'>"
+                                f"<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>", unsafe_allow_html=True)
                 _da2_table(df.rename(columns={"check_id": "항목", "category": "구분", "item": "내용", "level": "중요도", "detected": "검출",
                                               "count": "건수", "affected": "영향 요소 수(계수 안 함)", "elements": "대상",
                                               "location": "대상 위치(IRI @ 파일:줄)"}).reindex(
