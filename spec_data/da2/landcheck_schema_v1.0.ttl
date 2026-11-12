@@ -1,0 +1,1005 @@
+PREFIX aip: <https://onto.go.kr/aip/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+aip:    a       <http://www.w3.org/2002/07/owl#Ontology>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "검증된 법령 corpus + 무결성 + 어휘. 출력 인용·구조의 근거 검증 골격. PRODUCTION (v4 lean grounding, 라이브 corpus 실증 2026-06-12).";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "통합인허가 사전진단 온톨로지 v4 (Grounding)";
+        <http://www.w3.org/2002/07/owl#versionInfo>
+                "4.2.0-grounding" .
+
+aip:Law  a      <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "인용 타겟 컨테이너. 출력의 '농지법' 같은 인용은 lawName/lawAbbrev 라벨로 이 노드에 해소됨. 식별은 lawId(코드).";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "Law"@en , "법령"@ko .
+
+aip:Article  a  <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "인용 단위. 출력의 '제34조'가 이 노드를 가리킴. 본문(articleText)은 RAG(Milvus).";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조문"@ko , "Article"@en .
+
+aip:hasArticle  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Article .
+
+aip:lawId  a    <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "법령 안정 식별자 — 법제처 법령ID 등 불변·유일 코드 (예: '000479'=농지법). 명칭 아님.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:lawName  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "정식 명칭 (라벨). 인용 해소·표시용. 식별자 아님 (가변).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:isSpecialLaw  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "특별법 여부 — 법 내재 메타(이름·약칭처럼). 시멘틱은 판정 안 함(데이터만 보유); 충돌 해소기가 4대 원칙(특별법 우선, 원칙 3-2) 적용 시 *입력*으로 read. 단일 진실=법령 YAML is_special_law → build_ttl 투영. 지역 특별법(제주특별법 — Region.governedBySpecialLaw와 병존)뿐 아니라 전국 적용 특별법(공공주택 특별법·도시 및 주거환경정비법 등)도 포함 — 후자는 Region에 안 걸려 이 플래그가 유일한 자리. 없으면 false(일반법).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:boolean .
+
+aip:effectiveFrom  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "시행일 — 이 단위가 효력을 갖기 시작한 날. Law = YAML effective_from(법제처 시행일자) · Article = YAML enforced_at(법제처 조문시행일자 · 2026-09-15 사용자 승인으로 domain 을 Law∪Article 로 넓혔다 — 같은 뜻이라 속성 하나). 신법 우선=4대 원칙 3-3 입력. 옵셔널.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Law aip:Article )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:date .
+
+aip:articleNo  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조 번호 (가지조 '32-2' 포함). 훈령 3단계는 별도 패턴 (shapes_v4).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Article;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:articleTitle  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Article;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:delegatesTo  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "타법 위임(수평) — 조문(또는 규제 별표)이 사항을 다른 법률/조문/단위로 위임. 위계 위임(parentLaw)과 차원 분리. 타겟=대상 조문(Article) 우선·법령(Law)·sub-unit(ArticleUnit). REFERENCE_ONLY(단순 언급)=엣지 미생성. subtype(EXTERNAL/PARTIAL/PROCEDURAL)·조건(본법 우선·보충성·대상 한정)=룰 레이어. SHACL dangling 차단.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Law aip:Article aip:ArticleUnit )
+                ] .
+
+aip:lawAbbrev  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "약칭·이칭 (다중 라벨). 인용이 약칭으로 들어올 때 해소 보강 (예: '국토계획법').";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:hasAppendix  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Appendix .
+
+aip:Appendix  a  <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "별표도 인용 타겟 (예: '건축법시행규칙 별표7'). v3 Article 위장(sh:or hack) 폐기 → 독립 클래스. 종류(별표/별도)는 appendixKind가 가름 — 별도도 같은 클래스(하위 클래스 X: Fuseki 무추론이라 subClassOf가 안 전개돼 기존 `?a a aip:Appendix` 쿼리·AppendixShape targetClass가 못 본다. isDeleted에서 DeletedArticle을 기각한 것과 같은 이유, 2026-08-10).";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "별표·서식"@ko , "Appendix"@en .
+
+aip:appendixNo  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "**종류 안의** 번호 (예: '7', '2의2'). canonical='의' — dash형('4-2')은 수집오류 산물로 은퇴(실존 0 확인 2026-07-10). 종류가 다르면 같은 법에 같은 번호가 둘 있을 수 있다(별표1 ∥ 별도1) — 법 안에서 유일한 것은 (appendixKind, appendixNo) 쌍이고, 그 쌍을 URI가 담는다(아래 규약).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Appendix;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:appendixTitle  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Appendix;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:ArticleUnit  a  <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조 아래 항/호/목 슬롯 — cross-law 조건 타겟용 LIGHT 노드(슬롯+라벨, 본문 X). articleTitle 패턴을 항/호/목으로 내림. 본문 산문은 RAG (항/호/목 LIGHT 슬롯).";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조문 하위단위 (항·호·목)"@ko , "ArticleUnit"@en .
+
+aip:hasUnit  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조문→항, 항→호, 호→목 중첩 슬롯 트리 (domain: Article·Appendix·ArticleUnit). 2026-06-10 확장 — 분류 별표(건축법시행령 별표1 용도별 건축물)도 hasUnit으로 호/목 단위를 가짐. 항/호/목 LIGHT 슬롯 'target만 LIGHT' 패턴을 *참조되는 분류 별표 호*로 확장(전 별표 rows X). 별표 호/목 = ArticleUnit, appliesToActivity로 용도→activity_code 매칭. 조례 행위제한이 이 단위를 cite(룰=S2b, 온톨로지 밖).";
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:ArticleUnit .
+
+aip:unitType  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "항 | 호 | 목.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:ArticleUnit;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:unitNo  a   <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "단위 번호·글자 — 항'1'·호'6'·목'아'. 한글 글자 = 안정 슬롯 식별자(위치 아님, '차.삭제'가 증거).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:ArticleUnit;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:unitLabel  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "짧은 라벨(업종명·제목급) — 예: '관광펜션업'. 본문 산문 아님(RAG). 목↔activity_code 매핑·자기설명용.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:ArticleUnit;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:appliesToActivity
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 관계가 적용되는 행위 코드(activity_code) — 룰엔진 매칭 키. 배제=제외 행위·의제=트리거 행위·준용=적용 행위. 통제어휘 권위는 S4 ActivityCode Literal. 의도분류 산출 activity_code와 직접 비교. 예: 'TOURISM_PENSION'.";
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:excludesLaw  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조문(또는 규제 별표)이 적용을 배제하는 대상 법령 — 실존 Law (SHACL dangling 차단). 위임의 반대 — 룰엔진이 평가에서 제외. 적용 조건(territorial 등)은 룰 레이어.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Law .
+
+aip:excludesArticle  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "배제 대상의 특정 조문/단위 (있으면) — 예: 민법 §242. sub-item 타겟이면 ArticleUnit(구 citesUnit 흡수). dangling 차단.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:ArticleUnit )
+                ] .
+
+aip:mustComplyWith  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조문(또는 규제 별표)이 적합해야 할 타법 조문/기준 — 실존 Article (또는 sub-unit ArticleUnit). 룰엔진이 그 타법 조문을 추가 게이트로 평가. 적용 조건은 룰 레이어. dangling 차단.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:ArticleUnit )
+                ] .
+
+aip:hierarchy  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "법률1·시행령2·시행규칙3·고시훈령4·조례5·자치규칙6 (DR-139). 상위법 우선=4대 원칙 3-1 입력. 시멘틱은 판정 안 함(데이터만).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:integer .
+
+aip:restrictionKind  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 조문/별표/단위가 규율하는 행위제한 유형. USE=용도·시설 가능/불가(필지+시설 판단) | SITE_METRIC=필지 공간 정량(경사·상수원 이격 등) | SCALE=계획 규모·기준(면적·층수·높이·배치이격·건폐율·용적률). 부재=**미분류**(저작 미착수 ∪ USE/SITE_METRIC/SCALE taxonomy 미해당). ⚠️ 「정의·참조」·「판단조항 아님」으로 읽지 말 것 (2026-08-14 정정) — C5 계약 §3.5 단일 진실 정합: 무마커 근거는 `restriction_kinds: []`(미분류)로 **전량 반환**하고 「USE 의도」로 추정하지 않으며, 소비자가 kind 미판정임을 인지하고 자기 판단한다. 종전 문언이 「부재=정의·참조」로 좁게 규정해 ⓐ 행위제한인데 저작이 안 된 조문(예 공원녹지법 §27)까지 「판단조항 아님」으로 읽히고 ⓑ 정의·시책·미분류가 한 칸에 겹치는 오독을 낳았다(2026-08-14 저작측 문의 Q3). 마커 소스는 둘 — ① C4 수령 룰 expr 파생 ② 저작 `knowledge/data/markers/article_kinds.yaml`(zone 연결 조문) → **「룰이 없으면 마커가 없다」는 참이 아니다**(룰 없어도 저작 채널로 붙는다). 용도 = 판단조항 필터(kind 있음=판단조항)·룰유형 도출 aid. ⚠️ Type1/Type2 라우팅 권위는 **이 저장소 밖**(룰 저작 측)에 있다 — 우리는 그 어휘를 보유하지 않으므로 **파일명을 지목하지 않는다**(2026-08-28: 종전 문언이 우리에게 없는 파일을 권위로 가리켜, 그쪽이 사라지면 C1이 존재하지 않는 파일을 지목하게 됐다). 이 문장이 실제로 말하는 것은 **「조문 레벨 kind로 Type을 판단하지 마라」**는 경고다 — 조문 레벨 kind는 Type을 대표하지 않는다(한 조문의 룰이 Type1·Type2 fact를 혼합 가능, 예 건축법시행령 §28² main=road.width[T1]·게이트=building.floor_area[T2]). restrictedBy 타겟만 부착(restrictedBy 단일 유지). ★ 건폐율·용적률 2값 (2026-08-13 신설) — SCALE 한 값이 규모 축 전체를 접고 있어 「이 필지의 건폐율 근거」를 못 고르던 것을 연다. 값공간 = USE | SITE_METRIC | SCALE | 건폐율 | 용적률. 🔴 **병기 규약은 폐지됐다**(사용자 승인 2026-08-27 · 갈래 ⓐ) — 건폐율·용적률은 SCALE 의 **하위 세분이 아니라 독립 값**이다. 자식이 아니므로 부모를 함께 달지 않는다. 즉 건폐율 조문 = [건폐율]이지 [SCALE, 건폐율]이 아니다. ⚠️ **대가를 안다** — 「SCALE 하나로 규모 축 전체를 회수」하던 편의가 사라진다. **규모 축 전체를 보려면 SCALE·건폐율·용적률 셋을 물어라**(C5 계약이 그 문언을 든다). 폐지 근거는 그렇게 거르는 소비자가 우리 저장소에 0 이라는 실측이고, 되살아나는 조건 셋은 규약 문서 §4-3 에 있다. 높이·층수·면적·배치이격은 여전히 SCALE 이다(그 축은 값이 안 갈렸다 — 없는 값을 지어내지 마라). 한글 리터럴은 unitType(항/호/목)·zoneCategory(용도지역…) 선례 정합, ASCII 규약은 URI 밴드 한정이라 비해당. 실측 근거(molit corpus 520, 2026-08-13): SCALE 92건 중 세분 61(건폐율 43·용적률 29·동시 11)·잔여 31(높이 11 다수). 세분분 중 조례가 건폐율 72%·용적률 66% — 국계법 §77·§78이 최대한도를 조례로 위임해 실수치가 조례에만 있기 때문.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "행위제한 유형"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:restrictionRole  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조항 역할. HUB=대표·umbrella 조항(내용은 하위 위임, 예 국계법 §76 '용도지역 건축제한은 대통령령으로') | DETAIL=실제 제한내용 조항(예 국계법 별표2 허용시설). 대개 법↔령↔조례 위계(implementedBy·조문 위계 하향(implementedBy))와 정합(상위=HUB·하위=DETAIL)하나 '판단 대표 vs 실제내용' 직접 질의용.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "행위제한 조항 역할"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:articleSummary  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "판단-입력급 내용 요약 — 파생·검수 annotation(본문 아님·근거 아님). 행위제한 조문/별표는 시설물 열거·임계 수치·단서/조례위임·극성 무손실 (LLM 행위제한 판단용). 원문 진실=RAG(Milvus). SHACL 10~2000자 캡(원문 통째 복사 방지). named graph <graph/summaries>.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조문 요약 (파생·판단입력)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:deemedApprovalTo  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "주된 조문(또는 규제 별표)이 자동으로 받은 것으로 간주하는 부수 허가 대상 — 대상 조문(Article) 우선·법령(Law)·sub-unit(ArticleUnit). 본문 '…받은 것으로 본다' (행정 일원화). procedure=타겟 조문서 파생·trigger/scope=룰 레이어·source=drop. 위임과 별개(위임=사항 이관·의제=절차 통합). 출력의 '○○허가 의제됨' 인용이 실존 의제 관계와 맞물리는지 검증. dangling 차단.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Law aip:Article aip:ArticleUnit )
+                ] .
+
+aip:boundaryRef  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "in→out 경계 cross-law 단일 기록(룰엔진 경계신호 + 사람 안내 겸용). 포맷 `<한글관계>: <법명> 제N조` (인용 표기형 표시형, 예 '의제: 하천법 제30조'·'위임: 사방사업법'). 관계=의제/위임/배제/준수/**정의차용** 5종(고정 enum, 룰엔진 파싱 가능 — 단일 진실은 `ingest_laws.py`의 `_REL_KO`). ⚠️ 정의차용(borrowsDefinitionFrom의 in→out 짝)은 2026-07-21 실측 66건으로 최다 3위 — 4종으로 적으면 소비자 파서가 조용히 버린다. 룰엔진: boundaryRef 있으면 out→평가중단+안내. 법명은 소스(in-scope) yaml cross-law 필드에서 직접(out yaml 불요). out→in 전환 시 재도출로 flat object 엣지 승격.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:parentLaw  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 법령의 부모 법령 (시행령→법률·조례→상위법). 다단계 traversal·RAG 위계 쿼리·충돌해소(상위법 우선) 입력. YAML parent_law_id 투영. [Law 단위·하→상]";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Law .
+
+aip:implementedBy  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 (상위) 조문/단위가 하위 법령의 어느 조문/단위/별표로 시행·구체화되는가 (건축법§44→건축법시행령§28, 정밀히 §44②→§28②; 조문 단위→별표, 예 국계법§2 10호→국계령 별표1). 상→하 저장. SHACL dangling 차단(실존 Article∪ArticleUnit∪Appendix). YAML implemented_by 투영. [조문 위계 하향(implementedBy) Article + **룰 단위 grounding 닻 ArticleUnit 입도 확장** + Appendix range(2026-07-13, 실 데이터 33엣지 정합) — 관계가 실제 가리키는 입도로 ground]";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:ArticleUnit aip:Appendix )
+                ] .
+
+aip:tenantBjd  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조례가 속한 지자체 BJD 10자리 (없으면 전국). cascade 좁은 위계 선택용 (DR-146·DR-008). 구 tenantScope (모델 개편 §7 개명 — inScope와 'Scope' 충돌 회피).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:borrowsDefinitionFrom
+        a       <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "정의 조문(또는 규제 별표)이 용어 정의를 차용하는 타법 조문/법령/단위 — 실존 Law/Article/ArticleUnit (SHACL dangling 차단). 빌드 시 본문 추출+실존검증된 정의차용만 (모델 개편 §7 R3 C). 평가 아님 — grounding/안내용. in→out 경계는 boundaryRef. ★ range += ArticleUnit (unit 입도 확장·주체 자격 제안, 2026-08-14 · ADR 등재 대기): 별표가 허용 대상을 낱말로 지목할 때 실제 입도가 호다 — 국계령 별표17 §2-마(1) 「「농수산물유통및가격안정에관한법률」 제2조에 따른 농수산물공판장」의 정의는 §2 전체가 아니라 **제5호**(Unit_000433_2_5). 선례 = relatedArticle 동형 확장(Article→Article∪ArticleUnit, 2026-07-14). 기존 473 엣지는 전량 Law 타겟이라 무영향(emit 관행 「in→in = Law 지목」의 산물이지 어휘 제약 아님). ⚠️ 낱말의 출처일 뿐 그 낱말을 정의하지 않는 조문은 걸지 않는다 (사용자 결정 2026-08-14 — 예: 유통법 §68② 「농수산물직판장」은 지원 대상 언급이지 정의가 아님 → 미연결).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Law aip:Article aip:ArticleUnit )
+                ] .
+
+aip:Zone  a     <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "법이 정의한 공간 지정(designation). 정의·지정·행위제한 근거 조문을 가리키는 grounding 노드. 식별=표준분류코드 코드값(skos:notation). 산문 본문은 RAG. zone grounding.";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "지역·지구·구역"@ko , "Zone"@en;
+        <http://www.w3.org/2000/01/rdf-schema#subClassOf>
+                <http://www.w3.org/2004/02/skos/core#Concept> .
+
+aip:designatedBy  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "지정대상·지정절차 근거 조문/단위 (통합). 실존 강제(dangling 차단).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "지정 근거 (대상+절차)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:ArticleUnit )
+                ] .
+
+aip:governedBy  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 구역을 규율하는 법 family + 조례 (Law). definedBy/restrictedBy의 Law에서 파생 가능하나 직접 질의용 명시. 실존 강제(dangling 차단).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "규율 법령"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Law .
+
+aip:restrictedBy  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "행위제한 근거 조문/별표/단위 (국가법령+조례 공통, 조례는 Law hierarchy≥5·tenantBjd 구분). ⚠️ load-bearing — 웨이버스가 직접적용조문 미제공(2026-07-06 amend)이라 zone→행위제한 조문 도출의 유일 경로(룰 선택 §5 2경로 ②·zone grounding 존재이유). redundant enrichment 아님. 평가는 룰 — 여기는 도출 앵커. 실존 강제(dangling 차단). 빈 restrictedBy(미등재 zone) → 런타임 needs_review·미등재 zone 런타임 모드 모드 B.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "행위제한 근거"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ] .
+
+aip:zoneCategory  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "용도지역(배타 base·필지당1) | 용도지구(중첩) | 용도구역(중첩) | 개별법구역(중첩) | 도시계획시설(중첩). base/overlay 구분 = 충돌·중첩 판정축. SHACL sh:in 5값. ★ 도시계획시설 신설 (결정 8, 2026-08-19): 국계법 하위 도시·군계획시설 규칙이 근거인 zone. 118건이 기존 4값 어디에도 안 맞아 신설했다 — 레이어명이 교통시설·공간시설·공공문화체육시설 등이라 용도지역/지구/구역이 아니고, 근거가 개별법이 아니다. overlay 축에서는 개별법구역과 같은 취급이라 **판정 동작은 안 바뀐다**. C2 zone.schema.json enum · shapes.ttl ZoneShape sh:in 과 3자 동형.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "구역 분류"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:definedBy  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 개념(구역/시도)을 정의하는 조문/별표/단위 (예: 농업진흥구역→농지법 제28조제2항제1호·시도→지방자치법 제2조). 실존 강제(dangling 차단). domain 확장 Sido 참조 축 (2026-07-10 · BuildingUse 는 2026-09-29 은퇴로 domain 에서 걷음) — 클래스별 입도는 각 shape이 강제(ZoneShape=Article∪Unit·SidoShape=Article).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Zone aip:Sido )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "정의 근거"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ] .
+
+aip:zoneBoundaryRef  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 구역의 근거 조문·법령이 out-of-scope일 때의 경계 기록(사람 안내·완전추적용). 포맷 `<축관계>: <법명> 제N조` (인용 표기형 표시형), 축관계=정의/지정/행위제한/규율(고정 enum). 예 '행위제한: 하천법 제10조'·'규율: 폐기물관리법'. governedBy(Law-level·조문 없음)는 `규율: <법명>`. Article-level boundaryRef와 별개 — 룰 평가중단 신호 아님. out→in 전환 시 재도출로 object 엣지(restrictedBy 등) 승격.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "구역 경계 근거 (in→out)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:relatedArticle  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 별표의 근거·관련 조문 (별표 제목 '(제N조관련)' 파생, intra-law 별표↔조문). implementedBy(위계 시행)와 구분 — 같은 법 안 참조라 위계 step 없음. 다중조문 1:N. 호 입도(항/호 정밀) 허용 — §71 별표↔호(예 별표16→Unit_009419_71_1_15). 파생물(SoT=appendixTitle)·재생성. 실존 Article∪ArticleUnit 강제(dangling 차단·미시딩 타겟 skip). zone→용도 파생 shortcut 계열 후속(S3 협의 2026-07-14).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Appendix;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "관련 조문 (별표→근거조문)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:ArticleUnit )
+                ] .
+
+aip:Sido  a     <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "시도 17 참조 노드 — notation=법정동코드 앞 2자리('11'). prefLabel=시도명. sidoKind=지자체 종류(법문 한글). definedBy=지방자치법 제2조. 출처·기준일 provenance는 데이터 파일(S2a). Sido 참조 축.";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "광역지방자치단체 (시도)"@ko , "Sido"@en;
+        <http://www.w3.org/2000/01/rdf-schema#subClassOf>
+                <http://www.w3.org/2004/02/skos/core#Concept> .
+
+aip:sidoKind  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "지방자치법 제2조제1항제1호 열거 **한글 법문 그대로** (현행 개정 2026.3.5·시행 2026.7.1 = 특별시·통합특별시·광역시·특별자치시·도·특별자치도 6종). 영문 enum 변형 금지 — 룰 법문 열거('특별시·광역시…')와 직접 대조. SHACL은 구조만(1..1) 강제, 값 ⊆ 제2조 열거는 corpus-대조 validator — 개정 = 데이터 갱신으로 흡수(코드·shape 수정 0, sh:in 하드코딩 금지).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Sido;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "지방자치단체 종류"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:isDeleted  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "삭제 조문(결번) 여부. **부재 = 살아 있는 조**(false) — isSpecialLaw와 같은 관례. 삭제 *날짜*는 싣지 않는다(시계열 축 = DR-178 PIT parked; 이 플래그는 현 스냅샷의 상태이지 유효기간이 아니다). 단일 진실 = 법령 YAML `articles[].text`의 삭제 술어 → build_ttl 투영(emit 측이 색인 제외에 쓰던 바로 그 술어를 표식 부여로 전환).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Article;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:boolean .
+
+aip:appendixKind  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "별표 | 별도. **부재 = 별표**(기본 종류) — isSpecialLaw·isDeleted와 같은 관례라 기존 별표 노드에 소급 부여가 필요 없다. 단일 진실 = 법제처 원천 `별표구분` verbatim(`별표키` 접미 E/F/H와 1:1). 판정 아님 — 인용 타겟의 종류 표시.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Appendix;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:subjectQualifiedBy
+        a       <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 조항이 규율하는 행위의 **주체 자격**을 정하는 타법 조문/단위 — 실존 Article/ArticleUnit (SHACL dangling 차단). 예: 국계령 별표17 §2-마(2) 농수산물직판장 설치주체 (가)~(라) → 농업·농촌및식품산업기본법 제3조제2호(농업인)·제4호(생산자단체)·제26조제2항(전업농업인 선정)·수산업·어촌발전기본법 제3조제3호·제5호·제17조제2항. 평가 아님 — grounding/안내용(conditional + 주체 안내, 신청자 자격은 판정 아니라 노출). ⚠️ 자격의 **실질**을 정하는 단위에 건다 — 시책 조항(「…시책을 세우고 시행하여야 한다」)은 낱말만 있고 선정·기준이 없으므로 걸지 않는다(농업기본법 §25·수산업기본법 §16 미연결, 짝 조문 §26②·§17②가 실질 보유). in→out 경계는 boundaryRef.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "주체 자격 근거"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:ArticleUnit )
+                ] .
+
+aip:restrictionBasis  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 구역의 행위제한이 딛고 선 **법적 기초** 조문/별표/단위 — 제한의 실체가 아니다(실체는 restrictedBy). 예: 국계법 제76조(용도지역 건축제한을 대통령령에 위임하는 앵커)·제83조류 총칙·상위 designation 단위에 걸리는 규율. 실존 강제(dangling 차단). ⚠️ 근거를 **지우는 것이 아니라 라벨을 가르는 것**이다 — C5 는 restrictedBy 와 restrictionBasis 를 **둘 다** 내보내고 쓸지 말지는 받는 쪽이 정한다(무판정 원칙). ⚠️ 판정 소비처가 갈린다 — restrictionKind==USE 로 거르는 소비자(오케 zone 블록 판정)에는 이쪽이 **안 실린다**. 그래서 「애매하면 restrictedBy 에 남긴다」가 규약이다(잘못 남기면 노이즈 1, 잘못 옮기면 근거 누락 — C5 §202 가 후자를 금지한다). range 는 restrictedBy 와 동형(ArticleUnit 포함) — 실물 유무와 무관하게 **구조를 대칭으로 둔다**(비대칭이면 unit 기초가 생겼을 때 조용히 빈 리스트로 빠진다). ⚠️ 위 예의 「제83조류 총칙」은 2026-09-09 부로 이 술어가 아니라 exemptedBy 의 자리다 — §83 은 「제한이 있다」의 기초가 아니라 「다른 법령 규정이 적용되지 **않는다**」를 정한 조라 부호가 반대다.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "행위제한 법적 기초"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ] .
+
+aip:exemptedBy  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 구역의 근거 규정이 다른 구역에서 적용되지 않음을 정한 조문/별표/단위 (배제되는 쪽 zone 에 단다). 배제 대상은 그 조의 excludesArticle·excludesLaw. 배제가 성립하는 구역은 exemptedIn. 실존 강제(dangling 차단). range 는 restrictedBy 와 동형.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "적용 배제 근거"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ] .
+
+aip:exemptedIn  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "exemptedBy 의 배제가 성립하는 구역 (예: 접도구역 UIA200 → 도시지역 UQA001). 세분 zone 은 skos:broader 로 닿는다. 실존 Zone 강제. (zone, 조, 구역) 삼항을 평탄 엣지 둘로 든다 — 한 zone 에 exemptedBy 가 둘 이상이고 성립 구역이 다르면 zone yaml 의 항목 단위가 단일 진실이다(C2 exempted_by[i].cite ↔ [i].in_zone).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "적용 배제 성립 구역"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Zone .
+
+aip:exemptsZone  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "exemptedIn 의 역방향 — 배제하는 쪽 zone(도시지역 UQA001) → 배제되는 쪽 zone(접도구역 UIA200). 빌더 파생(build_zone_ttl) · 저작하지 않는다. 배제하는 쪽 응답에 「이 zone 에서는 저 zone 근거가 빠진다」가 보이게 하는 자리.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "이 구역에서 근거가 배제되는 구역"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Zone .
+
+aip:Exemption  a  <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "(배제되는 zone, 배제를 정한 조, 배제가 성립하는 zone[, 조건]) 한 쌍을 닫아 든 노드. C2 exempted_by 항목 하나의 투영(빌더 파생 · 저작 대상 아님). 평탄 엣지 exemptedBy·exemptedIn 과 같은 사실을 말하며 그 둘을 대체하지 않는다(additive). 곱으로는 복원할 수 없는 쌍을 C5 가 그대로 읽게 하는 자리.";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "적용 배제 항목"@ko , "Exemption"@en .
+
+aip:hasExemption  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "배제되는 쪽 zone → 그 zone 의 배제 항목 노드. exemptedBy 와 짝 — 노드의 exemptsArticle 은 이 zone 의 exemptedBy 타깃 중 하나이고, 노드의 inZone 은 exemptedIn 타깃 중 하나다(게이트 6 노드↔엣지 parity 축이 그 동치를 센다). 배제하는 쪽 zone 에는 달지 않는다(역방향은 exemptsZone 그대로).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Zone;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "적용 배제 항목(노드)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Exemption .
+
+aip:exemptsArticle  a  <http://www.w3.org/2002/07/owl#ObjectProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 항목의 배제를 정한 조문/별표/단위 — exemptedBy 와 같은 range·같은 타깃. 노드당 정확히 하나. 실존 강제(dangling 차단).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Exemption;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "배제를 정한 조"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ] .
+
+aip:inZone  a   <http://www.w3.org/2002/07/owl#ObjectProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "이 항목의 배제가 성립하는 zone — exemptedIn 과 같은 타깃. 노드당 정확히 하나(그래서 곱이 안 생긴다). 세분 zone 은 skos:broader 사슬로 닿는다. 실존 Zone 강제.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Exemption;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "배제 성립 구역"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Zone .
+
+aip:exemptionCondition
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "zone 조건에 딸린 추가 조건의 원문 산문(선택). 예 자연공원법 §70①1호 「제76조제1항(도시지역으로 한정한다)」의 「도시지역으로 한정」. 기계가 판정하는 값이 아니라 C5 가 그대로 나르는 문장이다(무판정). 🔴 이 칸이 있다고 zone 조건 없는 배제(조건형 17)를 담지 않는다 — inZone 이 먼저 서야 노드가 선다. 법 yaml exclusions 항목의 applies_when 을 대신하지 않는다(그쪽은 조 층 · 이쪽은 zone 층).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Exemption;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "배제 조건(산문)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:amendedOn  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "개정일 = 이 단위를 마지막으로 고친 개정 법률의 **공포일**(시행일이 아니다 — 2026-09-15 실증: 본문 표지 <개정 …> 날짜 1,995 중 부칙공포일자 일치 99.9%). Law = YAML last_amended(법제처 공포일자 · 현행 판) · Article = YAML amended_at(본문 표지의 마지막 날짜). 없음 = Law 는 원천 없음 · Article 은 표지 없음(「제정 뒤 무개정」과 「표지 유실」을 못 가른다). 이력 전체는 안 든다(YAML amendments[]). 옵셔널.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Law aip:Article )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:date .
+
+aip:LimitStatement  a  <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "법령 문장이 말하는 층수·높이 한도 하나. 원문 비교어·값·서술 꼴을 그대로 든다(정규화·환산 없음). C2 limits[] 항목 하나의 투영(빌더 파생).";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "한도 진술"@ko , "Limit statement"@en .
+
+aip:LimitCondition  a  <http://www.w3.org/2002/07/owl#Class>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "한도 진술에 딸린 조건 하나 — 원문 구절이 본체이고 종류·zone·참조는 그 구절을 찾아 쓰기 위한 표지다.";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "한도 조건"@ko .
+
+aip:hasLimit  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "그 말을 한 조문 단위 → 한도 진술. 진술은 정확히 하나의 조문 단위에 매달린다.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:Article aip:Appendix aip:ArticleUnit )
+                ];
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "한도 진술"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:LimitStatement .
+
+aip:limitZone  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "원문이 말하는 zone — 원문이 상위 지역을 말하면 그 코드와 국가 zone 체계(skos:broader)의 자손 전부를 함께 든다(받는 쪽이 하위 코드로 물어도 닿게 · 세분되지 않은 땅만 말하는 자리는 펴지 않는다 · 2026-11-09 사용자 결정). 선택 — 원문이 zone 을 말하지 않으면 없다(추정으로 채우지 않는다 · 2026-10-30 사용자 결정 5). 없으면 조문(hasLimit)으로만 닿는다.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "한도 대상 구역"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Zone .
+
+aip:limitAt  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "근거 자리 cite"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitQuote  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "limitAt 자리 원문에서 정확히 한 번 나오는 가장 짧은 구절 · 글자 그대로 — 원문 위치 표시.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "원문 구절"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitQuantity  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "층수 | 높이 — 단위로 정한다.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "양"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitHeightKind  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "높이 세부(원문)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitIncrement  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "증가분 한도"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:boolean .
+
+aip:limitComparator  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "원문 비교어"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitPredicate  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "원문 서술 꼴"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitForm  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "금지형 | 허용형 | 그밖 — 그밖이면 limitHead 가 무엇인지 말한다(2026-10-30 사용자 결정 6).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "서술 꼴 표지"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitValueKind  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "숫자 | 산식 | 비례 | 값없음 | 밖에있음 | 기존대비.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "값 꼴"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitValue  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "원문 값"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:decimal .
+
+aip:limitUnit  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "원문 단위"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitValueText  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "원문 수치 표현"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitFacility  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "리터럴 — 건축법시행령 별표1 행 노드가 그래프에 없다(2026-10-30 실측). 「{kind}|{ref}」 꼴.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "대상 시설(cite·명칭)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitHead  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "목록·문장 원문 머리"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:hasLimitCondition
+        a       <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:LimitCondition .
+
+aip:limitConditionsJoint
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 이음말(원문)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionQuote  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 원문 구절"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionForm  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 원문 꼴"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionKind  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 종류"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionOperator
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "속함/이외"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionZone  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조건이 말하는 zone — limitZone 과 같은 규칙(상위 지역이면 자손 전부를 함께 · 2026-11-09 사용자 결정).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 구역"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Zone .
+
+aip:conditionQuantity
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 안 수치의 양(원문)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionComparator
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 안 원문 비교어"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionValue  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 안 원문 값"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:decimal .
+
+aip:conditionUnit  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 안 원문 단위"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionRef  a  <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "조건 문장이 부르는 조문·단위 cite — 여럿일 수 있다(상위 단위로 올려 적지 않는다 · 2026-11-10 사용자 결정).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 참조 cite"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitGroup  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "묶음 이름"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitConnector  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "묶음 이음말(원문)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitPartnerText  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "범위 밖 짝 원문"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:refinesLimit  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "원문이 「…에 따라」처럼 스스로 가리키는 위 층 한도 진술(위임 받음 포함) — 여럿일 수 있다(인천 도계 §33① 「영 별표 4 제1호 및 제2호에 따라」 · 2026-10-31 사용자 결정).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "따르는 위 층 한도"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:LimitStatement .
+
+aip:relaxesTarget  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "대상 값은 평소 한도로 남고, 이 진술은 그것을 넓혀 「할 수 있게」 하거나(완화) 그 적용을 빼 준다(적용 배제 — 대신할 값을 정하지 않는다 · 분류 R배제도 이 칸 · 사용자 결정 2026-11-09). 대상 대신 이 값이 한도면 replacesLimit.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "완화·적용 배제 대상"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                [ a       <http://www.w3.org/2002/07/owl#Class>;
+                  <http://www.w3.org/2002/07/owl#unionOf>
+                          ( aip:LimitStatement aip:Article aip:Appendix aip:ArticleUnit )
+                ] .
+
+aip:limitRole  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "분류표 꼴 코드 — 원문 재독 판정. 원문 사실 칸과 다른 층이다. 값만 둔다 — 누가·언제는 원천 yaml(limits[].role.decided_by·decided_at)과 git 이력에 있다(2026-10-30 사용자 결정 (가)).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "분류(판정 칸)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitGroupReading
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "그 조항의 묶음 읽기 — 원문 재독 판정 · 값만(누가·언제는 원천 yaml).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "묶음 읽기(판정 칸)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitCoverage  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "그 법령의 층수·높이 문장을 분류표 기준으로 진술로 적었는가 — 다 적음 | 적는 중 | 안 적음. 빌더가 yaml limits[] 와 층수·높이 문장 분류표(backlog/floor_height_survey/2026-10-30_효과꼴_분류표.tsv)를 맞대 만든다 — 손으로 안 적는다(2026-11-01 사용자 결정 ⑥ (나)). 값 없음 = 분류표에 없음 — 조사하지 않았거나, 조사했으나 그 법령의 층수·높이 문장이 전부 고려 대상 밖이다(증축·개축·이축·리모델링만 말하는 법령 · 2026-11-10 사용자 결정). 어느 쪽이든 한도 없음이 아니다. 「다 적음」 = 분류표 자리마다 진술이 적어도 하나 — 빠짐없다는 뜻이 아니고, 고시·도시·군관리계획에 맡긴 한도와 분류표 밖 표현은 늘 밖이다.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:Law;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "한도 진술 저작 범위"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionEffect  a  <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "한정 | 제외 — 조건이 서면 진술이 그 경우에만 걸리는가(한정) · 그 경우엔 걸리지 않는가(제외). conditionOperator 와 함께 읽는다 · 원문을 읽고 적는 사실 칸 · 없으면 아직 안 적음(2026-11-09 사용자 결정).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 효과"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:replacesLimit  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "갈음의 대상 — 원문이 『다만』 · 괄호 등으로 대상 값 대신 이 값을 정한다고 말하는 진술(원문 사실 칸). 이 진술이 걸리는 경우에는(언제 걸리는가는 limitZone · limitFacility · hasLimitCondition(conditionEffect) 가 정한다) 대상 진술이 걸리지 않고 이 값이 한도다 — 대상보다 엄할 수도 넓을 수도 있다. 대상 값이 평소 한도로 남으면 relaxesTarget(완화 · 적용 배제). 칸이 없으면 아직 안 적음(둘 다 걸린다는 뜻이 아니다). 항목마다 at + quote · 사용자 결정 2026-11-10.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "갈음 대상"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:LimitStatement .
+
+aip:limitRelationCoverage
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "그 조·별표 안 층수·높이 진술끼리의 관계를 다 봤는가 — 다 봄 | 안 봄. 빌더가 후보 짝(같은 양 · 범위 겹침 · 걸리는 한도 역할 · 관계 칸으로 안 이어짐)과 「관계 없음」 장부(backlog/limit_relation_none_ledger.tsv)를 맞대 만든다 — 손으로 안 적는다. 「다 봄」 = 이 조·별표 안 짝은 관계 칸 또는 「관계 없음(둘 다 걸림)」 판정이 있다. 다른 조 사이 관계는 이 표지 밖이다(refines · replaces 로 적힌 것만 관계). 값 없음 = 그 조·별표에 진술이 없음 · 주어 = 조·별표 노드(Article · Appendix) · 사용자 결정 2026-11-10.";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "한도 진술 관계 다 봄"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitRelationOpenPairs
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "limitRelationCoverage 와 짝 — 그 조·별표 안 후보 짝 가운데 관계 칸도 「관계 없음」 판정도 없는 짝 수(0 이면 다 봄). 빌더 파생 · 사용자 결정 2026-11-10.";
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "한도 진술 판정 안 된 관계 후보 수"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:integer .
+
+aip:conditionFacility
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "그 조건이 걸릴 수 있는 건축물의 범위(상한) — 범위 밖 건축물이면 조건이 서지 않는다(conditionEffect 한정이면 진술이 안 걸리고 제외면 걸린다) · 범위 안이면 조건 원문으로 가른다. limitFacility 와 같은 「{kind}|{ref}」 리터럴 · conditionRef(조건 문장이 부르는 단위)와 다른 칸 · 여럿일 수 있다 · 없으면 아직 안 적음(2026-11-11 사용자 결정 · 513).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 대상 건축물(cite·명칭)"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:delegationReadIn  a  <http://www.w3.org/2002/07/owl#ObjectProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "그 법령 원문에서 이 위임 진술을 받는 조항을 다 읽었다(원문 확인 · 사람 판정 · 장부 backlog/limit_delegation_read_ledger.tsv · 빌더 파생). 받는 조항이 있으면 그 법령의 진술이 전부 refinesLimit 로 이 진술을 가리키고(조건이 붙을 수 있다), 가리키는 진술이 없으면 그 법령에 받는 조항이 없다. 「한도가 없다」는 결론이 아니다(판정은 받는 쪽). 여럿일 수 있다 · 없으면 안 읽음(2026-11-11 사용자 결정 · 515).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "위임 받는 조항을 다 읽은 법령"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                aip:Law .
+
+aip:limitZonesEmptyReason
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty> , <http://www.w3.org/2002/07/owl#FunctionalProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "limitZone 이 없는 진술의 까닭 갈래 하나 — 코드 없음 = 원문이 말하는 지역·구역에 지식레포 zone 코드가 없다(조례 세분 · 표준분류코드에만 있는 코드 포함 · 걸리는 땅을 모른다) · 건축물 기준 = 원문이 지역을 말하지 않고 건축물·시설 단위로 건다 · 땅 기준 = 원문이 zone 대신 특정 땅(도시·군계획시설 부지 · 가로구역 등)에 건다 · 사업·계획 = 특정 사업·계획일 때만 걸린다 · 위 진술에 있음 = 위 층 진술을 refines 하고 지역은 그 진술·조건에 있다. 장부 backlog/limit_zones_empty_ledger.tsv 「까닭 갈래」 열(사람 판정 · 빌더 파생). 없으면 아직 안 가름(2026-11-11 사용자 확인 · 4-3).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "zones 빈 까닭 갈래"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:limitFacilityRange
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "원문명칭 시설 원소의 건축물 범위(상한) — 리터럴 「{원문 이름}|{건축법시행령 별표1 호·목 cite}」 · 짝마다 하나(이름은 같은 노드의 limitFacility 원문명칭 ref 와 같다). 필지 건축물이 범위 밖이면 그 원소에 해당하지 않는다 · 안이면 원문 이름으로 가른다 · 없으면 범위를 모른다. limitFacility 리터럴 꼴 「kind|ref」에 덧붙이지 않은 까닭 = 받는 쪽 partition 이 깨진다(2026-11-11 사용자 결정 · 519).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitStatement;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "원문명칭 시설의 건축물 범위"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .
+
+aip:conditionFacilityRange
+        a       <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "원문명칭 시설 원소의 건축물 범위(상한) — 리터럴 「{원문 이름}|{건축법시행령 별표1 호·목 cite}」 · 짝마다 하나(이름은 같은 노드의 conditionFacility 원문명칭 ref 와 같다). 필지 건축물이 범위 밖이면 그 원소에 해당하지 않는다 · 안이면 원문 이름으로 가른다 · 없으면 범위를 모른다. conditionFacility 리터럴 꼴 「kind|ref」에 덧붙이지 않은 까닭 = 받는 쪽 partition 이 깨진다(2026-11-11 사용자 결정 · 519).";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                aip:LimitCondition;
+        <http://www.w3.org/2000/01/rdf-schema#label>
+                "조건 원문명칭 시설의 건축물 범위"@ko;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                xsd:string .

@@ -1,0 +1,7 @@
+# CQ-015 대지에 접한 막다른 도로가 도로폭 미달일 경우 도로폭 확보 기준은?
+# 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
+PREFIX aip: <https://onto.go.kr/aip/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?ans WHERE { { { ?L_b aip:lawName "건축법" . ?L_b aip:hasArticle ?b . ?b aip:articleTitle ?t_b . FILTER(CONTAINS(REPLACE(STR(?t_b), " ", ""), "건축선의지정")) } { ?b aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } } UNION { { ?L_e aip:lawName "건축법" . ?L_e aip:hasArticle ?e . ?e aip:articleTitle ?t_e . FILTER(CONTAINS(REPLACE(STR(?t_e), " ", ""), "정의")) } { ?e aip:hasUnit+ ?eh . } { ?eh aip:implementedBy ?ans . } { ?ans aip:articleTitle ?eat . FILTER(CONTAINS(STR(?eat), "너비")) } { ?en_L (aip:hasArticle|aip:hasAppendix) ?ans . ?en_L aip:hierarchy ?en_h . FILTER(?en_h <= 3) } } }

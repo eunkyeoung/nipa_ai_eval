@@ -3,3 +3,7 @@ deploy/Containerfile text eol=lf
 deploy/*.container text eol=lf
 *.sh text eol=lf
 deploy/*.sh text eol=lf
+
+# [DA 2] 검증 자산 — 해시가 바뀌지 않도록 줄바꿈 변환 금지
+spec_data/da2/*.ttl -text
+spec_data/da2/*.txt -text

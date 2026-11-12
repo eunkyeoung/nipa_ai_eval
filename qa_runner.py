@@ -27,7 +27,7 @@ import requests
 
 BASE = os.environ.get("AIPS_BASE", "http://192.168.200.115:17010/api")    # AIPS 사전진단 서비스 (2026-11-10 17000 → 17010). 컨테이너는 환경변수로 지정
 DEVICE_ID = "qa-runner"                     # 시스템에서 QA 질의를 구분하기 위한 기기 ID
-TIMEOUT = 300                               # 질의 1건 최대 대기(초)
+TIMEOUT = 600                               # 질의 1건 최대 대기(초) — 11-11 시스템 응답 지연으로 300 → 600
 QUESTION_TMPL = "{주소} {시설물} 건축 가능한가요?"
 # 변형 질의(같은 의도·다른 표현) 기본 템플릿 — 1번은 기본 질의와 동일. 화면/파일로 바꿀 수 있음
 DEFAULT_VARIANTS = [
@@ -107,6 +107,8 @@ def extract(events):
             stages.append(d.get("data") or {})
         elif d.get("event") == "reply":
             reply = str((d.get("data") or {}).get("reply", ""))
+        elif d.get("event") == "question" and not reply:     # 질문 이벤트로 되묻는 경우(예: "건축면적을 알려 주세요") — 11-11 AI4-0004
+            reply = str((d.get("data") or {}).get("question", "")).strip()
     if not diag:
         # 진단 없이 끝남: 주소를 못 찾았거나 되물은 경우(reply) / 그 외
         return dict(AI판정="되묻기" if reply else "응답없음", AI용도지역판정="", AI근거="",
@@ -123,6 +125,11 @@ def extract(events):
     for s in done:
         if s.get("verdict") == "impossible":
             deny += laws_of(s)
+    # 용도지역·지구·도시계획시설 판정에서 불가(sym X)로 결합된 항목의 조문 (judgment.matrix_gate.zone_results[].source)
+    # — 11-10 확인: 불가 단계의 detail.laws가 비어도 판정 조문은 여기에 들어 있음
+    for z in (j.get("matrix_gate") or {}).get("zone_results") or []:
+        if isinstance(z, dict) and z.get("sym") == "X" and str(z.get("in_combine")) == "True" and z.get("source"):
+            deny.append(str(z["source"]))
     # 용도지역·도시계획시설 등으로 불허된 경우 근거는 report.band.deny_reasons 에 들어 있음
     rep0 = diag.get("report") or {}
     deny += [str(x) for x in (rep0.get("band") or {}).get("deny_reasons") or []]
@@ -131,6 +138,17 @@ def extract(events):
     for s in done:
         if s.get("id") == "zone_use":
             allow += laws_of(s)
+    # 용도지역별 건축 제한 근거 (raw.engine.zone_limits[].source.law) — 11-10 확인: 허용을 정한 시행령 별표·시군 조례가 여기에 있음
+    for z in ((diag.get("raw") or {}).get("engine") or {}).get("zone_limits") or []:
+        if not isinstance(z, dict):
+            continue
+        src = z.get("source")
+        law = src.get("law") if isinstance(src, dict) else None
+        law = str(law).split(" — ")[0].strip() if law else None     # " — " 뒤는 설명문 (예: '… 제48조 — 3.제17호 중 영 별표20' 의 '영 별표20'은 시행령 별표라 조례로 읽으면 안 됨)
+        if law and z.get("sym") == "O":
+            allow.append(str(law))
+        elif law and z.get("sym") == "X":
+            deny.append(str(law))
     all_laws = [x for s in done for x in laws_of(s)]
     all_laws += [c.get("source") for c in j.get("conditions") or [] if c.get("source")]
 

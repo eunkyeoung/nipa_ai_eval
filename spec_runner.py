@@ -55,6 +55,8 @@ def main():
     ap.add_argument("--run-dir")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--rescore", help="재질의 없이 이 결과 폴더를 다시 채점")
+    ap.add_argument("--reextract", action="store_true",
+                    help="--rescore와 함께: raw/ 응답 원문에서 판정·근거 조문을 다시 추출해 로그를 고친 뒤 채점 (원래 로그는 .bak 보관)")
     ap.add_argument("--base")
     ap.add_argument("--ref-base", default=S.REF_BASE,
                     help="AI1 참조 정보(PNU·용도지역·규제구역·토지특성) 조회 서버. 빈 값이면 조회 안 함")
@@ -63,6 +65,8 @@ def main():
     a = ap.parse_args()
     item = a.item
     if a.rescore:
+        if a.reextract:
+            reextract(item, a.rescore)
         r = run_score(item, a.rescore, a.answer, a.testset, a.lawdb)
         print("채점 결과:", None if r is None else f"{r['value']} % ({'달성' if r['passed'] else '미달성'})")
         return
@@ -182,7 +186,7 @@ def main():
             status.update(done=status["done"] + 1, current=None)
             qa_runner.write_status(a.status_file, status)
         if status["state"] == "running":
-            snap_of = lambda p: os.path.join(snap, os.path.basename(p)) if p and os.path.exists(os.path.join(snap, os.path.basename(p))) else p
+            snap_of = lambda p: os.path.join(snap, os.path.basename(p.replace("\\", "/"))) if p and os.path.exists(os.path.join(snap, os.path.basename(p.replace("\\", "/")))) else p
             r = run_score(item, run_dir, snap_of(a.answer), snap_of(a.testset), snap_of(a.lawdb))   # 실행 중 원본이 바뀌어도 시작 당시 사본으로 채점
             msg = f"완료 ({status['done']}/{total}건)"
             if r is not None and r["value"] is not None:
@@ -197,6 +201,32 @@ def main():
         status["current"] = None
         status["finished"] = time.time()
         qa_runner.write_status(a.status_file, status)
+
+
+def reextract(item, run_dir):
+    """raw/<ID>_<회차>.json 원문에서 판정·근거 조문을 현재 추출 규칙으로 다시 뽑아 로그 갱신 (질의 재전송 없음)"""
+    import shutil
+    p = os.path.join(run_dir, S.SPEC[item]["log"])
+    if not os.path.exists(p + ".bak"):
+        shutil.copy2(p, p + ".bak")
+    rows = [json.loads(ln) for ln in open(p, encoding="utf-8") if ln.strip()]
+    key = "질의ID" if rows and "질의ID" in rows[0] else "사례ID"
+    n = 0
+    for r in rows:
+        rp = os.path.join(run_dir, "raw", f"{r[key]}_{r['회차']}.json")
+        if not os.path.exists(rp):
+            continue
+        events = [(e["event"], e["data"]) for e in json.load(open(rp, encoding="utf-8"))]
+        base = qa_runner.extract(events)
+        r.update(S.map_response(events, base), 단계로그=S.step_log(events, base))
+        if r.get("오류") == S.CUT_OFF:                    # '응답 중단'은 추출 결과로 정해진 값 → 새 추출로 다시 판정 (통신 오류는 그대로)
+            r["오류"] = ""
+            r["오류"] = S.error_text(r)
+        n += 1
+    with open(p, "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
+    print(f"원문 재추출: {n}/{len(rows)}건")
 
 
 if __name__ == "__main__":

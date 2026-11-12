@@ -36,7 +36,7 @@ SPEC = {
     "AI4": dict(no="2-4", name="[AI 4] 예외·단서 규정 적용 사례의 허가 가능/허가 불가능 판정 및 단서 조건 제시 기능", metric="조건부 가능 판단 정확도",
                 target=95.0, cmp=">=", log="diagnose_log_ai4.jsonl",
                 formula="[AI 4] 조건부 가능 판단 정확도(%) = 조건부 판단 및 제시 조건이 모두 적합한 건수 / 전체 조건부 테스트 건수 × 100  (제시 조건 = 단서 조건 근거 조문, 보완사항·행정절차는 보조 지표)",
-                data="표준 질의문 50건 (허가 가능 40 / 허가 불가능 10)"),
+                data="표준 질의문 50건 (허가 가능 20 / 허가 불가능 30) · 예외 유형 4종(예외 조항 30 / 단서 규정 14 / 협의 대상 0 / 심의 대상 6)"),
     "AI5": dict(no="2-5", name="[AI 5] 법령·조례 근거의 정확성이 확보된 사전 진단 응답 생성 기능", metric="환각 발생률",
                 target=3.0, cmp="<=", log="diagnose_log_ai5.jsonl",
                 formula="[AI 5] 환각 발생률(%) = 환각 사례로 판정된 응답 건수 / 전체 테스트 응답 건수 × 100",                          # 수행계획서 문구
@@ -57,6 +57,28 @@ SPEC = {
                 types=["3D 지도 기본 제어", "필지 경사도 분석", "필지 토공량 산출", "지형 생성", "가상건물 생성",
                        "일조 시뮬레이션 실행", "조망 시뮬레이션 실행"],
                 causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "3D 시뮬레이션 명령 실행 오류"]),
+    # 시험항목 1 [DA 2] — 규격서 v1.51 6.1 (10~21쪽). 온톨로지 파일을 직접 검증 (AIPS 질의 아님). 시험 데이터 준비 중
+    "DA2": dict(no="1", name="[DA 2] 인허가 규제 판단을 위한 온톨로지(ODP) 설계 및 검증 기능", metric="온톨로지(ODP) 설계 완성도",
+                target=96.0, cmp=">=", log="validation_result_da2.csv", da2=True,
+                formula="[DA 2] 온톨로지(ODP) 설계 완성도(%) = CQ 질의 응답 정확도 × 0.35 + 온톨로지 스키마 적합률 × 0.15 "
+                        "+ 온톨로지 기반 데이터 매핑 정확도 × 0.30 + 논리적 일관성·무결성 × 0.20",
+                data="CQ 50건(Regulation-Constraint(규제 조건 도출) 20 / Exception(예외·단서 적용) 13 / Conflict(법령·조례 충돌 해소) 10 / 위계 추적(법·시행령·시행규칙·조례 위임) 7), 스키마 평가항목, 매핑 검증 표본, "
+                     "LandCheck 온톨로지 모델 v1.0(스키마·인스턴스·SHACL)",
+                parts=[("DA 2-1", "CQ 질의 응답 정확도", 35, "CQ별 SPARQL 질의 결과와 정답셋의 집합 일치 비율 (부분 일치는 오답)",
+                        "정답셋과 일치한 CQ 수 / 전체 CQ 수 × 100"),
+                       ("DA 2-2", "온톨로지 스키마 적합률", 15, "평가항목별 SPARQL ASK / SHACL 검증 결과 적합 비율",
+                        "적합(true) 판정 항목 수 / 전체 평가 항목 수 × 100"),
+                       ("DA 2-3", "온톨로지 기반 데이터 매핑 정확도", 30, "클래스·속성·관계·자료형 4개 검증 단위를 모두 만족하면 정확 매핑",
+                        "정확 매핑 건수 / 전체 매핑 검증 건수 × 100"),
+                       ("DA 2-4", "논리적 일관성·무결성", 20, "OWL Reasoner(일관성 점수) + OOPS!(함정 점수)",
+                        "(일관성 점수 + 함정 점수) / 2")],
+                assets=[("CQ 목록·SPARQL 질의·정답셋", "spec_data/da2/da2_cq_testset.zip"),
+                        ("스키마 평가항목·검증 질의", "spec_data/da2/da2_schema_checklist.zip"),
+                        ("매핑 검증 표본·정답", "spec_data/da2/da2_mapping_testset.csv"),
+                        ("온톨로지 스키마", "spec_data/da2/landcheck_schema_v1.0.ttl"),
+                        ("인스턴스 데이터", "spec_data/da2/landcheck_instance_v1.0.ttl"),
+                        ("SHACL 제약규칙", "spec_data/da2/landcheck_shapes_v1.0.ttl")],
+                source="Fuseki 그래프 DB(116:3030, dataset nipa)에서 내보냄 — 스키마 aip/semantic, SHACL aip/shapes, 인스턴스 그 외 그래프 (tools/export_ontology.py)"),
 }
 TYPE2 = ["허가 가능", "허가 불가능"]
 UNDECIDED = "판단불가"
@@ -169,12 +191,12 @@ def _law_in(seg, prev):
         names = [m.group(0).strip() for m in _LAWNAME.finditer(part) if m.group(0).strip()]
         if names:
             n = names[-1]
-            if n in ("시행령", "시행규칙", "영") or n.startswith("같은법"):
+            if n in ("시행령", "시행규칙", "영", "규칙") or n.startswith("같은법"):     # 약식 표기: '영' = 앞 법령의 시행령, '규칙' = 시행규칙
                 base = re.sub(r"(시행령|시행규칙)$", "", prev or "")
                 suf = "시행규칙" if "규칙" in n else "시행령"
                 return base + suf if base else None
             return norm_law(n)
-    if re.fullmatch(r"\s*[·,]?\s*영\s*", seg or "") and prev:
+    if prev and re.search(r"(?<![가-힣])영(?![가-힣])", seg or ""):          # '(영)', '·영' 등 → 앞 법령의 시행령 (예: '택지개발촉진법 제6조(영), 제2조')
         return re.sub(r"(시행령|시행규칙)$", "", prev) + "시행령"
     return prev
 
@@ -269,6 +291,31 @@ def rulesets(diag):
     return sorted(i for i in ids if i)
 
 
+def cond_texts(j, rep):
+    """[AI 4] 시스템이 판정에서 밝힌 조건 문장: 실패 조건·근거 조건(natural), 단서가 붙은 지역·지구 판정 문장, 불허 사유"""
+    out = []
+    ev = {e.get("rule_id"): e for e in j.get("evidence") or [] if isinstance(e, dict)}
+    for c in j.get("conditions") or []:
+        if isinstance(c, dict) and c.get("status") == "fail":
+            out.append(str((ev.get(c.get("rule_id")) or {}).get("natural") or c.get("natural") or c.get("source") or ""))
+    for z in (j.get("matrix_gate") or {}).get("zone_results") or []:
+        if isinstance(z, dict) and str(z.get("in_combine")) == "True" and z.get("decision_kind") and z.get("decision"):
+            out.append(str(z["decision"])[:300])
+    out += [str(x) for x in ((rep or {}).get("band") or {}).get("deny_reasons") or []]
+    return " / ".join(dict.fromkeys(x for x in out if x.strip()))
+
+
+def proc_set(xs):
+    """[AI 4] 필요 행정절차 비교용 정규화: 괄호 설명((신축)·(대상 시)·[농지]) 제거, '·'로 붙은 절차 분리, 절차가 아닌 '사전검토' 제외"""
+    out = set()
+    for x in xs or []:
+        for p in re.split(r"[·;]", str(x)):
+            p = re.sub(r"\s+", "", re.sub(r"\([^)]*\)|\[[^\]]*\]", "", p))
+            if p and p not in ("사전검토", "-"):
+                out.add(p)
+    return out
+
+
 def map_response(events, base=None):
     """성과지표 출력 형식: 판단유형·근거조문·적용법령·적용룰셋·보완사항·필요행정절차·설명문 + 6단계 로그"""
     from qa_runner import extract                                           # 지연 import (순환 방지)
@@ -279,6 +326,24 @@ def map_response(events, base=None):
     v = j.get("verdict") or diag.get("status")
     decisive = parse_citations(str(base.get("AI근거") or ""))
     cond_src = parse_citations([c.get("source") for c in j.get("conditions") or [] if c.get("source")])
+    # [AI 4] 단서 조건 문장(matrix_gate.zone_results[].decision_parts[].원문·text)의 조문 — 예: 농공단지 입주자격 '산업집적법 시행령 제6조 제1항'
+    for z in (j.get("matrix_gate") or {}).get("zone_results") or []:
+        if isinstance(z, dict) and str(z.get("in_combine")) == "True":
+            for dp in z.get("decision_parts") or []:
+                if isinstance(dp, dict):
+                    cond_src |= parse_citations(re.findall(r"〔([^〕]+)〕", str(dp.get("원문") or dp.get("text") or "")))
+    # [AI 4] 판정 기준 "정답 근거 조문 전부 포함"(2026-11-11) → 응답이 제시한 판정 근거를 빠짐없이 모음:
+    #   판정 검토 단계의 법령 목록(stage.detail.laws), 지역·지구 판정 근거(zone_results[].source), 중첩 규칙 근거(overlay_rules[].basis)
+    for s_ in st["stages"].values():
+        if s_.get("id") in CORE_STAGES and s_.get("status") == "done":
+            cond_src |= parse_citations([str(x).split(" — ")[0] for x in (s_.get("detail") or {}).get("laws") or []])
+    mg = j.get("matrix_gate") or {}
+    for z in mg.get("zone_results") or []:
+        if isinstance(z, dict) and str(z.get("in_combine")) == "True" and z.get("source"):
+            cond_src |= parse_citations(str(z["source"]).split(" — ")[0])
+    for o in mg.get("overlay_rules") or []:
+        if isinstance(o, dict) and o.get("basis"):
+            cond_src |= parse_citations(str(o["basis"]))
     laws = sorted({law_id(c[0]) for c in decisive})
     rep = diag.get("report") or {}
     recs = [r.get("question") for r in diag.get("recommendations") or [] if isinstance(r, dict) and r.get("question")]
@@ -296,6 +361,7 @@ def map_response(events, base=None):
         "적용법령": laws,
         "적용룰셋": rulesets(diag),
         "보완사항": " / ".join(recs),
+        "단서조건문장": cond_texts(j, rep),            # [AI 4] 보완사항 비교용: 시스템이 판정에서 밝힌 조건 문장
         "필요행정절차": proc,
         "설명문": (rep.get("card") or {}).get("summary") or (rep.get("band") or {}).get("line") or st["reply"],
         "결론문": (rep.get("band") or {}).get("line") or "",
@@ -326,15 +392,17 @@ TOOL_LABEL = {                                   # AIPS 도구 호출(작업 이
 def _env_steps(parcel):
     """parcel.envelopes(도구 호출 기록) → 단계 분류"""
     out = {2: [], 3: [], 5: []}
-    for en in (parcel or {}).get("envelopes") or []:
-        args = en.get("args") or {}
-        plan = ((args.get("_metadata") or {}).get("plan") or [{}])[0]
+    _d = lambda x: x if isinstance(x, dict) else {}             # payload가 문자열로 오는 도구 호출도 있음 (AI1-0050)
+    for en in _d(parcel).get("envelopes") or []:
+        en = _d(en)
+        args = _d(en.get("args"))
+        plan = _d((_d(args.get("_metadata")).get("plan") or [{}])[0])
         tool = plan.get("tool") or en.get("tool")
-        pa = plan.get("args") or {}
+        pa = _d(plan.get("args"))
         op = pa.get("action") or pa.get("operation") or ""
-        pl = en.get("payload") or {}
-        rs = pl.get("resolve") or {}
-        facts = rs.get("facts") or {}
+        pl = _d(en.get("payload"))
+        rs = _d(pl.get("resolve"))
+        facts = _d(rs.get("facts"))
         src = f"{en.get('callee')}/{tool}:{op}".rstrip(":")
         key = pa.get("query") or pa.get("pnu") or pa.get("featureRef") or ""
         rec = dict(src=src, key=str(key), status=en.get("status"), facts=facts, op=str(op).upper(), cid=en.get("call_id") or "")
@@ -503,6 +571,33 @@ def labeled_raw(raw):
     return {f"{r['번호']} · {r['종류']}": e for r, e in zip(event_rows(raw), raw or [])}
 
 
+def diff_detail(base, other, diffs, err=None):
+    """불일치 필드별로 1회차 값 → 이번 회차 값 (집합은 추가·빠짐)"""
+    if not diffs:
+        return "-"
+    out = []
+    by_name = {x["단계명"]: x for x in other}
+    key = {"실행": "실행", "데이터소스": "데이터소스", "조회키": "조회키", "결과건수": "결과건수",
+           "적용룰셋": "적용룰셋", "검색법령": "검색법령", "최종판단": "중간판정값"}
+    for stage, f in diffs:
+        if f == "오류":
+            out.append(f"{stage}: {err or '응답 없음'}")
+            continue
+        if f == "실행순서":
+            seq = lambda L: "→".join(str(x["단계번호"]) for x in L if x["실행"])
+            out.append(f"실행 순서: 1회차 {seq(base)} / 이번 {seq(other)}")
+            continue
+        a = next((x for x in base if x["단계명"] == stage), {}).get(key[f])
+        b = by_name.get(stage, {}).get(key[f])
+        if f in ("적용룰셋", "검색법령"):
+            add, miss = sorted(set(b or []) - set(a or [])), sorted(set(a or []) - set(b or []))
+            out.append(f"{stage} {f}: " + " / ".join(x for x in (f"추가 {', '.join(add)}" if add else "",
+                                                               f"빠짐 {', '.join(miss)}" if miss else "") if x))
+        else:
+            out.append(f"{stage} {f}: 1회차 {a} → 이번 {b}")
+    return " / ".join(out)
+
+
 def compare_steps(base, other):
     """두 회차 6단계 로그 비교 → 불일치 단계 목록 [(단계명, 필드)]  (규격서 v1.51 비교 대상 필드만)
     단계 실행 순서(①~⑥ 실행 여부·순서), 조회 데이터소스, 조회 키·결과 건수, 적용 룰셋 ID 집합(⑤),
@@ -607,6 +702,37 @@ def gold_cites(v):
 
 
 # ---------------------------------------------------------------- [AI 1]
+def ai_basis(r):
+    """AI가 밝힌 판단 근거 한 줄: 불허 사유 → 위반 조건 → 결론문 → 설명문 순"""
+    for k in ("불허사유", "위반조건"):
+        v = r.get(k)
+        if isinstance(v, (list, tuple)) and [x for x in v if x]:
+            return "; ".join(str(x) for x in v if x)
+    for k in ("결론문", "설명문"):
+        v = str(r.get(k) or "").strip()
+        if v and v != "nan":
+            return v[:200]
+    return "응답에 근거 설명 없음"
+
+
+def mismatch_reason(gv, pv, r, gc=None, pc=None, gl=None, pl=None):
+    """판단·근거 조문·적용 법령 불일치 사유 문장"""
+    why = []
+    if gv != pv:
+        if pv == UNDECIDED:
+            why.append(f"판단 불일치 — 정답 {gv}, AI 판단 없음({r.get('원판정') or r.get('오류') or '판정 미제시'})")
+        else:
+            why.append(f"판단 불일치 — 정답 {gv}, AI {pv}. AI 판단 근거: {ai_basis(r)}")
+    if gc and pc is not None and not cite_overlap(pc, gc):            # AI1 보조 지표: 정답 조문과 하나라도 일치하면 일치 (2026-11-10)
+        only_g = sorted(fmt_cite(c) for c in gc if not any(cite_match(p, c) for p in pc))
+        only_p = sorted(fmt_cite(c) for c in pc if not any(cite_match(c, g) for g in gc))
+        why.append("근거 조문 불일치(정답 조문과 하나도 일치하지 않음) — " + " / ".join(x for x in (
+            f"정답에만 있음: {', '.join(only_g)}" if only_g else "", f"AI에만 있음: {', '.join(only_p)}" if only_p else "") if x))
+    if gl and pl is not None and not gl & pl:                       # 정답 법령과 하나라도 일치하면 일치
+        why.append(f"적용 법령 불일치(정답 법령과 하나도 일치하지 않음) — 정답 {', '.join(sorted(law_id(x) for x in gl))} / AI {', '.join(sorted(law_id(x) for x in pl)) or '없음'}")
+    return " / ".join(why) or "-"
+
+
 def score_ai1(log, answer):
     """판단 유형 2종 정확도 + 보조 지표(근거조문, 적용법령)"""
     a = answer.set_index("사례ID")
@@ -623,10 +749,11 @@ def score_ai1(log, answer):
                          예측_적용룰셋="; ".join(r.get("적용룰셋") or []),
                          정답_근거조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          예측_근거조문="; ".join(r.get("근거조문") or []),
-                         근거조문_일치=(cite_set_equal(pc, gc) if gc else None),
+                         근거조문_일치=(cite_overlap(pc, gc) if gc else None),        # 보조 지표: 정답 조문과 하나라도 일치 (부분 포함 인정)
                          정답_적용법령="; ".join(split_list(g.get("적용법령"))) if g is not None else "",
                          예측_적용법령="; ".join(r.get("적용법령") or []),
-                         적용법령_일치=(gl <= pl if gl else None),
+                         적용법령_일치=(bool(gl & pl) if gl else None),
+                         불일치사유=mismatch_reason(gv, pv, r, gc, pc, gl, pl),
                          **{c: r.get(c, "") for c in REF_COLS if c in log.columns}))
     res = pd.DataFrame(rows)
     n = len(res)
@@ -805,6 +932,7 @@ def score_ai2(log, answer, testset=None):
     log["정답_판단유형"] = log["시나리오ID"].map(lambda s: type2(a.loc[str(s)].get("판단유형")) if str(s) in a.index else UNDECIDED)
     log["예측_판단유형"] = log["판단유형"].fillna(UNDECIDED)
     log["일치"] = log["정답_판단유형"] == log["예측_판단유형"]
+    log["불일치사유"] = [mismatch_reason(g, p, r) for g, p, (_, r) in zip(log["정답_판단유형"], log["예측_판단유형"], log.iterrows())]
     n = len(log)
     cols = TYPE2 + ([UNDECIDED] if (log["예측_판단유형"] == UNDECIDED).any() else [])
     cm = pd.crosstab(log["정답_판단유형"], log["예측_판단유형"]).reindex(index=TYPE2, columns=cols, fill_value=0)
@@ -842,7 +970,7 @@ def score_ai2(log, answer, testset=None):
                 tables={"판단 유형 2종별 Precision·Recall·F1 스코어": pd.DataFrame(rows),
                         "보조 지표: 표현 변형 재현 일치율 (시나리오별·전체)": pd.DataFrame(rep_rows)},
                 aux={"표현 변형 재현 일치율(%)": pct(var_ok, var_n)},
-                cases=log[["질의ID", "시나리오ID", "구분", "질의문", "정답_판단유형", "예측_판단유형", "일치"]])
+                cases=log[["질의ID", "시나리오ID", "구분", "질의문", "정답_판단유형", "예측_판단유형", "일치", "불일치사유"]])
 
 
 # ---------------------------------------------------------------- [AI 3]
@@ -871,6 +999,7 @@ def score_ai3(log):
                              "기준": "기준 (1회차)" if int(r["회차"]) == int(g.iloc[0]["회차"]) else "1회차와 비교",
                              "일치": ok, "불일치 단계": "; ".join(sorted({d[0] for d in diffs})) or "없음",
                              "불일치 필드": "; ".join(f"{d[0][:1]}{d[1]}" for d in diffs) or "없음",
+                             "불일치 내용": diff_detail(base, r.get("단계로그") or [], diffs, r.get("오류")),
                              "최종 판단": next((s["중간판정값"] for s in r["단계로그"] if s["단계번호"] == 6), "")})
         case_ok.append({"사례ID": cid, "질의문": g.iloc[0].get("질의문", ""), "수행 횟수": len(g), "일치 수행": sum(x["일치"] for x in run_rows if x["사례ID"] == cid),
                         "5회 모두 일치": all_ok})
@@ -926,10 +1055,12 @@ def score_ai4(log, answer, testset=None):
         pv = r.get("판단유형") or UNDECIDED
         gc = gold_cites(g.get("근거조문")) if g is not None else set()
         pc = parse_citations(r.get("단서조건근거조문") or [])
-        cite_ok = cite_set_equal(pc, gc)
+        # 규격서 수정(2026-11-11): 정답 근거 조문을 모두 포함하면 적합 — 정답 외 관련 조문의 추가 제시는 허용
+        cite_ok = bool(gc) and all(any(cite_match(p, c) for p in pc) for c in gc)
+        miss_c = sorted(fmt_cite(c) for c in gc if not any(cite_match(p, c) for p in pc))
         # 보완사항 3단 표기
         gb = str(g.get("보완사항", "")) if g is not None else ""
-        pb = str(r.get("보완사항") or "") + " " + str(r.get("설명문") or "")
+        pb = " ".join(str(r.get(k) or "") for k in ("보완사항", "단서조건문장", "설명문"))
         if not gb.strip():
             sup = None
         else:
@@ -938,17 +1069,28 @@ def score_ai4(log, answer, testset=None):
             sup = "정확 일치" if hit >= 0.8 else ("부분 일치" if hit > 0 else "불일치")
         gp = split_list(g.get("필요행정절차")) if g is not None else []
         pp = r.get("필요행정절차") or []
-        norm_p = lambda xs: {next(iter(classify_permits(x)), re.sub(r"\s", "", x)) for x in xs}
-        proc_ok = (norm_p(gp) == norm_p(pp)) if gp else None
+        # 필요 행정절차 3단 표기 (2026-11-11 의뢰기업 결정, 보완사항과 같은 방식): 정답 절차를 모두 포함 = 정확 일치 / 일부 = 부분 일치 / 없음 = 불일치
+        if gp:
+            gs, ps_ = proc_set(gp), proc_set(pp)
+            k = len(gs & ps_)
+            proc_ok = "정확 일치" if gs and k == len(gs) else ("부분 일치" if k else "불일치")
+        else:
+            proc_ok = None
         etype = str(tmeta.loc[cid].get("예외유형", "")) if tmeta is not None and cid in tmeta.index else ""
         rows.append(dict(사례ID=cid, 예외유형=etype or "-", 질의문=r.get("질의문"),
                          정답_판정결과=gv, 예측_판정결과=pv, 판정_일치=gv == pv,
                          정답_근거조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          예측_근거조문="; ".join(r.get("단서조건근거조문") or []), 근거조문_일치=cite_ok,
                          적합=(gv == pv) and cite_ok,
+                         부적합사유=" / ".join(x for x in (
+                             f"판정 불일치 — 정답 {gv}, AI {pv}. AI 판단 근거: {ai_basis(r)}" if gv != pv else "",
+                             f"AI 응답에 없는 정답 근거 조문: {', '.join(miss_c)}" if miss_c else "") if x) or "-",
                          정답_보완사항=gb, 예측_보완사항=r.get("보완사항") or "", 보완사항_판정=sup,
                          정답_필요행정절차="; ".join(gp), 예측_필요행정절차="; ".join(pp), 필요행정절차_일치=proc_ok))
     res = pd.DataFrame(rows)
+    if len(res):                                    # 화면에서 적합·부적합 사유가 바로 보이도록 질의문 뒤로
+        front = ["사례ID", "예외유형", "질의문", "적합", "부적합사유"]
+        res = res[front + [c for c in res.columns if c not in front]]
     n = len(res)
     val = pct(res["적합"].sum(), n) if n else None
 
@@ -960,20 +1102,20 @@ def score_ai4(log, answer, testset=None):
                         "부적합": int((~s["적합"]).sum()), "적합률(%)": pct(s["적합"].sum(), len(s))})
         return pd.DataFrame(out)
     t1 = grp("정답_판정결과", TYPE2)
-    etypes = [e for e in ["예외 조항", "단서 규정", "협의 대상", "심의 대상"] if (res["예외유형"] == e).any()] + \
-        sorted(set(res["예외유형"]) - {"예외 조항", "단서 규정", "협의 대상", "심의 대상"}) if n else []
+    etypes = ["예외 조항", "단서 규정", "협의 대상", "심의 대상"] + \
+        (sorted(set(res["예외유형"]) - {"예외 조항", "단서 규정", "협의 대상", "심의 대상", "-"}) if n else [])   # 규격서 4종은 0건이어도 항상 표시
     t2 = grp("예외유형", etypes) if n else pd.DataFrame()
     aux = []
-    for name, col in [("필요 행정절차", "필요행정절차_일치")]:
-        s = res[col].dropna().astype(bool) if n else pd.Series(dtype=bool)
-        aux.append({"보조 지표": name, "대상": len(s), "일치": int(s.sum()), "불일치": int((~s).sum()),
-                    "비고": ""})
-    sb = res["보완사항_판정"].dropna() if n else pd.Series(dtype=object)
-    aux.append({"보조 지표": "보완사항", "대상": len(sb), "일치": int((sb == "정확 일치").sum()),
-                "불일치": int((sb == "불일치").sum()), "비고": f"부분 일치 {int((sb == '부분 일치').sum())}건"})
+    for name, col in [("보완사항", "보완사항_판정"), ("필요 행정절차", "필요행정절차_일치")]:   # 3단 표기: 정확 일치 / 부분 일치 / 불일치
+        sb = res[col].dropna() if n else pd.Series(dtype=object)
+        sb = sb[sb.isin(["정확 일치", "부분 일치", "불일치"])]
+        ex, pa, no = int((sb == "정확 일치").sum()), int((sb == "부분 일치").sum()), int((sb == "불일치").sum())
+        aux.append({"보조 지표": name, "대상": len(sb), "정확 일치": ex, "부분 일치": pa, "불일치": no,
+                    "적합률(%)": pct(ex, len(sb)), "부분 일치 포함 적합률(%)": pct(ex + pa, len(sb)),
+                    "비고": "적합률 = 정확 일치 / 대상"})
     return dict(value=val, n=n, tables={"판정 결과(허가 가능/허가 불가능)별 적합·부적합 건수": t1, "예외 유형별 적합·부적합 건수": t2,
                                         "보조 지표(보완사항, 필요 행정절차) 일치·불일치 건수 및 적합률": pd.DataFrame(aux)},
-                cases=res)
+                cases=res.assign(필요행정절차_일치=res["필요행정절차_일치"].fillna("-")) if n else res)
 
 
 # ---------------------------------------------------------------- [AI 5]
@@ -983,6 +1125,10 @@ def load_law_db(path):
         return None
     col = next((c for c in df.columns if "조문" in c or c.lower() in ("id", "article_id")), df.columns[0])
     return parse_citations(df[col].tolist())
+
+
+OLD_LAW_NAMES = {"도시공원법": "도시공원 및 녹지 등에 관한 법률",          # 폐지·개칭된 옛 법령명 → 현행 명칭 (환각 사유 안내용, 판정에는 쓰지 않음)
+                 "도시공원법시행령": "도시공원 및 녹지 등에 관한 법률 시행령"}
 
 
 def score_ai5(log, answer, law_db=None):
@@ -1007,21 +1153,35 @@ def score_ai5(log, answer, law_db=None):
         h1 = None if law_db is None else any(not exists(c) for c in pc)
         h2 = not pc
         h3 = bool(pc) and bool(gc) and not cite_overlap(pc, gc)
-        h4 = bool(gl) and gl != pl                     # ④ 규격서 v1.51: 응답의 적용 법령이 정답 적용 법령과 일치(집합 일치, 순서 무시)해야 정상
+        # ④ 정답 적용 법령은 허용 집합(근거조문 열의 법령, 이 중 어느 것을 근거로 해도 맞음) → ③과 같은 방식으로
+        #    응답의 적용 법령이 허용 법령과 하나도 일치하지 않으면 불일치 (2026-11-10, 완전 일치 규칙에서 변경 · 시험기관 확인 대상)
+        h4 = bool(gl) and not (gl & pl)
         missing = [fmt_cite(c) for c in pc if law_db is not None and not exists(c)]
+        why = []                                       # 환각 사유 (유형별로 무엇이 왜 걸렸는지)
+        if h1:
+            olds = sorted({c[0] for c in pc if not exists(c) and c[0] in OLD_LAW_NAMES})
+            why.append("① 법령·조례 조문 DB에 없는 조문 인용: " + ", ".join(missing)
+                       + (f" — 옛 법령명 {'·'.join(olds)} 사용(현행 「{OLD_LAW_NAMES[olds[0]]}」). DB에는 현행 명칭만 있음" if olds else ""))
+        if h2:
+            why.append("② 응답에 근거 조문이 없음 (판정 단계·조건·불허 사유 어디에도 조문 번호 없음)")
+        if h3:
+            why.append(f"③ 인용 조문({', '.join(sorted(fmt_cite(c) for c in pc))})이 정답 조문셋과 하나도 일치하지 않음")
+        if h4:
+            why.append(f"④ 적용 법령({', '.join(sorted(law_id(x) for x in pl)) or '없음'})이 정답 허용 법령({', '.join(split_list(g.get('적용법령')))})과 하나도 일치하지 않음")
         rows.append(dict(사례ID=cid, 질의문=r.get("질의문"), 판단유형=r.get("판단유형"),
                          설명문=str(r.get("설명문") or ""),                 # 규격서 출력: 판단 결과·설명문·인용 조문·적용 법령
                          인용조문="; ".join(r.get("근거조문") or []), 정답조문="; ".join(sorted(fmt_cite(c) for c in gc)),
                          적용법령="; ".join(r.get("적용법령") or []), 정답_적용법령="; ".join(split_list(g.get("적용법령")) if g is not None else []),
                          **{"① 인용 조문 미존재": h1, "② 근거 조문 부재": h2, "③ 근거 오인용": h3, "④ 법령·조례 근거 불일치": h4},
-                         환각=bool(h1) or h2 or h3 or h4, DB미존재조문="; ".join(missing)))
+                         환각=bool(h1) or h2 or h3 or h4, 환각사유=" / ".join(why) or "-",
+                         DB미존재조문="; ".join(missing)))
     res = pd.DataFrame(rows)
     n = len(res)
     val = pct(res["환각"].sum(), n) if n else None
     how = {"① 인용 조문 미존재": "응답의 인용 조문이 법령·조례 조문 DB에 존재하지 않음",       # 규격서 v1.51 40쪽 표 그대로
            "② 근거 조문 부재": "응답에 근거 조문 항목이 없거나 값이 비어 있음",
            "③ 근거 오인용": "인용 조문이 실재하나 정답 조문셋과 교집합이 없음",
-           "④ 법령·조례 근거 불일치": "응답의 적용 법령이 정답 적용 법령과 다름"}       # ⑤ 논리 불일치는 시험항목에서 제외(2026-11-10)
+           "④ 법령·조례 근거 불일치": "응답의 적용 법령이 정답 적용 법령과 다름 (정답 허용 법령과 하나도 일치하지 않음)"}       # ⑤ 논리 불일치는 시험항목에서 제외(2026-11-10)
     types = []
     for k in how:
         s = res[k] if n else pd.Series(dtype=object)

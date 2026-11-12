@@ -1,0 +1,7 @@
+# CQ-002 도시지역 및 지구단위계획구역 밖의 지역에서 대지의 접도기준이 적용되지 않는 행정구역 조건은?
+# 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
+PREFIX aip: <https://onto.go.kr/aip/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?ans WHERE { { ?L_x aip:lawName "건축법" . ?L_x aip:hasArticle ?x . ?x aip:articleTitle ?t_x . FILTER(CONTAINS(REPLACE(STR(?t_x), " ", ""), "대지와도로의관계")) } { ?ans aip:excludesArticle ?x . } }

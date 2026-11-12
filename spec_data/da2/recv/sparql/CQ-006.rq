@@ -1,0 +1,7 @@
+# CQ-006 건축법상 건축물 대지가 접해야 하는 도로의 인정 요건은 무엇인가?
+# 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
+PREFIX aip: <https://onto.go.kr/aip/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?ans WHERE { { { ?L_d aip:lawName "건축법" . ?L_d aip:hasArticle ?d . ?d aip:articleTitle ?t_d . FILTER(CONTAINS(REPLACE(STR(?t_d), " ", ""), "정의")) } { ?d aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } { ?ans aip:hasUnit ?dh . } { ?dh aip:implementedBy ?di . } { ?di aip:articleTitle ?dit . FILTER(CONTAINS(STR(?dit), "도로")) } } UNION { { ?L_e aip:lawName "건축법" . ?L_e aip:hasArticle ?e . ?e aip:articleTitle ?t_e . FILTER(CONTAINS(REPLACE(STR(?t_e), " ", ""), "정의")) } { ?e aip:hasUnit+ ?eh . } { ?eh aip:implementedBy ?ans . } { ?ans aip:articleTitle ?eat . FILTER(CONTAINS(STR(?eat), "도로")) } { ?en_L (aip:hasArticle|aip:hasAppendix) ?ans . ?en_L aip:hierarchy ?en_h . FILTER(?en_h <= 3) } } UNION { { ?L_h aip:lawName "건축법" . ?L_h aip:hasArticle ?h . ?h aip:articleTitle ?t_h . FILTER(CONTAINS(REPLACE(STR(?t_h), " ", ""), "대지와도로의관계")) } { ?h aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } { ?ans aip:hasUnit ?hh . } { ?hh aip:implementedBy ?hl_ans . } } }

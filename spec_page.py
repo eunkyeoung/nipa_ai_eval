@@ -2,6 +2,7 @@
 성과지표 화면 (AI 1 ~ AI 7) — qa_app.py 사이드바의 '화면' 전환에서 불러옴
 """
 import glob
+import io
 import json
 import os
 import sys
@@ -15,12 +16,13 @@ import spec_eval as S
 DATA = "spec_data"
 FILES = {"AI1": ["testset_ai1", "answer_ai1"], "AI2": ["testset_ai2", "answer_ai2"], "AI3": ["testset_ai3"],
          "AI4": ["testset_ai4", "answer_ai4"], "AI5": ["testset_ai5", "answer_ai5", "law_article_db"],
-         "AI6": ["testset_ai6", "answer_ai6", "intent_map_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"]}
+         "AI6": ["testset_ai6", "answer_ai6", "intent_map_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"], "DA2": []}
 LABEL = {"testset": "시험셋(질의)", "answer": "정답셋", "law_article_db": "법령·조례 조문 DB",
          "result": "실행 결과(시스템 응답)", "intent": "의도 대응표"}
 OPTIONAL = ("law_", "result_", "intent_")   # 없어도 실행 가능 (조문 DB 없으면 ① 판정 보류 · 결과 파일은 수동 채점용 · 대응표 없으면 기본 대응표)
 RAW_VERDICT = {"possible": "승인 가능", "impossible": "부적합", "conditional": "조건부 가능",   # AIPS 원 판정값 → 수행계획서 4종
                "needs_review": "검토 필요", "unknown": "검토 필요"}
+HIDE_TABLES = {"AI1": ("보조 지표(적용 법령·근거 조문)별 일치·불일치 건수 및 일치율",)}   # 2026-11-11 의뢰기업 요청: 결과 화면에서 숨김 (result.xlsx에는 남음)
 HIDE_CASE_COLS = ["적용룰셋"]          # 질의별 결과 화면에서 숨길 컬럼 (질의별 상세 결과·result.xlsx에는 남음)
 
 
@@ -73,7 +75,7 @@ def ai6_live(df, total):
 
 
 SHORT = {"AI1": "AI 1 정확도", "AI2": "AI 2 F1", "AI3": "AI 3 일관성", "AI4": "AI 4 조건부", "AI5": "AI 5 환각",
-         "AI6": "AI 6 지도 제어", "AI7": "AI 7 3D 시뮬레이션"}
+         "AI6": "AI 6 지도 제어", "AI7": "AI 7 3D 시뮬레이션", "DA2": "DA 2 온톨로지"}
 NOT_PROVIDED = [   # 시험의뢰서가 요구하지만 AIPS가 질의 응답(SSE)에 실어 보내지 않는 값 → 대신 쓰는 방법
     "**AI 엔진 모델 버전** — 응답에 모델명이 없음 → 시험 시작 때 **공간정보 에이전트·MCP 콘솔(192.168.200.115:18800)**에서 지금 쓰는 모델명을 "
     "조회해 기록 (현재 gpt-oss-120b). 조회 실패 시 시험의뢰서 시험환경 값(gpt-oss-120b)",
@@ -97,7 +99,8 @@ NOT_PROVIDED_AI6 = [   # [AI 6] 규격 시험방법 (2) '동결 버전 확인' �
 CRITERIA = {
     "AI1": "AI 판단 결과(판단 유형)가 정답 판단 유형과 정확히 일치하는지 평가. 개별 테스트 사례에 대해 판단 유형이 정답과 "
            "일치한 경우 일치 건수로 계수(판단 유형 2종: 허가 가능 / 허가 불가능, 조작적 정의서에 따라 조건부 가능 = 허가 가능).\n\n"
-           "적용 법령·근거 조문(법령ID.조.항, 호·목 단위 제외)의 일치 여부는 보조 지표로 별도 산출하며 정확도 산정에는 포함하지 않음.",
+           "적용 법령·근거 조문(법령ID.조.항, 호·목 단위 제외)의 일치 여부는 보조 지표로 별도 산출하며 정확도 산정에는 포함하지 않음 "
+           "(정답 조문·법령 중 하나라도 AI 응답에 있으면 일치).",
     "AI2": "동일 시나리오의 표현 변형 질의 전체를 개별 테스트 샘플로 하여, AI 판단 결과(판단 유형)와 시나리오의 정답 판단 유형을 비교. "
            "판단 유형 2종 각각에 대해 TP·FP·FN을 산출하여 2 × 2 혼동 행렬을 작성.\n\n"
            "Precision(%) = TP / (TP + FP) × 100, Recall(%) = TP / (TP + FN) × 100, "
@@ -110,10 +113,10 @@ CRITERIA = {
            "조회 데이터소스, 조회 키·조회 결과 건수, 적용 룰셋 ID 집합(⑤), 검색 법령 집합(④), 최종 판단 유형(⑥). "
            "집합 형태의 필드는 순서를 무시한 집합 일치로 판정. 비교 제외: 타임스탬프, 처리 소요 시간, 요청 ID, 로그 시퀀스 번호.\n\n"
            "보조 지표: 사례 단위 일관성(%) = 5 회차가 모두 일치한 사례 수 / 전체 사례 수 × 100 (일관성 산정에는 포함하지 않음).",
-    "AI4": "판정 결과: 정답 라벨과 정확 일치. 단서 조건 근거 조문: 정규화 표기(법령ID.조.항, 호·목 단위 제외) 기준 집합 일치(순서 무시). "
+    "AI4": "판정 결과: 정답 라벨과 정확 일치. 단서 조건 근거 조문: 정규화 표기(법령ID.조.항, 호·목 단위 제외) 기준 정답 조문 전부 포함(순서 무시, 정답 외 관련 조문의 추가 제시는 허용). "
            "둘 다 적합해야 적합 건수로 계수.\n\n"
            "보조 지표: 보완사항 — 정답 보완사항의 핵심 요건 포함 여부(정확 일치 / 부분 일치 / 불일치 3단 표기), "
-           "필요 행정절차 — 집합 일치(순서 무시). 정확도 산정에는 포함하지 않음.",
+           "필요 행정절차 — 정답 행정절차 포함 여부(정확 일치 / 부분 일치 / 불일치 3단 표기, 순서 무시). 정확도 산정에는 포함하지 않음.",
     "AI5": "응답별로 환각 유형 ①–④를 순서대로 자동 판정: ① 인용 조문이 법령·조례 조문 DB에 존재하는지 ② 근거 조문 항목이 존재하고 "
            "값이 비어 있지 않은지 ③ 인용 조문과 정답 조문셋의 교집합이 존재하는지 ④ 응답의 적용 법령이 정답 적용 법령과 일치하는지. "
            "하나의 응답에서 ①–④ 중 1개 이상 검출되면 환각 응답 1건으로 계수하며, 복수 유형이 동시에 검출되어도 중복 계수하지 않음.",
@@ -138,6 +141,9 @@ CRITERIA = {
     "AI7": "사례마다 ① 의도 추출 ② 핵심 파라미터(위치·층수·높이·용도·기준일·시간대·조망점 등) ③ 3D 시뮬레이션 실행(3D 지도 상태·생성 객체·"
            "실행 조건이 정답 시나리오와 일치, 실행 상태 '완료')을 순서대로 판정. 셋 다 일치하면 정상 수행 1건, 부분 일치는 오류. "
            "오류 원인은 최초 불일치 기준으로 분류. 실행 대기 상한 안에 '완료'가 아니면 미실행(실행 오류).\n\n결과는 소수점 둘째자리 이하 버림.",
+    "DA2": "세부 시험항목 1-1 ~ 1-4(DA 2-1 ~ 2-4)의 구성지표 4개를 가중합산해 온톨로지(ODP) 설계 완성도를 산출하고 96 % 이상 여부를 판정. "
+           "기능 정확성(X) = 1 − 부정확한 기능의 수 / 고려 대상 기능의 수(4). 검증 결과는 validation_result_da2.csv로 저장. "
+           "결과는 소수점 셋째자리 이하 버림.",
 }
 CMD_NOTE = ("실행 결과 파일(result_ai6 / result_ai7)을 올리면 성과지표 기준으로 채점해요. "
             "자동 실행은 지도·3D 명령의 응답 구조를 확인한 뒤 연결할 예정이에요.")
@@ -153,7 +159,7 @@ def data_path(stem):
 
 def runs(item):
     return sorted([d for d in glob.glob(os.path.join("spec", item, "*")) if os.path.isdir(d)],
-                  key=os.path.getmtime, reverse=True)
+                  key=os.path.basename, reverse=True)          # 폴더 이름(실행 시각) 순 — 수정 시각은 재채점하면 바뀌므로 쓰지 않음
 
 
 def read_json(p):
@@ -188,7 +194,7 @@ def score_run(item, run_dir):
 
     def pick(key, stem):                      # 실행 폴더의 사본(data/) → meta 경로 → 현재 spec_data 순
         p = meta.get(key)
-        snap = os.path.join(run_dir, "data", os.path.basename(p)) if p else None
+        snap = os.path.join(run_dir, "data", os.path.basename(p.replace("\\", "/"))) if p else None   # PC(윈도)에서 실행한 결과의 '\' 경로도 서버(리눅스)에서 찾도록
         if snap and os.path.exists(snap):
             return snap
         return p if p and os.path.exists(p) else data_path(stem)
@@ -211,6 +217,33 @@ def score_run(item, run_dir):
 
 
 # ---------------------------------------------------------------- 사이드바
+@st.cache_data(show_spinner=False)
+def _sha256(path, mtime):
+    """파일 SHA-256 (수정 시각이 바뀌면 다시 계산)"""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# [DA 2] 입력 양식 — 제작지시서 0.2v(2026-11-06)의 CSV 필수 열 중 입력(정답) 열. 예시 1행
+DA2_TEMPLATES = {
+    "da2_cq_testset.csv": (
+        ["cq_id", "odp_type", "municipality", "question", "inference_required", "query_file", "expected_bindings"],
+        [["CQ-001", "Exception (예외·단서 적용)", "공통", "대지가 도로에 2m 미만으로 접한 경우에도 건축이 허용되는 단서 조항은 무엇인가?",
+          "false", "sparql/CQ-001.rq", '["건축법.44.1", "건축법시행령.28.1", "건축법시행령.28.2"]']]),
+    "da2_schema_checklist.csv": (
+        ["check_id", "item_group", "description", "method", "validator_file", "expected"],
+        [["SCH-001", "핵심 클래스", "법령(aip:Law)마다 법령명(aip:lawName)이 있다", "SPARQL ASK", "checks/SCH-001.rq", "true"]]),
+    "da2_mapping_testset.csv": (
+        ["mapping_id", "source_field", "target_element", "expected_mapping"],
+        [["MAP-001", "(원천 테이블).(필드) 예: 법령수집DB.법령.법령명", "https://onto.go.kr/aip/lawName",
+          '{"class": "aip:Law", "property": "aip:lawName", "relation": "", "datatype": "xsd:string"}']]),
+}
+
+
 def sidebar(side, launch, running):
     os.makedirs(DATA, exist_ok=True)
     # 시험 항목 버튼 7개를 사이드바 한 줄에 (버튼 폭을 균등하게 줄임)
@@ -227,6 +260,63 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
     st.session_state["spec_item_last"] = item
     sp = S.SPEC[item]
     side.caption(f"{sp['no']} · {sp['metric']} · 목표 {target_txt(item)}")
+
+    if sp.get("da2"):                                   # [DA 2] 온톨로지 검증 — 검증 자산 확인만 (실행은 자산이 준비되면 연결)
+        with side.popover("📂 시험 데이터 (검증 자산)", width="stretch"):
+            for label, path in sp["assets"]:
+                if os.path.exists(path):
+                    kb = os.path.getsize(path) / 1024
+                    st.markdown(f"**{label}** `{os.path.basename(path)}` — ✅ {kb:,.0f} KB  \nSHA-256 `{_sha256(path, os.path.getmtime(path))}`")
+                else:
+                    st.markdown(f"**{label}** `{os.path.basename(path)}` — ❌ 없음")
+                ext = os.path.splitext(path)[1].lower()
+                up = st.file_uploader(os.path.basename(path), type=[ext.lstrip(".")], key=f"up_da2_{os.path.basename(path)}",
+                                      label_visibility="collapsed")
+                if up is not None:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, "wb") as f:
+                        f.write(up.getvalue())
+                    st.cache_data.clear()
+                    st.success(f"{os.path.basename(path)} 저장")
+            st.caption("규격서 [DA 2] 사전조건의 검증 자산입니다. " + sp.get("source", ""))
+            st.caption("작성 규칙(제작지시서 0.2v) — CSV는 UTF-8, 헤더 1행. 정답 바인딩·매핑은 JSON 문자열. "
+                       "조문은 `법령명.조.항`(항 없으면 `법령명.조`, 별표는 `법령명.별표N`), 호·목은 쓰지 않음. "
+                       "CQ·스키마 zip에는 CSV 1개와 질의 파일(.rq / Shape .ttl)을 함께 넣음")
+            st.divider()
+            st.markdown("**양식**")
+            for fn, (cols, rows) in DA2_TEMPLATES.items():
+                st.download_button(f"⬇ {fn} 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
+                                   file_name=fn, mime="text/csv", width="stretch", key=f"tpl_da2_{fn}")
+        # 실행: 구성지표 선택(비우면 전체 2-1 ~ 2-4) → tools/da2_run.py
+        labels = {f"{k} {n}": i + 1 for i, (k, n, *_r) in enumerate(sp["parts"])}
+        sel = side.multiselect("실행할 구성지표 (비우면 전체)", list(labels), key="da2_parts")
+        parts = sorted(labels[x] for x in sel) or [1, 2, 3, 4]
+        need = {1: (0, 3, 4), 2: (1, 3, 4, 5), 3: (2, 3, 4), 4: (3, 4)}         # 구성지표별 필요한 검증 자산(assets 순번)
+        miss = sorted({os.path.basename(sp["assets"][j][1]) for p in parts for j in need[p] if not os.path.exists(sp["assets"][j][1])})
+        cq_ids = []
+        if 1 in parts and os.path.exists(sp["assets"][0][1]):
+            try:
+                import zipfile
+                with zipfile.ZipFile(sp["assets"][0][1]) as z:
+                    cq_ids = pd.read_csv(io.BytesIO(z.read("da2_cq_testset.csv")), encoding="utf-8-sig")["cq_id"].tolist()
+            except Exception:                                          # noqa: BLE001
+                cq_ids = []
+        ids = side.multiselect("실행할 CQ ID (비우면 전체)", cq_ids, key="da2_ids") if cq_ids else []
+        if sel or ids:
+            side.caption("부분 실행 — 결과는 따로 저장되고 종합 점수(가중합)는 계산하지 않아요.")
+        run = side.button("⏳ 실행 중…" if running else f"▶ {SHORT[item]} 시험 실행", type="primary", width="stretch",
+                          disabled=running or bool(miss), help="결과는 spec/DA2/<시각>/ 에 저장돼요. SHACL 검증 포함 약 7분.")
+        if miss:
+            side.caption("❌ 검증 자산 없음: " + ", ".join(miss))
+        if run:
+            import qa_runner
+            cmd = [sys.executable, "-u", os.path.join("tools", "da2_run.py"), "--parts", ",".join(map(str, parts)),
+                   "--status-file", qa_runner.STATUS_FILE]
+            if ids:
+                cmd += ["--ids", ",".join(ids)]
+            st.session_state["spec_run_dir"] = None
+            launch(cmd, len(parts))
+        return item
 
     need = FILES[item]
     with side.popover("📂 시험 데이터", width="stretch"):
@@ -267,6 +357,14 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                     st.success(msg)
                 except Exception as e:                            # noqa: BLE001
                     st.error(f"가져오지 못했어요: {e}")
+        if item == "AI4":                       # 규격서 [AI 4] 시험방법 (2): 판정 결과별·예외 유형별 개수 확인
+            t4, a4 = S.read_table(data_path("testset_ai4")), S.read_table(data_path("answer_ai4"))
+            if t4 is not None and "예외유형" in t4:
+                ec = t4["예외유형"].value_counts()
+                st.markdown("**예외 유형별 개수** — " + " / ".join(f"{k} {int(ec.get(k, 0))}건" for k in ("예외 조항", "단서 규정", "협의 대상", "심의 대상")))
+            if a4 is not None and "판정결과" in a4:
+                vc = a4["판정결과"].map(S.type2).value_counts()
+                st.markdown("**판정 결과별 개수** — " + " / ".join(f"{k} {int(vc.get(k, 0))}건" for k in S.TYPE2))
         st.divider()
         st.markdown("**양식**")
         for stem in need:
@@ -579,18 +677,156 @@ def overview():
                      "진단 결과": fmt_pct(sm.get("value"), it) if sm else "미실행",
                      "목표": target_txt(it),
                      "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
-                     "대상": str(sm.get("n", "-")), "실행": (os.path.basename(rs[0]) + (" (예비)" if pre else "")) if rs else "-"})
+                     "대상": str(sm["n"]) if sm.get("n") is not None else "-",
+                     "실행": (os.path.basename(rs[0]) + (" (예비)" if pre else "")) if rs else "-"})
     return pd.DataFrame(rows)
+
+
+def _read_csv(p):
+    try:
+        return pd.read_csv(p, encoding="utf-8-sig", dtype=str).fillna("")
+    except Exception:                                                # noqa: BLE001
+        return None
+
+
+def _rate(ok, n):
+    return f"{int(ok / n * 10000) / 100:.2f} %" if n else "-"
+
+
+def render_da2(item, sp, area):
+    """[DA 2] 온톨로지(ODP) 설계 완성도 — 구성지표 2-1 ~ 2-4 결과 (tools/da2_run.py 산출물)"""
+    rs = runs(item)
+    if not rs:
+        with area("box_spec_cases"):
+            st.markdown("#### 구성지표 (세부 시험항목 1-1 ~ 1-4)")
+            show_table(pd.DataFrame([{"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %", "판정 방식": how, "산출식": f,
+                                      "결과": "미실행"} for k, n, w, how, f in sp["parts"]]))
+            st.markdown(f"- 산정식: {sp['formula']}\n- 목표: 온톨로지(ODP) 설계 완성도 {target_txt(item)}\n- 시험 데이터: {sp['data']}")
+            st.info("왼쪽 '📂 시험 데이터 (검증 자산)'에서 준비 상태를 확인하고 실행하세요.")
+        return
+    pick = st.session_state.pop("spec_run_dir", None)
+    sk = f"spec_dir_{item}"
+    if pick:
+        hit = next((d for d in rs if os.path.normpath(d) == os.path.normpath(pick)), None)
+        if hit:
+            st.session_state[sk] = hit
+    if st.session_state.get(sk) not in rs:
+        st.session_state[sk] = rs[0]
+    run_dir = st.selectbox("결과 폴더", rs, format_func=lambda d: d.replace("\\", "/"), key=sk)
+    sm = read_json(os.path.join(run_dir, "summary.json"))
+    meta = read_json(os.path.join(run_dir, "meta.json"))
+    if not sm:
+        st.warning("이 폴더에는 아직 결과가 없어요 (실행 중이거나 중단됨).")
+        return
+    pr = sm.get("parts", {})
+    with area("kpi_spec_main"):
+        st.markdown(f"#### {sp['no']} {sp['name']}")
+        c = st.columns(4)
+        c[0].metric("온톨로지(ODP) 설계 완성도", fmt_pct(sm.get("value"), item) if sm.get("value") is not None else "-")
+        c[1].metric("목표", target_txt(item))
+        c[2].metric("달성 여부", ("달성" if sm.get("passed") else "미달성") if sm.get("value") is not None else "-")
+        c[3].metric("실행 범위", "전체" if sm.get("scope") == "full" else "부분 실행")
+        if sm.get("scope") != "full":
+            st.caption("부분 실행(구성지표·CQ 일부 선택)이라 종합 점수(가중합)는 계산하지 않았어요.")
+        rows = []
+        for k, n, w, how, f in sp["parts"]:
+            p = pr.get(k, {})
+            ok, tot = p.get("ok"), p.get("n")
+            rows.append({"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %",
+                         "결과": fmt_pct(p.get("value")) if p.get("value") is not None else ("오류" if p else "미실행"),
+                         "일치(적합)/전체": f"{ok} / {tot}" if tot else "-", "오류": str(p.get("error", "-")) if p else "-",
+                         "산출식": f})
+        show_table(pd.DataFrame(rows))
+        st.caption(f"산정식: {sp['formula']} · 결과는 소수점 셋째자리 이하 버림")
+
+    tabs = st.tabs([f"{k} {n}" for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
+    for i, (k, n, *_r) in enumerate(sp["parts"]):
+        with tabs[i]:
+            d = os.path.join(run_dir, f"da2-{i + 1}")
+            p = os.path.join(d, "validation_result_da2.csv")
+            df = _read_csv(p) if os.path.exists(p) else None
+            if df is None:
+                st.info("이 실행에서는 수행하지 않았어요.")
+                continue
+            st.caption(f"로그 파일: `{p.replace(os.sep, '/')}`")
+            st.download_button("⬇ [로그] validation_result_da2.csv", open(p, "rb").read(), file_name=f"validation_result_da2_{k.replace(' ', '')}.csv",
+                               mime="text/csv", key=f"dl_da2_{i}")
+            if i == 0:                                                      # 2-1 CQ: ODP 유형별 일치·불일치
+                g = df.groupby("odp_type")["match"].agg(lambda s: (s == "true").sum()).rename("일치").to_frame()
+                g["전체"] = df.groupby("odp_type").size()
+                g["불일치"] = g["전체"] - g["일치"]
+                g["일치율"] = [_rate(a, b) for a, b in zip(g["일치"], g["전체"])]
+                show_table(g.reset_index().rename(columns={"odp_type": "ODP 유형"}))
+                show_table(df.rename(columns={"cq_id": "CQ ID", "odp_type": "ODP 유형", "municipality": "지자체", "question": "질문",
+                                              "expected_bindings": "정답", "actual_bindings": "실제 결과", "missing_bindings": "누락",
+                                              "extra_bindings": "추가", "match": "일치"})[
+                    ["CQ ID", "ODP 유형", "지자체", "질문", "정답", "실제 결과", "누락", "추가", "일치", "status", "error_message"]])
+                with st.expander("CQ별 SPARQL 질의"):
+                    import zipfile
+                    zp = os.path.join(run_dir, "data", "da2_cq_testset.zip")
+                    if os.path.exists(zp):
+                        with zipfile.ZipFile(zp) as z:
+                            for _, r in df.iterrows():
+                                st.markdown(f"**{r['cq_id']}** {r['question']}")
+                                st.code(z.read(r["query_file"]).decode("utf-8"), language="sparql")
+            elif i == 1:                                                    # 2-2 스키마: 항목군별 적합·부적합
+                g = df.groupby("item_group")["conforms"].agg(lambda s: (s == "true").sum()).rename("적합").to_frame()
+                g["전체"] = df.groupby("item_group").size()
+                g["부적합"] = g["전체"] - g["적합"]
+                g["적합률"] = [_rate(a, b) for a, b in zip(g["적합"], g["전체"])]
+                show_table(g.reset_index().rename(columns={"item_group": "항목군"}))
+                show_table(df.rename(columns={"check_id": "평가항목", "item_group": "항목군", "description": "점검 내용", "method": "방법",
+                                              "actual": "결과", "conforms": "적합", "focus_node": "위반 노드", "message": "내용"})[
+                    ["평가항목", "항목군", "점검 내용", "방법", "결과", "적합", "위반 노드", "내용", "status", "error_message"]])
+            elif i == 2:                                                    # 2-3 매핑: 검증 단위별 일치·불일치
+                units = [("class_match", "클래스 매핑"), ("property_match", "속성 매핑"), ("relation_match", "관계 매핑"),
+                         ("datatype_match", "자료형"), ("exact_match", "정확 매핑(4개 모두)")]
+                show_table(pd.DataFrame([{"검증 단위": nm, "일치": int((df[c] == "true").sum()), "불일치": int((df[c] == "false").sum()),
+                                          "일치율": _rate(int((df[c] == "true").sum()), len(df))} for c, nm in units]))
+                if "value_match" in df:
+                    vm = df[df["value_match"] != ""]
+                    st.caption(f"(보조) 값 일치 {int((vm['value_match'] == 'true').sum())} / {len(vm)} — 판정에는 넣지 않음. "
+                               "원천 최신본과 온톨로지 판 차이 등을 드러내기 위한 참고 값")
+                show_table(df.rename(columns={"mapping_id": "매핑 ID", "source_field": "원천 필드", "source_value": "원천 값",
+                                              "target_element": "대상 요소", "expected_mapping": "정답 매핑", "actual_mapping": "실제 매핑",
+                                              "exact_match": "정확 매핑", "value_match": "(보조) 값 일치", "actual_value": "온톨로지 값"})[
+                    ["매핑 ID", "원천 필드", "원천 값", "대상 요소", "정답 매핑", "실제 매핑", "class_match", "property_match",
+                     "relation_match", "datatype_match", "정확 매핑", "(보조) 값 일치", "온톨로지 값"]])
+            else:                                                           # 2-4 일관성·무결성
+                s4 = read_json(os.path.join(d, "summary_da2_4.json"))
+                if s4:
+                    show_table(pd.DataFrame([
+                        {"구분": "일관성 (OWL Reasoner)", "내용": f"consistent={s4.get('consistent')}, unsatisfiable class {s4.get('unsatisfiable')}개, "
+                                                         f"계층 순환 {sum((s4.get('cycles') or {}).values())}건", "오류 건수": str(s4.get("error_count")),
+                         "점수": str(s4.get("consistency_score"))},
+                        {"구분": "무결성 (OOPS! 함정)", "내용": " · ".join(f"{k} {v}개" for k, v in (s4.get("pitfall_types") or {}).items()),
+                         "오류 건수": str(sum((s4.get("pitfall_types") or {}).values())), "점수": str(s4.get("pitfall_score"))},
+                        {"구분": "논리적 일관성·무결성", "내용": "(일관성 점수 + 함정 점수) / 2", "오류 건수": "", "점수": str(s4.get("value"))}]))
+                show_table(df.rename(columns={"check_id": "항목", "category": "구분", "item": "내용", "level": "중요도", "detected": "검출",
+                                              "count": "건수", "affected": "영향 요소 수(계수 안 함)", "elements": "대상"})[
+                    ["항목", "구분", "내용", "중요도", "검출", "건수", "영향 요소 수(계수 안 함)", "대상", "status", "error_message"]])
+                op = os.path.join(d, "oops_response.xml")
+                if os.path.exists(op):
+                    st.download_button("⬇ OOPS! 응답 원문", open(op, "rb").read(), file_name="oops_response.xml", key="dl_oops")
+    with tabs[-1]:
+        show_table(pd.DataFrame([{"검증 자산": k, "파일": v.get("path"), "크기(KB)": f"{v.get('bytes', 0) / 1024:,.0f}", "SHA-256": v.get("sha256")}
+                                 for k, v in (meta.get("assets") or {}).items()]))
+        show_table(pd.DataFrame([{"도구": k, "버전": v} for k, v in (meta.get("tools") or {}).items()]))
+        st.caption(f"시작 {meta.get('started', '-')} · 구성지표 {meta.get('parts')} · CQ 선택 {meta.get('ids') or '전체'}")
 
 
 def render(item, area, help_fn=None, live=None):                  # live = 지금 실행 중인 결과 폴더
     sp = S.SPEC[item]
     with area("box_spec_overview"):
-        st.markdown("#### 성과지표 현황 (AI 1 ~ AI 7)")
+        st.markdown("#### 성과지표 현황 (AI 1 ~ AI 7, DA 2)")
         ov = overview()
         st.dataframe(ov.style.map(lambda v: "background-color: #eff6ff; color: #1d4ed8; font-weight: 700"   # 진단 결과 열 = 파랑
                                   if v != "미실행" else "background-color: #eff6ff; color: #94a3b8", subset=["진단 결과"]),
                      hide_index=True, width="stretch")
+
+    if sp.get("da2"):
+        render_da2(item, sp, area)
+        return
 
     rs = runs(item)
     if not rs:
@@ -784,7 +1020,8 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             rest = list(r["tables"].items())[1:]
         else:
             rest = list(r["tables"].items())
-        rest = [(name, pct_view(df) if isinstance(df, pd.DataFrame) else df) for name, df in rest]
+        rest = [(name, pct_view(df) if isinstance(df, pd.DataFrame) else df) for name, df in rest
+                if name not in HIDE_TABLES.get(item, ())]          # 화면에서만 숨김 (result.xlsx에는 남음)
         for name, df in rest:
             st.markdown(f":orange[⚠️ **{name}**] — 시스템 판정을 받지 못해 판단불가(오답)로 집계된 건"
                         if name.startswith("응답 오류") else f"**{name}**")
@@ -898,6 +1135,24 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                ("필요 행정절차", "; ".join(rec.get("필요행정절차") or []) or none_why("인허가 절차 안내를")),
                ("설명문", rec.get("설명문") or "-"), ("추적 ID", rec.get("trace_id") or "-"),
                ("소요(초)", rec.get("소요초")), ("오류", " · ".join(x for x in S.error_detail(rec, run_dir) if x) or "없음 (정상 응답)")]
+        if item == "AI5" and "환각사유" in r["cases"]:          # 환각 판정과 사유 (정답 조문셋과 비교한 결과)
+            c5 = r["cases"].set_index("사례ID")
+            if cid in c5.index:
+                c5 = c5.loc[cid]
+                out[:0] = [("환각 판정", "환각" if c5["환각"] else "정상 응답"),
+                           ("환각 사유", c5["환각사유"] if c5["환각"] else "-"),
+                           ("정답 조문셋", c5["정답조문"] or "-"), ("정답 적용 법령", c5["정답_적용법령"] or "-")]
+        if item == "AI4" and "부적합사유" in r["cases"]:        # 적합 판정과 부적합 사유 (정답과 비교한 결과)
+            c4 = r["cases"].set_index("사례ID")
+            if cid in c4.index:
+                c4 = c4.loc[cid]
+                out[:0] = [("적합 판정", "적합" if c4["적합"] else "부적합"),
+                           ("부적합 사유", c4["부적합사유"] if not c4["적합"] else "-"),
+                           ("예외 유형", c4.get("예외유형") or "-"),
+                           ("정답 판정 결과", c4["정답_판정결과"]),
+                           ("정답 단서 조건 근거 조문", c4["정답_근거조문"] or "-"),
+                           ("정답 보완사항", c4.get("정답_보완사항") or "-"),
+                           ("정답 필요 행정절차", c4.get("정답_필요행정절차") or "-")]
         _o = pd.DataFrame(out, columns=["출력 항목", "값"]).astype(str)
         show_table(_o)
         steps = rec.get("단계로그") or []

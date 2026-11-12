@@ -1,0 +1,7 @@
+# CQ-001 대지가 도로에 2m 미만으로 접한 경우에도 건축이 허용되는 단서 조항은 무엇인가?
+# 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
+PREFIX aip: <https://onto.go.kr/aip/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?ans WHERE { { { ?L_h aip:lawName "건축법" . ?L_h aip:hasArticle ?h . ?h aip:articleTitle ?t_h . FILTER(CONTAINS(REPLACE(STR(?t_h), " ", ""), "대지와도로의관계")) } { ?h aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } { ?ans aip:hasUnit ?hh . } { ?hh aip:implementedBy ?hl_ans . } } UNION { { ?L_x aip:lawName "건축법" . ?L_x aip:hasArticle ?x . ?x aip:articleTitle ?t_x . FILTER(CONTAINS(REPLACE(STR(?t_x), " ", ""), "대지와도로의관계")) } { ?x aip:hasUnit/aip:hasUnit ?xh . } { ?xh aip:implementedBy ?xa . } { ?xa aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } } }
