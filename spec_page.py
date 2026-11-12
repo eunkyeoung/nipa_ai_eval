@@ -607,11 +607,13 @@ def render_da2(item, sp, area):
 .st-key-da2_tabs [data-testid="stTabs"] { width: 100%; }
 .st-key-da2_tabs [role="tablist"] { display: flex; width: 100%; gap: 6px; border-bottom: 3px solid #1d4ed8; padding: 0; }
 .st-key-da2_tabs [data-testid="stTab"] { flex: 1 1 0; min-width: 0; justify-content: center; height: auto; margin: 0;
-    padding: 13px 8px; background: #e2e8f0; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 10px 10px 0 0;
+    padding: 11px 10px; background: #e2e8f0; overflow: hidden; align-items: center; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 10px 10px 0 0;
     color: #334155; transition: background .15s; }
 .st-key-da2_tabs [data-testid="stTab"]:hover { background: #cbd5e1; color: #0f172a; }
 .st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff; }
-.st-key-da2_tabs [data-testid="stTab"] p { font-size: 15px; color: inherit; text-align: center; font-weight: 600; }
+.st-key-da2_tabs [data-testid="stTab"] p { font-size: 15px; color: inherit; text-align: center; font-weight: 600;
+    white-space: normal; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.35; }
+.st-key-da2_tabs [data-testid="stTab"] > div { min-width: 0; max-width: 100%; }
 .st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] p { font-weight: 700; }
 .st-key-da2_tabs .react-aria-SelectionIndicator { display: none; }
 </style>""", unsafe_allow_html=True)
