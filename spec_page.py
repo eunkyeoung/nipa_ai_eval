@@ -611,7 +611,7 @@ def render_da2(item, sp, area):
     color: #334155; transition: background .15s; }
 .st-key-da2_tabs [data-testid="stTab"]:hover { background: #dbeafe; color: #0f172a; }
 .st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff; }
-.st-key-da2_tabs [data-testid="stTab"] p { font-size: clamp(11.5px, 0.95vw, 13px); color: inherit; text-align: center; font-weight: 600;
+.st-key-da2_tabs [data-testid="stTab"] p { font-size: clamp(12.5px, 1.05vw, 14.5px); color: inherit; text-align: center; font-weight: 600;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; margin: 0; }   /* 항상 두 줄: 이름은 한 줄(좁으면 글자 축소) */
 .st-key-da2_tabs [data-testid="stTab"] p strong { display: block; font-size: inherit; font-weight: 700;
     opacity: .75; margin-bottom: 3px; }                                  /* 윗줄: 'DA 2-1' 번호 */
