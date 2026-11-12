@@ -566,6 +566,17 @@ def render_da2(item, sp, area):
         show_table(pd.DataFrame(rows))
         st.caption(f"산정식: {sp['formula']} · 종합 96 % 이상, 구성지표별 목표는 2-1 ~ 2-4 각 96 % 이상 · 결과는 소수점 셋째자리 이하 버림")
 
+    xbytes, zbytes = _da2_xlsx(run_dir, sp, sm, rows), _da2_logzip(run_dir)
+
+    def dl(i):
+        """상세 표 바로 아래: 결과 엑셀 · 로그 (AI 1 ~ 5 화면과 같은 자리). 보조 자료(펼침)는 그 아래"""
+        d1, d2 = st.columns(2)
+        d1.download_button("⬇ 결과 엑셀 (DA2_result.xlsx)", xbytes, file_name=f"DA2_result_{os.path.basename(run_dir)}.xlsx",
+                           key=f"dl_da2_xlsx_{i}", width="stretch", help="요약 + 구성지표별 시트(전체 행, 문제·사유 열 포함)")
+        d2.download_button("⬇ 로그 (DA2 실행 로그 zip)", zbytes, file_name=f"DA2_log_{os.path.basename(run_dir)}.zip",
+                           key=f"dl_da2_log_{i}", width="stretch",
+                           help="구성지표별 validation_result_da2.csv · summary.json · meta.json · OOPS! 응답 원문")
+
     tabs = st.tabs([f"{k} {n}" for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
     for i, (k, n, *_r) in enumerate(sp["parts"]):
         with tabs[i]:
@@ -598,6 +609,15 @@ def render_da2(item, sp, area):
                                               "expected_bindings": "정답", "actual_bindings": "실제 결과", "missing_bindings": "누락",
                                               "extra_bindings": "추가", "match": "일치"})[
                     ["CQ ID", "ODP 유형", "지자체", "질문", "문제", "사유", "정답", "실제 결과", "누락", "추가", "일치", "status", "error_message"]])
+                dl(i)
+                zp = os.path.join(run_dir, "data", "aips_da2_cq_testset.zip")
+                if os.path.exists(zp):
+                    import zipfile
+                    with st.expander("CQ별 SPARQL 질의 (동결한 시험셋)"):
+                        with zipfile.ZipFile(zp) as z:
+                            for _, r in full.iterrows():
+                                st.markdown(f"**{r['cq_id']}** {r['question']}")
+                                st.code(z.read(r["query_file"]).decode("utf-8"), language="sparql")
             elif i == 1:                                                    # 2-2 스키마: 항목군별 적합·부적합
                 g = full.groupby("item_group")["conforms"].agg(lambda s: (s == "true").sum()).rename("적합").to_frame()
                 g["전체"] = full.groupby("item_group").size()
@@ -607,6 +627,7 @@ def render_da2(item, sp, area):
                 _da2_table(df.rename(columns={"check_id": "평가항목", "item_group": "항목군", "description": "점검 내용", "method": "방법",
                                               "actual": "결과", "conforms": "적합", "focus_node": "위반 노드", "message": "내용"})[
                     ["평가항목", "항목군", "점검 내용", "문제", "사유", "방법", "결과", "적합", "위반 노드", "내용", "status", "error_message"]])
+                dl(i)
             elif i == 2:                                                    # 2-3 매핑: 검증 단위별 일치·불일치
                 units = [("class_match", "클래스 매핑"), ("property_match", "속성 매핑"), ("relation_match", "관계 매핑"),
                          ("datatype_match", "자료형"), ("exact_match", "정확 매핑(4개 모두)")]
@@ -622,6 +643,7 @@ def render_da2(item, sp, area):
                                               "lookup_path": "확인 경로", "source_key": "원천 레코드"}).reindex(
                     columns=["매핑 ID", "원천 필드", "원천 값", "문제", "사유", "원천 레코드", "대상 요소", "정답 매핑", "실제 매핑", "class_match",
                              "property_match", "relation_match", "datatype_match", "정확 매핑", "(보조) 값 일치", "온톨로지 값"], fill_value=""))
+                dl(i)
             else:                                                           # 2-4 일관성·무결성
                 s4 = read_json(os.path.join(d, "summary_da2_4.json"))
                 if s4:
@@ -637,6 +659,7 @@ def render_da2(item, sp, area):
                                               "location": "대상 위치(IRI @ 파일:줄)"}).reindex(
                     columns=["항목", "구분", "내용", "중요도", "문제", "사유", "검출", "건수", "영향 요소 수(계수 안 함)",
                              "대상", "status", "error_message"], fill_value=""))
+                dl(i)
                 st.caption("아래 펼침 표는 검출된 함정(문제)마다 그 함정에 걸린 요소 목록이라, '문제 사례만 보기'와 관계없이 같아요. 목록의 요소는 모두 문제 대상이에요.")
                 for _, r in df[df["check_id"].astype(str).str.startswith("OOPS")].iterrows():
                     try:
@@ -659,22 +682,6 @@ def render_da2(item, sp, area):
                                  for k, v in (meta.get("assets") or {}).items()]))
         show_table(pd.DataFrame([{"도구": k, "버전": v} for k, v in (meta.get("tools") or {}).items()]))
         st.caption(f"시작 {meta.get('started', '-')} · 구성지표 {meta.get('parts')} · CQ 선택 {meta.get('ids') or '전체'}")
-    d1, d2 = st.columns(2)                                              # AI 1 ~ 5 화면과 같이 맨 아래에 내려받기
-    d1.download_button("⬇ 결과 엑셀 (DA2_result.xlsx)", _da2_xlsx(run_dir, sp, sm, rows),
-                       file_name=f"DA2_result_{os.path.basename(run_dir)}.xlsx", key="dl_da2_xlsx", width="stretch",
-                       help="요약 + 구성지표별 시트(전체 행, 문제·사유 열 포함)")
-    d2.download_button("⬇ 로그 (DA2 실행 로그 zip)", _da2_logzip(run_dir),
-                       file_name=f"DA2_log_{os.path.basename(run_dir)}.zip", key="dl_da2_log", width="stretch",
-                       help="구성지표별 validation_result_da2.csv · summary.json · meta.json · OOPS! 응답 원문")
-    p1 = os.path.join(run_dir, "da2-1", "validation_result_da2.csv")       # 내려받기 아래: DA 2-1 CQ별 SPARQL 질의(동결본)
-    zp = os.path.join(run_dir, "data", "aips_da2_cq_testset.zip")
-    if os.path.exists(p1) and os.path.exists(zp):
-        import zipfile
-        with st.expander("DA 2-1 CQ별 SPARQL 질의 (동결한 시험셋)"):
-            with zipfile.ZipFile(zp) as z:
-                for _, r in _read_csv(p1).iterrows():
-                    st.markdown(f"**{r['cq_id']}** {r['question']}")
-                    st.code(z.read(r["query_file"]).decode("utf-8"), language="sparql")
 
 
 def render(item, area, help_fn=None):
