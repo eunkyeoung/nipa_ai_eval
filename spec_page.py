@@ -659,7 +659,7 @@ def render_da2(item, sp, area):
                     body = "".join(f"<tr><td style='{td}'>{_h.escape(str(a))}</td><td style='{td}'>{_h.escape(str(b))}</td>"
                                    f"<td style='{td};text-align:right'>{_h.escape(str(c))}</td><td style='{td};text-align:right'>{_h.escape(str(e))}</td></tr>"
                                    for a, b, c, e in rows4)
-                    tot = "background:#eff6ff;color:#1d4ed8;font-weight:700"
+                    tot = "background:#f8fafc;font-weight:600"                 # 합계 행: 옅은 회색 배경·반굵게(파랑은 너무 튐, 11-12 사용자)
                     body += (f"<tr style='{tot}'><td style='{td}'>논리적 일관성·무결성</td>"
                              f"<td style='{td}' colspan='2'>(일관성 점수 + 함정 점수) / 2</td>"
                              f"<td style='{td};text-align:right'>{_h.escape(str(s4.get('value')))}</td></tr>")
