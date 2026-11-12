@@ -598,14 +598,6 @@ def render_da2(item, sp, area):
                                               "expected_bindings": "정답", "actual_bindings": "실제 결과", "missing_bindings": "누락",
                                               "extra_bindings": "추가", "match": "일치"})[
                     ["CQ ID", "ODP 유형", "지자체", "질문", "문제", "사유", "정답", "실제 결과", "누락", "추가", "일치", "status", "error_message"]])
-                with st.expander("CQ별 SPARQL 질의"):
-                    import zipfile
-                    zp = os.path.join(run_dir, "data", "aips_da2_cq_testset.zip")
-                    if os.path.exists(zp):
-                        with zipfile.ZipFile(zp) as z:
-                            for _, r in df.iterrows():
-                                st.markdown(f"**{r['cq_id']}** {r['question']}")
-                                st.code(z.read(r["query_file"]).decode("utf-8"), language="sparql")
             elif i == 1:                                                    # 2-2 스키마: 항목군별 적합·부적합
                 g = full.groupby("item_group")["conforms"].agg(lambda s: (s == "true").sum()).rename("적합").to_frame()
                 g["전체"] = full.groupby("item_group").size()
@@ -674,6 +666,15 @@ def render_da2(item, sp, area):
     d2.download_button("⬇ 로그 (DA2 실행 로그 zip)", _da2_logzip(run_dir),
                        file_name=f"DA2_log_{os.path.basename(run_dir)}.zip", key="dl_da2_log", width="stretch",
                        help="구성지표별 validation_result_da2.csv · summary.json · meta.json · OOPS! 응답 원문")
+    p1 = os.path.join(run_dir, "da2-1", "validation_result_da2.csv")       # 내려받기 아래: DA 2-1 CQ별 SPARQL 질의(동결본)
+    zp = os.path.join(run_dir, "data", "aips_da2_cq_testset.zip")
+    if os.path.exists(p1) and os.path.exists(zp):
+        import zipfile
+        with st.expander("DA 2-1 CQ별 SPARQL 질의 (동결한 시험셋)"):
+            with zipfile.ZipFile(zp) as z:
+                for _, r in _read_csv(p1).iterrows():
+                    st.markdown(f"**{r['cq_id']}** {r['question']}")
+                    st.code(z.read(r["query_file"]).decode("utf-8"), language="sparql")
 
 
 def render(item, area, help_fn=None):
