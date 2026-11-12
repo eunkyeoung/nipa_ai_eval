@@ -600,16 +600,16 @@ def render_da2(item, sp, area):
                            key=f"dl_da2_log_{i}", width="stretch",
                            help="구성지표별 validation_result_da2.csv · summary.json · meta.json · OOPS! 응답 원문")
 
-    # 탭 디자인(11-12 사용자): 흰 바탕 탭은 눈에 안 띔 → 대비가 강한 채움형. 선택 안 한 탭 = 진한 회색 바탕·테두리,
+    # 탭 디자인(11-12 사용자): 흰 바탕 탭은 눈에 안 띔 → 대비가 강한 채움형. 선택 안 한 탭 = 상단 제목 상자(.aips-item)와 같은 바탕 #eff6ff·테두리 #93c5fd(11-12 사용자),
     #   선택 탭 = 파랑 채움·흰 굵은 글씨, 탭 줄 아래 파란 선. 폭 꽉 채움·같은 너비
     # Streamlit 1.66 탭 구조(react-aria): role=tablist, data-testid=stTab, aria-selected, .react-aria-SelectionIndicator(밑줄)
     st.markdown("""<style>
 .st-key-da2_tabs [data-testid="stTabs"] { width: 100%; }
 .st-key-da2_tabs [role="tablist"] { display: flex; width: 100%; gap: 6px; border-bottom: 3px solid #1d4ed8; padding: 0; }
 .st-key-da2_tabs [data-testid="stTab"] { flex: 1 1 0; min-width: 0; justify-content: center; height: auto; margin: 0;
-    padding: 9px 8px; background: #e2e8f0; overflow: hidden; align-items: center; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 10px 10px 0 0;
+    padding: 9px 8px; background: #eff6ff; overflow: hidden; align-items: center; border: 1px solid #93c5fd; border-bottom: none; border-radius: 10px 10px 0 0;
     color: #334155; transition: background .15s; }
-.st-key-da2_tabs [data-testid="stTab"]:hover { background: #cbd5e1; color: #0f172a; }
+.st-key-da2_tabs [data-testid="stTab"]:hover { background: #dbeafe; color: #0f172a; }
 .st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff; }
 .st-key-da2_tabs [data-testid="stTab"] p { font-size: clamp(11.5px, 0.95vw, 13px); color: inherit; text-align: center; font-weight: 600;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; margin: 0; }   /* 항상 두 줄: 이름은 한 줄(좁으면 글자 축소) */
