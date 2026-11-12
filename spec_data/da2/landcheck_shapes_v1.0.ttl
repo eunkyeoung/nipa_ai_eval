@@ -1,1120 +1,583 @@
 PREFIX aip:  <https://onto.go.kr/aip/>
-PREFIX owl:  <http://www.w3.org/2002/07/owl#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh:   <http://www.w3.org/ns/shacl#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 
-aip:LawShape  a  <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "lawId는 법제처 코드 — 국가법령 6자리 / 조례 7자리 / 행정규칙ID 5~7자리 (불변·유일). 명칭 불가"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:lawId;
-                  <http://www.w3.org/ns/shacl#pattern>
-                          "^[0-9]{5,7}$"
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "lawName(정식 명칭 라벨) 필수·단일"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:lawName
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#boolean>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "isSpecialLaw는 boolean 0..1 (없으면 일반법=false)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:isSpecialLaw
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#integer>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#maxInclusive>
-                          6;
-                  <http://www.w3.org/ns/shacl#message>
-                          "hierarchy는 1~6 정수 0..1 (DR-139, 4대 원칙 3-1 입력). 옵셔널 — build_ttl 투영"@ko;
-                  <http://www.w3.org/ns/shacl#minInclusive>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:hierarchy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#date>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "effectiveFrom는 date 0..1 (4대 원칙 3-3 입력). 옵셔널"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:effectiveFrom
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#date>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "amendedOn는 date 0..1 — 개정 법률의 공포일(시행일 아님 · 2026-09-15). 옵셔널"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:amendedOn
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "tenantBjd는 BJD 10자리 0..1 (DR-008·DR-146 cascade). 옵셔널"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:tenantBjd;
-                  <http://www.w3.org/ns/shacl#pattern>
-                          "^[0-9]{10}$"
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Article;
-                  <http://www.w3.org/ns/shacl#message>
-                          "hasArticle 타겟은 실존 Article (인용 무결성)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:hasArticle
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Appendix;
-                  <http://www.w3.org/ns/shacl#message>
-                          "hasAppendix 타겟은 실존 Appendix"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:hasAppendix
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Law;
-                  <http://www.w3.org/ns/shacl#message>
-                          "parentLaw 타겟은 실존 Law (위계 부모 dangling 차단)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:parentLaw
-                ];
-        <http://www.w3.org/ns/shacl#sparql>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "lawId(식별 코드)는 전역 유일 — 명칭이 같아도(동명이법) 코드는 다름"@ko;
-                  <http://www.w3.org/ns/shacl#select>
-                          "\r\n            PREFIX aip: <https://onto.go.kr/aip/>\r\n            SELECT $this WHERE {\r\n                $this aip:lawId ?id .\r\n                ?other aip:lawId ?id .\r\n                FILTER (?other != $this)\r\n            }\r\n        "
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Law .
+aip:LawShape  a         sh:NodeShape;
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "lawId는 법제처 코드 — 국가법령 6자리 / 조례 7자리 / 행정규칙ID 5~7자리 (불변·유일). 명칭 불가"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:lawId;
+                          sh:pattern   "^[0-9]{5,7}$"
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "lawName(정식 명칭 라벨) 필수·단일"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:lawName
+                        ];
+        sh:property     [ sh:datatype  xsd:boolean;
+                          sh:maxCount  1;
+                          sh:message   "isSpecialLaw는 boolean 0..1 (없으면 일반법=false)"@ko;
+                          sh:path      aip:isSpecialLaw
+                        ];
+        sh:property     [ sh:datatype      xsd:integer;
+                          sh:maxCount      1;
+                          sh:maxInclusive  6;
+                          sh:message       "hierarchy는 1~6 정수 0..1 (DR-139, 4대 원칙 3-1 입력). 옵셔널 — build_ttl 투영"@ko;
+                          sh:minInclusive  1;
+                          sh:path          aip:hierarchy
+                        ];
+        sh:property     [ sh:datatype  xsd:date;
+                          sh:maxCount  1;
+                          sh:message   "effectiveFrom는 date 0..1 (4대 원칙 3-3 입력). 옵셔널"@ko;
+                          sh:path      aip:effectiveFrom
+                        ];
+        sh:property     [ sh:datatype  xsd:date;
+                          sh:maxCount  1;
+                          sh:message   "amendedOn는 date 0..1 — 개정 법률의 공포일(시행일 아님 · 2026-09-15). 옵셔널"@ko;
+                          sh:path      aip:amendedOn
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "tenantBjd는 BJD 10자리 0..1 (DR-008·DR-146 cascade). 옵셔널"@ko;
+                          sh:path      aip:tenantBjd;
+                          sh:pattern   "^[0-9]{10}$"
+                        ];
+        sh:property     [ sh:class    aip:Article;
+                          sh:message  "hasArticle 타겟은 실존 Article (인용 무결성)"@ko;
+                          sh:path     aip:hasArticle
+                        ];
+        sh:property     [ sh:class    aip:Appendix;
+                          sh:message  "hasAppendix 타겟은 실존 Appendix"@ko;
+                          sh:path     aip:hasAppendix
+                        ];
+        sh:property     [ sh:class    aip:Law;
+                          sh:message  "parentLaw 타겟은 실존 Law (위계 부모 dangling 차단)"@ko;
+                          sh:path     aip:parentLaw
+                        ];
+        sh:sparql       [ sh:message  "lawId(식별 코드)는 전역 유일 — 명칭이 같아도(동명이법) 코드는 다름"@ko;
+                          sh:select   "\r\n            PREFIX aip: <https://onto.go.kr/aip/>\r\n            SELECT $this WHERE {\r\n                $this aip:lawId ?id .\r\n                ?other aip:lawId ?id .\r\n                FILTER (?other != $this)\r\n            }\r\n        "
+                        ];
+        sh:targetClass  aip:Law .
 
-aip:ArticleShape  a  <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "articleNo는 dash 정규형 '44'·'32-2' 또는 훈령 3단계 '3-1-1' (raw '제32조의2'→'32-2' 정규화, 의 금지). 별표는 Appendix"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:articleNo;
-                  <http://www.w3.org/ns/shacl#pattern>
-                          "^[0-9]+(-[0-9]+){0,2}$"
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:articleTitle
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#boolean>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "isDeleted는 boolean 0..1 (없으면 살아 있는 조)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:isDeleted
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#date>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "Article effectiveFrom는 date 0..1 (조문시행일자). 옵셔널"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:effectiveFrom
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#date>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "Article amendedOn는 date 0..1 (개정 공포일). 옵셔널"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:amendedOn
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Article;
-                  <http://www.w3.org/ns/shacl#message>
-                          "implementedBy 타겟은 실존 Article (하위 조문 dangling 차단)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:implementedBy
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Article .
+aip:ArticleShape  a     sh:NodeShape;
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "articleNo는 dash 정규형 '44'·'32-2' 또는 훈령 3단계 '3-1-1' (raw '제32조의2'→'32-2' 정규화, 의 금지). 별표는 Appendix"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:articleNo;
+                          sh:pattern   "^[0-9]+(-[0-9]+){0,2}$"
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:path      aip:articleTitle
+                        ];
+        sh:property     [ sh:datatype  xsd:boolean;
+                          sh:maxCount  1;
+                          sh:message   "isDeleted는 boolean 0..1 (없으면 살아 있는 조)"@ko;
+                          sh:path      aip:isDeleted
+                        ];
+        sh:property     [ sh:datatype  xsd:date;
+                          sh:maxCount  1;
+                          sh:message   "Article effectiveFrom는 date 0..1 (조문시행일자). 옵셔널"@ko;
+                          sh:path      aip:effectiveFrom
+                        ];
+        sh:property     [ sh:datatype  xsd:date;
+                          sh:maxCount  1;
+                          sh:message   "Article amendedOn는 date 0..1 (개정 공포일). 옵셔널"@ko;
+                          sh:path      aip:amendedOn
+                        ];
+        sh:property     [ sh:class    aip:Article;
+                          sh:message  "implementedBy 타겟은 실존 Article (하위 조문 dangling 차단)"@ko;
+                          sh:path     aip:implementedBy
+                        ];
+        sh:targetClass  aip:Article .
 
-aip:AppendixShape  a  <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "별표 번호는 '7'·'2의2' (canonical=의, dash형 '4-2' 금지 — 수집오류 표기 / '0' 금지 — 법제처 '번호 없음' 표식)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:appendixNo;
-                  <http://www.w3.org/ns/shacl#pattern>
-                          "^[1-9][0-9]*(의[0-9]+)?$"
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#in>
-                          ( "별표" "별도" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "appendixKind는 '별표'|'별도' 0..1 (없으면 별표. 원천 별표구분 verbatim — 서식은 미적재)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:appendixKind
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:appendixTitle
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:ArticleUnit;
-                  <http://www.w3.org/ns/shacl#message>
-                          "별표 hasUnit 타겟은 실존 ArticleUnit (분류 별표 호/목 — 항/호/목 LIGHT 슬롯 확장)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:hasUnit
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "relatedArticle 타겟은 실존 Article 또는 ArticleUnit (별표→근거조문/호 dangling 차단 — S3 협의)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:relatedArticle
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Appendix .
+aip:AppendixShape  a    sh:NodeShape;
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "별표 번호는 '7'·'2의2' (canonical=의, dash형 '4-2' 금지 — 수집오류 표기 / '0' 금지 — 법제처 '번호 없음' 표식)"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:appendixNo;
+                          sh:pattern   "^[1-9][0-9]*(의[0-9]+)?$"
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:in        ( "별표" "별도" );
+                          sh:maxCount  1;
+                          sh:message   "appendixKind는 '별표'|'별도' 0..1 (없으면 별표. 원천 별표구분 verbatim — 서식은 미적재)"@ko;
+                          sh:path      aip:appendixKind
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:path      aip:appendixTitle
+                        ];
+        sh:property     [ sh:class    aip:ArticleUnit;
+                          sh:message  "별표 hasUnit 타겟은 실존 ArticleUnit (분류 별표 호/목 — 항/호/목 LIGHT 슬롯 확장)"@ko;
+                          sh:path     aip:hasUnit
+                        ];
+        sh:property     [ sh:message  "relatedArticle 타겟은 실존 Article 또는 ArticleUnit (별표→근거조문/호 dangling 차단 — S3 협의)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:relatedArticle
+                        ];
+        sh:targetClass  aip:Appendix .
 
-aip:ArticleUnitShape  a  <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#in>
-                          ( "항" "호" "목" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "unitType은 항·호·목 중 하나"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:unitType
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "unitNo(번호·글자) 필수·단일 — 항'1'·호'6'·목'아'"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:unitNo
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "unitLabel은 짧은 라벨(업종명) — 본문 산문 아님(RAG)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:unitLabel
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "implementedBy 타겟은 실존 Article∪ArticleUnit∪Appendix (단위 subject dangling 차단 — 위계 단위매핑·zone→용도 파생 shortcut)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Appendix ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:implementedBy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "borrowsDefinitionFrom 타겟은 실존 Law·Article·ArticleUnit (단위 subject · 모델 개편 §7 R3 C)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Law ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:borrowsDefinitionFrom
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "subjectQualifiedBy 타겟은 실존 Article·ArticleUnit (단위 subject · unit 입도 확장·주체 자격)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:subjectQualifiedBy
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:ArticleUnit .
+aip:ArticleUnitShape  a  sh:NodeShape;
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:in        ( "항" "호" "목" );
+                          sh:maxCount  1;
+                          sh:message   "unitType은 항·호·목 중 하나"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:unitType
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "unitNo(번호·글자) 필수·단일 — 항'1'·호'6'·목'아'"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:unitNo
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "unitLabel은 짧은 라벨(업종명) — 본문 산문 아님(RAG)"@ko;
+                          sh:path      aip:unitLabel
+                        ];
+        sh:property     [ sh:message  "implementedBy 타겟은 실존 Article∪ArticleUnit∪Appendix (단위 subject dangling 차단 — 위계 단위매핑·zone→용도 파생 shortcut)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                        [ sh:class  aip:Appendix ]
+                                      );
+                          sh:path     aip:implementedBy
+                        ];
+        sh:property     [ sh:message  "borrowsDefinitionFrom 타겟은 실존 Law·Article·ArticleUnit (단위 subject · 모델 개편 §7 R3 C)"@ko;
+                          sh:or       ( [ sh:class  aip:Law ]
+                                        [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:borrowsDefinitionFrom
+                        ];
+        sh:property     [ sh:message  "subjectQualifiedBy 타겟은 실존 Article·ArticleUnit (단위 subject · unit 입도 확장·주체 자격)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:subjectQualifiedBy
+                        ];
+        sh:targetClass  aip:ArticleUnit .
 
-aip:PermitShape  a  <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:permitName
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Article;
-                  <http://www.w3.org/ns/shacl#message>
-                          "Permit.basedOnArticle은 실존 Article을 가리켜야 함 (dangling 차단 — 인용 무결성)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:basedOnArticle
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Permit .
+aip:PermitShape  a      sh:NodeShape;
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:minCount  1;
+                          sh:path      aip:permitName
+                        ];
+        sh:property     [ sh:class     aip:Article;
+                          sh:message   "Permit.basedOnArticle은 실존 Article을 가리켜야 함 (dangling 차단 — 인용 무결성)"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:basedOnArticle
+                        ];
+        sh:targetClass  aip:Permit .
 
 aip:CrossLawSourceShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "delegatesTo 타겟은 실존 Law·Article·ArticleUnit (타법 위임 dangling 차단 — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Law ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:delegatesTo
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "deemedApprovalTo 타겟은 실존 Law·Article·ArticleUnit (의제 dangling 차단 — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Law ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:deemedApprovalTo
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Law;
-                  <http://www.w3.org/ns/shacl#message>
-                          "excludesLaw 타겟은 실존 Law (배제 dangling 차단 — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:excludesLaw
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "excludesArticle 타겟은 실존 Article·ArticleUnit (배제 dangling 차단 — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:excludesArticle
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "mustComplyWith 타겟은 실존 Article·ArticleUnit (준수 dangling 차단 — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:mustComplyWith
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "borrowsDefinitionFrom 타겟은 실존 Law·Article·ArticleUnit (정의차용 dangling 차단 — 모델 개편 §7 R3 C·unit 입도 확장·주체 자격)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Law ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:borrowsDefinitionFrom
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "subjectQualifiedBy 타겟은 실존 Article·ArticleUnit (주체 자격 dangling 차단 — unit 입도 확장·주체 자격)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:subjectQualifiedBy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#message>
-                          "boundaryRef는 in→out 경계 cross-law 기록 string `<한글관계>: <법명> 제N조` (모델 개편 §7 Y')"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:boundaryRef
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Article .
+        a               sh:NodeShape;
+        sh:property     [ sh:message  "delegatesTo 타겟은 실존 Law·Article·ArticleUnit (타법 위임 dangling 차단 — 모델 개편 §7 R2)"@ko;
+                          sh:or       ( [ sh:class  aip:Law ]
+                                        [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:delegatesTo
+                        ];
+        sh:property     [ sh:message  "deemedApprovalTo 타겟은 실존 Law·Article·ArticleUnit (의제 dangling 차단 — 모델 개편 §7 R2)"@ko;
+                          sh:or       ( [ sh:class  aip:Law ]
+                                        [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:deemedApprovalTo
+                        ];
+        sh:property     [ sh:class    aip:Law;
+                          sh:message  "excludesLaw 타겟은 실존 Law (배제 dangling 차단 — 모델 개편 §7 R2)"@ko;
+                          sh:path     aip:excludesLaw
+                        ];
+        sh:property     [ sh:message  "excludesArticle 타겟은 실존 Article·ArticleUnit (배제 dangling 차단 — 모델 개편 §7 R2)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:excludesArticle
+                        ];
+        sh:property     [ sh:message  "mustComplyWith 타겟은 실존 Article·ArticleUnit (준수 dangling 차단 — 모델 개편 §7 R2)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:mustComplyWith
+                        ];
+        sh:property     [ sh:message  "borrowsDefinitionFrom 타겟은 실존 Law·Article·ArticleUnit (정의차용 dangling 차단 — 모델 개편 §7 R3 C·unit 입도 확장·주체 자격)"@ko;
+                          sh:or       ( [ sh:class  aip:Law ]
+                                        [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:borrowsDefinitionFrom
+                        ];
+        sh:property     [ sh:message  "subjectQualifiedBy 타겟은 실존 Article·ArticleUnit (주체 자격 dangling 차단 — unit 입도 확장·주체 자격)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:subjectQualifiedBy
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:message   "boundaryRef는 in→out 경계 cross-law 기록 string `<한글관계>: <법명> 제N조` (모델 개편 §7 Y')"@ko;
+                          sh:path      aip:boundaryRef
+                        ];
+        sh:targetClass  aip:Article .
 
 aip:CrossLawAppendixSourceShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "delegatesTo 타겟은 실존 Law·Article·ArticleUnit (별표 SOURCE — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Law ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:delegatesTo
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "deemedApprovalTo 타겟은 실존 Law·Article·ArticleUnit (별표 SOURCE — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Law ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:deemedApprovalTo
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Law;
-                  <http://www.w3.org/ns/shacl#message>
-                          "excludesLaw 타겟은 실존 Law (별표 SOURCE — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:excludesLaw
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "excludesArticle 타겟은 실존 Article·ArticleUnit (별표 SOURCE — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:excludesArticle
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "mustComplyWith 타겟은 실존 Article·ArticleUnit (별표 SOURCE — 모델 개편 §7 R2)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:mustComplyWith
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "borrowsDefinitionFrom 타겟은 실존 Law·Article·ArticleUnit (별표 SOURCE — unit 입도 확장·주체 자격)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Law ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:borrowsDefinitionFrom
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "subjectQualifiedBy 타겟은 실존 Article·ArticleUnit (별표 SOURCE — unit 입도 확장·주체 자격)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:subjectQualifiedBy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#message>
-                          "boundaryRef는 in→out 경계 cross-law 기록 string (별표 SOURCE — 모델 개편 §7 Y')"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:boundaryRef
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Appendix .
+        a               sh:NodeShape;
+        sh:property     [ sh:message  "delegatesTo 타겟은 실존 Law·Article·ArticleUnit (별표 SOURCE — 모델 개편 §7 R2)"@ko;
+                          sh:or       ( [ sh:class  aip:Law ]
+                                        [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:delegatesTo
+                        ];
+        sh:property     [ sh:message  "deemedApprovalTo 타겟은 실존 Law·Article·ArticleUnit (별표 SOURCE — 모델 개편 §7 R2)"@ko;
+                          sh:or       ( [ sh:class  aip:Law ]
+                                        [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:deemedApprovalTo
+                        ];
+        sh:property     [ sh:class    aip:Law;
+                          sh:message  "excludesLaw 타겟은 실존 Law (별표 SOURCE — 모델 개편 §7 R2)"@ko;
+                          sh:path     aip:excludesLaw
+                        ];
+        sh:property     [ sh:message  "excludesArticle 타겟은 실존 Article·ArticleUnit (별표 SOURCE — 모델 개편 §7 R2)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:excludesArticle
+                        ];
+        sh:property     [ sh:message  "mustComplyWith 타겟은 실존 Article·ArticleUnit (별표 SOURCE — 모델 개편 §7 R2)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:mustComplyWith
+                        ];
+        sh:property     [ sh:message  "borrowsDefinitionFrom 타겟은 실존 Law·Article·ArticleUnit (별표 SOURCE — unit 입도 확장·주체 자격)"@ko;
+                          sh:or       ( [ sh:class  aip:Law ]
+                                        [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:borrowsDefinitionFrom
+                        ];
+        sh:property     [ sh:message  "subjectQualifiedBy 타겟은 실존 Article·ArticleUnit (별표 SOURCE — unit 입도 확장·주체 자격)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:subjectQualifiedBy
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:message   "boundaryRef는 in→out 경계 cross-law 기록 string (별표 SOURCE — 모델 개편 §7 Y')"@ko;
+                          sh:path      aip:boundaryRef
+                        ];
+        sh:targetClass  aip:Appendix .
 
-aip:ZoneShape  a  <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "notation은 표준분류코드 코드값 — 필수·단일 (식별자·웨이버스 조인키, 예 'UEA110')"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          skos:notation
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#in>
-                          ( "용도지역" "용도지구" "용도구역" "개별법구역" "도시계획시설" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "zoneCategory는 용도지역·용도지구·용도구역·개별법구역·도시계획시설 중 하나 (필수)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:zoneCategory
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "definedBy 타겟은 실존 Article·ArticleUnit (정의 근거 dangling 차단 — zone grounding)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:definedBy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "designatedBy 타겟은 실존 Article·ArticleUnit (지정 근거 dangling 차단 — zone grounding)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:designatedBy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "restrictedBy 타겟은 실존 Article·Appendix·ArticleUnit (행위제한 근거 dangling 차단 — zone grounding)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Appendix ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:restrictedBy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "restrictionBasis 타겟은 실존 Article·Appendix·ArticleUnit (법적 기초 dangling 차단)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Appendix ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:restrictionBasis
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "exemptedBy 타겟은 실존 Article·Appendix·ArticleUnit (적용 배제 근거 dangling 차단 — 2026-09-09)"@ko;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Appendix ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:exemptedBy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Zone;
-                  <http://www.w3.org/ns/shacl#message>
-                          "exemptedIn 타겟은 실존 Zone (적용 배제 성립 구역 dangling 차단 — 2026-09-09)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:exemptedIn
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Zone;
-                  <http://www.w3.org/ns/shacl#message>
-                          "exemptsZone 타겟은 실존 Zone (역방향 파생 dangling 차단 — 2026-09-09)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:exemptsZone
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Exemption;
-                  <http://www.w3.org/ns/shacl#message>
-                          "hasExemption 타겟은 실존 aip:Exemption 노드 (적용 배제 쌍 노드 dangling 차단 — 2026-09-11)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:hasExemption
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Law;
-                  <http://www.w3.org/ns/shacl#message>
-                          "governedBy 타겟은 실존 Law (규율 법령 dangling 차단 — zone grounding)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:governedBy
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Zone;
-                  <http://www.w3.org/ns/shacl#message>
-                          "Zone broader 타겟은 실존 Zone (계층 dangling 차단)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          skos:broader
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#message>
-                          "zoneBoundaryRef는 out-of-scope 근거 경계 기록 string `<축관계>: <법명> 제N조` (정의/지정/행위제한/규율 — zone grounding)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:zoneBoundaryRef
-                ];
-        <http://www.w3.org/ns/shacl#sparql>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "notation(표준분류코드 코드값)은 aip:Zone 전역 유일 — 웨이버스 조인키"@ko;
-                  <http://www.w3.org/ns/shacl#select>
-                          "\r\n            PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\r\n            PREFIX aip: <https://onto.go.kr/aip/>\r\n            SELECT $this WHERE {\r\n                $this a aip:Zone ; skos:notation ?code .\r\n                ?other a aip:Zone ; skos:notation ?code .\r\n                FILTER (?other != $this)\r\n            }\r\n        "
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Zone .
+aip:ZoneShape  a        sh:NodeShape;
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "notation은 표준분류코드 코드값 — 필수·단일 (식별자·웨이버스 조인키, 예 'UEA110')"@ko;
+                          sh:minCount  1;
+                          sh:path      skos:notation
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:in        ( "용도지역" "용도지구" "용도구역" "개별법구역" "도시계획시설" );
+                          sh:maxCount  1;
+                          sh:message   "zoneCategory는 용도지역·용도지구·용도구역·개별법구역·도시계획시설 중 하나 (필수)"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:zoneCategory
+                        ];
+        sh:property     [ sh:message  "definedBy 타겟은 실존 Article·ArticleUnit (정의 근거 dangling 차단 — zone grounding)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:definedBy
+                        ];
+        sh:property     [ sh:message  "designatedBy 타겟은 실존 Article·ArticleUnit (지정 근거 dangling 차단 — zone grounding)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:designatedBy
+                        ];
+        sh:property     [ sh:message  "restrictedBy 타겟은 실존 Article·Appendix·ArticleUnit (행위제한 근거 dangling 차단 — zone grounding)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:Appendix ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:restrictedBy
+                        ];
+        sh:property     [ sh:message  "restrictionBasis 타겟은 실존 Article·Appendix·ArticleUnit (법적 기초 dangling 차단)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:Appendix ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:restrictionBasis
+                        ];
+        sh:property     [ sh:message  "exemptedBy 타겟은 실존 Article·Appendix·ArticleUnit (적용 배제 근거 dangling 차단 — 2026-09-09)"@ko;
+                          sh:or       ( [ sh:class  aip:Article ]
+                                        [ sh:class  aip:Appendix ]
+                                        [ sh:class  aip:ArticleUnit ]
+                                      );
+                          sh:path     aip:exemptedBy
+                        ];
+        sh:property     [ sh:class    aip:Zone;
+                          sh:message  "exemptedIn 타겟은 실존 Zone (적용 배제 성립 구역 dangling 차단 — 2026-09-09)"@ko;
+                          sh:path     aip:exemptedIn
+                        ];
+        sh:property     [ sh:class    aip:Zone;
+                          sh:message  "exemptsZone 타겟은 실존 Zone (역방향 파생 dangling 차단 — 2026-09-09)"@ko;
+                          sh:path     aip:exemptsZone
+                        ];
+        sh:property     [ sh:class    aip:Exemption;
+                          sh:message  "hasExemption 타겟은 실존 aip:Exemption 노드 (적용 배제 쌍 노드 dangling 차단 — 2026-09-11)"@ko;
+                          sh:path     aip:hasExemption
+                        ];
+        sh:property     [ sh:class    aip:Law;
+                          sh:message  "governedBy 타겟은 실존 Law (규율 법령 dangling 차단 — zone grounding)"@ko;
+                          sh:path     aip:governedBy
+                        ];
+        sh:property     [ sh:class    aip:Zone;
+                          sh:message  "Zone broader 타겟은 실존 Zone (계층 dangling 차단)"@ko;
+                          sh:path     skos:broader
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:message   "zoneBoundaryRef는 out-of-scope 근거 경계 기록 string `<축관계>: <법명> 제N조` (정의/지정/행위제한/규율 — zone grounding)"@ko;
+                          sh:path      aip:zoneBoundaryRef
+                        ];
+        sh:sparql       [ sh:message  "notation(표준분류코드 코드값)은 aip:Zone 전역 유일 — 웨이버스 조인키"@ko;
+                          sh:select   "\r\n            PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\r\n            PREFIX aip: <https://onto.go.kr/aip/>\r\n            SELECT $this WHERE {\r\n                $this a aip:Zone ; skos:notation ?code .\r\n                ?other a aip:Zone ; skos:notation ?code .\r\n                FILTER (?other != $this)\r\n            }\r\n        "
+                        ];
+        sh:targetClass  aip:Zone .
 
 aip:RestrictionKindShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#in>
-                          ( "USE" "SITE_METRIC" "SCALE" "건폐율" "용적률" );
-                  <http://www.w3.org/ns/shacl#message>
-                          "restrictionKind는 USE|SITE_METRIC|SCALE|건폐율|용적률 중 — 다중 가능(한 조문이 복수 유형을 규율한다)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:restrictionKind
-                ];
-        <http://www.w3.org/ns/shacl#targetSubjectsOf>
-                aip:restrictionKind .
+        a                    sh:NodeShape;
+        sh:property          [ sh:datatype  xsd:string;
+                               sh:in        ( "USE" "SITE_METRIC" "SCALE" "건폐율" "용적률" );
+                               sh:message   "restrictionKind는 USE|SITE_METRIC|SCALE|건폐율|용적률 중 — 다중 가능(한 조문이 복수 유형을 규율한다)"@ko;
+                               sh:path      aip:restrictionKind
+                             ];
+        sh:targetSubjectsOf  aip:restrictionKind .
 
 aip:RestrictionRoleShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#in>
-                          ( "HUB" "DETAIL" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "restrictionRole는 HUB|DETAIL 중 하나 (zone grounding)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:restrictionRole
-                ];
-        <http://www.w3.org/ns/shacl#targetSubjectsOf>
-                aip:restrictionRole .
+        a                    sh:NodeShape;
+        sh:property          [ sh:datatype  xsd:string;
+                               sh:in        ( "HUB" "DETAIL" );
+                               sh:maxCount  1;
+                               sh:message   "restrictionRole는 HUB|DETAIL 중 하나 (zone grounding)"@ko;
+                               sh:path      aip:restrictionRole
+                             ];
+        sh:targetSubjectsOf  aip:restrictionRole .
 
 aip:ArticleSummaryShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#maxLength>
-                          2000;
-                  <http://www.w3.org/ns/shacl#message>
-                          "articleSummary는 10~2000자 단일 요약 (파생 annotation — 원문 통째 복사 금지, zone grounding)"@ko;
-                  <http://www.w3.org/ns/shacl#minLength>
-                          10;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:articleSummary
-                ];
-        <http://www.w3.org/ns/shacl#targetSubjectsOf>
-                aip:articleSummary .
+        a                    sh:NodeShape;
+        sh:property          [ sh:datatype   xsd:string;
+                               sh:maxCount   1;
+                               sh:maxLength  2000;
+                               sh:message    "articleSummary는 10~2000자 단일 요약 (파생 annotation — 원문 통째 복사 금지, zone grounding)"@ko;
+                               sh:minLength  10;
+                               sh:path       aip:articleSummary
+                             ];
+        sh:targetSubjectsOf  aip:articleSummary .
 
-aip:SidoShape  a  <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "notation은 법정동코드 앞 2자리 ('11'·'51') — 필수·단일 (Sido 참조 축)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          skos:notation;
-                  <http://www.w3.org/ns/shacl#pattern>
-                          "^[0-9]{2}$"
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "prefLabel(시도명) 필수·단일"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          skos:prefLabel
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "sidoKind는 지자체 종류 한글 법문 1개 (값 ⊆ 지방자치법 제2조①1호 열거는 corpus-대조 validator — Sido 참조 축)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:sidoKind
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Article;
-                  <http://www.w3.org/ns/shacl#message>
-                          "definedBy는 실존 Article ≥1 (지방자치법 제2조 — dangling 차단, Sido 참조 축)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:definedBy
-                ];
-        <http://www.w3.org/ns/shacl#sparql>
-                [ <http://www.w3.org/ns/shacl#message>
-                          "notation(코드 2자리)은 aip:Sido 전역 유일"@ko;
-                  <http://www.w3.org/ns/shacl#select>
-                          "\r\n            PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\r\n            PREFIX aip: <https://onto.go.kr/aip/>\r\n            SELECT $this WHERE {\r\n                $this a aip:Sido ; skos:notation ?code .\r\n                ?other a aip:Sido ; skos:notation ?code .\r\n                FILTER (?other != $this)\r\n            }\r\n        "
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Sido .
+aip:SidoShape  a        sh:NodeShape;
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "notation은 법정동코드 앞 2자리 ('11'·'51') — 필수·단일 (Sido 참조 축)"@ko;
+                          sh:minCount  1;
+                          sh:path      skos:notation;
+                          sh:pattern   "^[0-9]{2}$"
+                        ];
+        sh:property     [ sh:maxCount  1;
+                          sh:message   "prefLabel(시도명) 필수·단일"@ko;
+                          sh:minCount  1;
+                          sh:path      skos:prefLabel
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "sidoKind는 지자체 종류 한글 법문 1개 (값 ⊆ 지방자치법 제2조①1호 열거는 corpus-대조 validator — Sido 참조 축)"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:sidoKind
+                        ];
+        sh:property     [ sh:class     aip:Article;
+                          sh:message   "definedBy는 실존 Article ≥1 (지방자치법 제2조 — dangling 차단, Sido 참조 축)"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:definedBy
+                        ];
+        sh:sparql       [ sh:message  "notation(코드 2자리)은 aip:Sido 전역 유일"@ko;
+                          sh:select   "\r\n            PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\r\n            PREFIX aip: <https://onto.go.kr/aip/>\r\n            SELECT $this WHERE {\r\n                $this a aip:Sido ; skos:notation ?code .\r\n                ?other a aip:Sido ; skos:notation ?code .\r\n                FILTER (?other != $this)\r\n            }\r\n        "
+                        ];
+        sh:targetClass  aip:Sido .
 
-aip:ExemptionShape  a  <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "Exemption.exemptsArticle 은 실존 Article·Appendix·ArticleUnit 정확히 하나 (배제 조 dangling·다중 차단 — 2026-09-11)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Appendix ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:exemptsArticle
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Zone;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "Exemption.inZone 은 실존 Zone 정확히 하나 (성립 zone 이 둘이면 노드를 둘로 — 곱 금지 — 2026-09-11)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:inZone
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "Exemption.exemptionCondition 은 문자열 0~1 (조건 산문 · 선택 — 2026-09-11)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:exemptionCondition
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:Exemption .
+aip:ExemptionShape  a   sh:NodeShape;
+        sh:property     [ sh:maxCount  1;
+                          sh:message   "Exemption.exemptsArticle 은 실존 Article·Appendix·ArticleUnit 정확히 하나 (배제 조 dangling·다중 차단 — 2026-09-11)"@ko;
+                          sh:minCount  1;
+                          sh:or        ( [ sh:class  aip:Article ]
+                                         [ sh:class  aip:Appendix ]
+                                         [ sh:class  aip:ArticleUnit ]
+                                       );
+                          sh:path      aip:exemptsArticle
+                        ];
+        sh:property     [ sh:class     aip:Zone;
+                          sh:maxCount  1;
+                          sh:message   "Exemption.inZone 은 실존 Zone 정확히 하나 (성립 zone 이 둘이면 노드를 둘로 — 곱 금지 — 2026-09-11)"@ko;
+                          sh:minCount  1;
+                          sh:path      aip:inZone
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:message   "Exemption.exemptionCondition 은 문자열 0~1 (조건 산문 · 선택 — 2026-09-11)"@ko;
+                          sh:path      aip:exemptionCondition
+                        ];
+        sh:targetClass  aip:Exemption .
 
 aip:LimitStatementShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "LimitStatement 는 실존 조문 단위 정확히 하나에 매달린다 (2026-10-30)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Appendix ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          [ <http://www.w3.org/ns/shacl#inversePath>
-                                    aip:hasLimit ]
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Zone;
-                  <http://www.w3.org/ns/shacl#message>
-                          "LimitStatement.limitZone 은 실존 Zone (선택 · 원문이 zone 을 말하지 않으면 없다 · 2026-10-30)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitZone
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitAt
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minLength>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitQuote
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "층수" "높이" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitQuantity
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitComparator
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitPredicate
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "금지형" "허용형" "그밖" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitForm
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "숫자" "산식" "비례" "값없음" "밖에있음" "기존대비" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitValueKind
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#decimal>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitValue
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:LimitStatement;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:refinesLimit
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:LimitStatement;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:replacesLimit
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#or>
-                          ( [ <http://www.w3.org/ns/shacl#class>
-                                      aip:LimitStatement ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Article ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:Appendix ]
-                            [ <http://www.w3.org/ns/shacl#class>
-                                      aip:ArticleUnit ]
-                          );
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:relaxesTarget
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:LimitCondition;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:hasLimitCondition
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "코드 없음" "건축물 기준" "땅 기준" "사업·계획" "위 진술에 있음" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "LimitStatement.limitZonesEmptyReason 은 코드 없음 | 건축물 기준 | 땅 기준 | 사업·계획 | 위 진술에 있음 하나 (장부 · 빌더 파생 · 2026-11-11)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitZonesEmptyReason
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Law;
-                  <http://www.w3.org/ns/shacl#message>
-                          "LimitStatement.delegationReadIn 은 실존 Law (장부 · 빌더 파생 · 2026-11-11)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:delegationReadIn
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:LimitStatement .
+        a               sh:NodeShape;
+        sh:property     [ sh:maxCount  1;
+                          sh:message   "LimitStatement 는 실존 조문 단위 정확히 하나에 매달린다 (2026-10-30)"@ko;
+                          sh:minCount  1;
+                          sh:or        ( [ sh:class  aip:Article ]
+                                         [ sh:class  aip:Appendix ]
+                                         [ sh:class  aip:ArticleUnit ]
+                                       );
+                          sh:path      [ sh:inversePath  aip:hasLimit ]
+                        ];
+        sh:property     [ sh:class    aip:Zone;
+                          sh:message  "LimitStatement.limitZone 은 실존 Zone (선택 · 원문이 zone 을 말하지 않으면 없다 · 2026-10-30)"@ko;
+                          sh:path     aip:limitZone
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:minCount  1;
+                          sh:path      aip:limitAt
+                        ];
+        sh:property     [ sh:datatype   xsd:string;
+                          sh:maxCount   1;
+                          sh:minCount   1;
+                          sh:minLength  1;
+                          sh:path       aip:limitQuote
+                        ];
+        sh:property     [ sh:in        ( "층수" "높이" );
+                          sh:maxCount  1;
+                          sh:minCount  1;
+                          sh:path      aip:limitQuantity
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:minCount  1;
+                          sh:path      aip:limitComparator
+                        ];
+        sh:property     [ sh:datatype  xsd:string;
+                          sh:maxCount  1;
+                          sh:minCount  1;
+                          sh:path      aip:limitPredicate
+                        ];
+        sh:property     [ sh:in        ( "금지형" "허용형" "그밖" );
+                          sh:maxCount  1;
+                          sh:minCount  1;
+                          sh:path      aip:limitForm
+                        ];
+        sh:property     [ sh:in        ( "숫자" "산식" "비례" "값없음" "밖에있음" "기존대비" );
+                          sh:maxCount  1;
+                          sh:minCount  1;
+                          sh:path      aip:limitValueKind
+                        ];
+        sh:property     [ sh:datatype  xsd:decimal;
+                          sh:maxCount  1;
+                          sh:path      aip:limitValue
+                        ];
+        sh:property     [ sh:class  aip:LimitStatement;
+                          sh:path   aip:refinesLimit
+                        ];
+        sh:property     [ sh:class  aip:LimitStatement;
+                          sh:path   aip:replacesLimit
+                        ];
+        sh:property     [ sh:or    ( [ sh:class  aip:LimitStatement ]
+                                     [ sh:class  aip:Article ]
+                                     [ sh:class  aip:Appendix ]
+                                     [ sh:class  aip:ArticleUnit ]
+                                   );
+                          sh:path  aip:relaxesTarget
+                        ];
+        sh:property     [ sh:class  aip:LimitCondition;
+                          sh:path   aip:hasLimitCondition
+                        ];
+        sh:property     [ sh:in        ( "코드 없음" "건축물 기준" "땅 기준" "사업·계획" "위 진술에 있음" );
+                          sh:maxCount  1;
+                          sh:message   "LimitStatement.limitZonesEmptyReason 은 코드 없음 | 건축물 기준 | 땅 기준 | 사업·계획 | 위 진술에 있음 하나 (장부 · 빌더 파생 · 2026-11-11)"@ko;
+                          sh:path      aip:limitZonesEmptyReason
+                        ];
+        sh:property     [ sh:class    aip:Law;
+                          sh:message  "LimitStatement.delegationReadIn 은 실존 Law (장부 · 빌더 파생 · 2026-11-11)"@ko;
+                          sh:path     aip:delegationReadIn
+                        ];
+        sh:targetClass  aip:LimitStatement .
 
 aip:LimitConditionShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#string>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minLength>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:conditionQuote
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "바탕용도지역" "시설세분" "구역지정" "접도" "절차" "기타" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:conditionKind
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "속함" "이외" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:conditionOperator
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#class>
-                          aip:Zone;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:conditionZone
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#decimal>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:conditionValue
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "한정" "제외" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "LimitCondition.conditionEffect 는 한정 | 제외 하나 (선택 · 2026-11-09)"@ko;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:conditionEffect
-                ];
-        <http://www.w3.org/ns/shacl#targetClass>
-                aip:LimitCondition .
+        a               sh:NodeShape;
+        sh:property     [ sh:datatype   xsd:string;
+                          sh:maxCount   1;
+                          sh:minCount   1;
+                          sh:minLength  1;
+                          sh:path       aip:conditionQuote
+                        ];
+        sh:property     [ sh:in        ( "바탕용도지역" "시설세분" "구역지정" "접도" "절차" "기타" );
+                          sh:maxCount  1;
+                          sh:minCount  1;
+                          sh:path      aip:conditionKind
+                        ];
+        sh:property     [ sh:in        ( "속함" "이외" );
+                          sh:maxCount  1;
+                          sh:path      aip:conditionOperator
+                        ];
+        sh:property     [ sh:class  aip:Zone;
+                          sh:path   aip:conditionZone
+                        ];
+        sh:property     [ sh:datatype  xsd:decimal;
+                          sh:maxCount  1;
+                          sh:path      aip:conditionValue
+                        ];
+        sh:property     [ sh:in        ( "한정" "제외" );
+                          sh:maxCount  1;
+                          sh:message   "LimitCondition.conditionEffect 는 한정 | 제외 하나 (선택 · 2026-11-09)"@ko;
+                          sh:path      aip:conditionEffect
+                        ];
+        sh:targetClass  aip:LimitCondition .
 
 aip:LimitCoverageShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#class>
-                aip:Law;
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "다 적음" "적는 중" "안 적음" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "Law.limitCoverage 는 다 적음 | 적는 중 | 안 적음 하나 · 주어는 실존 Law (빌더 파생 · 2026-11-09)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitCoverage
-                ];
-        <http://www.w3.org/ns/shacl#targetSubjectsOf>
-                aip:limitCoverage .
+        a                    sh:NodeShape;
+        sh:class             aip:Law;
+        sh:property          [ sh:in        ( "다 적음" "적는 중" "안 적음" );
+                               sh:maxCount  1;
+                               sh:message   "Law.limitCoverage 는 다 적음 | 적는 중 | 안 적음 하나 · 주어는 실존 Law (빌더 파생 · 2026-11-09)"@ko;
+                               sh:minCount  1;
+                               sh:path      aip:limitCoverage
+                             ];
+        sh:targetSubjectsOf  aip:limitCoverage .
 
 aip:LimitRelationCoverageShape
-        a       <http://www.w3.org/ns/shacl#NodeShape>;
-        <http://www.w3.org/ns/shacl#or>
-                ( [ <http://www.w3.org/ns/shacl#class>
-                            aip:Article ]
-                  [ <http://www.w3.org/ns/shacl#class>
-                            aip:Appendix ]
-                );
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#in>
-                          ( "다 봄" "안 봄" );
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitRelationCoverage
-                ];
-        <http://www.w3.org/ns/shacl#property>
-                [ <http://www.w3.org/ns/shacl#datatype>
-                          <http://www.w3.org/2001/XMLSchema#integer>;
-                  <http://www.w3.org/ns/shacl#maxCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#message>
-                          "조·별표.limitRelationCoverage 는 다 봄 | 안 봄 하나 + limitRelationOpenPairs 정수 하나 · 주어는 실존 조·별표 (빌더 파생 · 2026-11-10)"@ko;
-                  <http://www.w3.org/ns/shacl#minCount>
-                          1;
-                  <http://www.w3.org/ns/shacl#minInclusive>
-                          0;
-                  <http://www.w3.org/ns/shacl#path>
-                          aip:limitRelationOpenPairs
-                ];
-        <http://www.w3.org/ns/shacl#targetSubjectsOf>
-                aip:limitRelationCoverage .
+        a                    sh:NodeShape;
+        sh:or                ( [ sh:class  aip:Article ]
+                               [ sh:class  aip:Appendix ]
+                             );
+        sh:property          [ sh:in        ( "다 봄" "안 봄" );
+                               sh:maxCount  1;
+                               sh:minCount  1;
+                               sh:path      aip:limitRelationCoverage
+                             ];
+        sh:property          [ sh:datatype      xsd:integer;
+                               sh:maxCount      1;
+                               sh:message       "조·별표.limitRelationCoverage 는 다 봄 | 안 봄 하나 + limitRelationOpenPairs 정수 하나 · 주어는 실존 조·별표 (빌더 파생 · 2026-11-10)"@ko;
+                               sh:minCount      1;
+                               sh:minInclusive  0;
+                               sh:path          aip:limitRelationOpenPairs
+                             ];
+        sh:targetSubjectsOf  aip:limitRelationCoverage .

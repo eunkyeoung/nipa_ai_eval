@@ -45,14 +45,27 @@ def main():
     ap.add_argument("--run-dir")
     ap.add_argument("--status-file")
     ap.add_argument("--ids", default="", help="DA2-1 CQ ID 일부만 실행(부분 실행 — 종합 점수 계산 안 함)")
+    ap.add_argument("--resume", action="store_true", help="화면 '이어서': --run-dir 안에 결과가 이미 있는 구성지표는 건너뜀")
     a = ap.parse_args()
     parts = sorted({int(x) for x in a.parts.split(",") if x.strip()})
     ids = {x.strip() for x in a.ids.split(",") if x.strip()}
     run_dir = a.run_dir or os.path.join("spec", "DA2", time.strftime("%Y%m%d_%H%M%S"))
     os.makedirs(os.path.join(run_dir, "data"), exist_ok=True)
+    argv = [x for x in sys.argv[1:] if x != "--resume"]
+    if "--run-dir" not in argv:                                        # '이어서'가 같은 폴더로 이어 가도록 기록
+        argv += ["--run-dir", run_dir]
     status = dict(state="running", pid=os.getpid(), started=time.time(), script="tools/da2_run.py", mode="성과지표 DA2",
-                  run_dir=run_dir, out=run_dir, total=len(parts), done=0, current=None, message="", argv=sys.argv[1:])
+                  run_dir=run_dir, out=run_dir, total=len(parts), done=0, current=None, message="", argv=argv)
     qa_runner.write_status(a.status_file, status)
+    # 화면은 상태가 20초 넘게 갱신되지 않으면 '비정상 종료'로 봄 → 구성지표 하나가 몇 분 걸려도(2-2 SHACL 등) 3초마다 갱신
+    import threading
+    beat_stop = threading.Event()
+
+    def beat():
+        while not beat_stop.wait(3):
+            if status.get("state") == "running":
+                qa_runner.write_status(a.status_file, status)
+    threading.Thread(target=beat, daemon=True).start()
     missing = [ASSETS[k] for p in parts for k in NEED[p] if not os.path.exists(ASSETS[k])]
     if missing:
         status.update(state="error", message="검증 자산 없음: " + ", ".join(sorted(set(missing))))
@@ -81,25 +94,31 @@ def main():
     for i, p in enumerate(parts):
         no, name, w = PARTS[p]
         out = os.path.join(run_dir, f"da2-{p}")
-        status.update(current=dict(case_id=no, 회차=1, 질의=name), message=f"{no} {name} 실행 중")
+        done_before = os.path.exists(os.path.join(out, "summary_da2_4.json" if p == 4 else "validation_result_da2.csv"))
+        status.update(current=dict(case_id=no, 회차=1, 질의=name),
+                      message=f"{no} {name} " + ("이미 있음(이어서 — 건너뜀)" if a.resume and done_before else "실행 중"))
         qa_runner.write_status(a.status_file, status)
         t = time.time()
+        skip = a.resume and done_before
         try:
             if p == 1:
-                da2_cq.run(out, only=ids or None)
+                if not skip:
+                    da2_cq.run(out, only=ids or None)
                 n, ok, err = count(os.path.join(out, "validation_result_da2.csv"), "match")
                 val = trunc2(ok / n * 100) if n else None
                 res[p] = dict(value=val, n=n, ok=ok, error=err)
             elif p == 2:
-                da2_schema_check.run(out)
+                if not skip:
+                    da2_schema_check.run(out)
                 n, ok, err = count(os.path.join(out, "validation_result_da2.csv"), "conforms")
                 res[p] = dict(value=trunc2(ok / n * 100) if n else None, n=n, ok=ok, error=err)
             elif p == 3:
-                da2_mapping.run(out)
+                if not skip:
+                    da2_mapping.run(out)
                 n, ok, err = count(os.path.join(out, "validation_result_da2.csv"), "exact_match")
                 res[p] = dict(value=trunc2(ok / n * 100) if n else None, n=n, ok=ok, error=err)
             else:
-                sm = da2_consistency.run(out)
+                sm = json.load(open(os.path.join(out, "summary_da2_4.json"), encoding="utf-8")) if skip else da2_consistency.run(out)
                 res[p] = dict(value=trunc2(sm["value"]) if sm.get("value") is not None else None, n=None, detail=sm,
                               error=0 if sm.get("value") is not None else 1)
         except Exception as e:                                         # noqa: BLE001
@@ -118,6 +137,7 @@ def main():
     with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as f:
         json.dump(summ, f, ensure_ascii=False, indent=1, default=str)
     msg = " · ".join(f"{PARTS[p][0]} {res[p]['value'] if res[p]['value'] is not None else '오류'}" for p in res)
+    beat_stop.set()
     status.update(state="done", current=None,
                   message=f"완료 · {msg}" + (f" · 종합 {total:.2f} % {'달성' if summ['passed'] else '미달성'}" if total is not None else " · 부분 실행(종합 점수 없음)"))
     qa_runner.write_status(a.status_file, status)
