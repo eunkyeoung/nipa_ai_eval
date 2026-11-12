@@ -600,18 +600,31 @@ def render_da2(item, sp, area):
                            key=f"dl_da2_log_{i}", width="stretch",
                            help="구성지표별 validation_result_da2.csv · summary.json · meta.json · OOPS! 응답 원문")
 
-    # 탭 디자인(11-12 사용자, shadcn/ui·Vercel 방식 벤치마킹): 회색 틀 안에서 선택한 탭만 흰 카드로 떠오름
+    # 탭 디자인(11-12 사용자 '안 예쁨·오른쪽 여백'): 대시보드 KPI 탭(Stripe·Google Analytics 방식) 벤치마킹
+    #   화면 폭을 꽉 채운 같은 너비 탭 + 구성지표 결과 배지(달성 초록·미달 빨강), 선택 탭은 연파랑 바탕·파란 밑줄
     # Streamlit 1.66 탭 구조(react-aria): role=tablist, data-testid=stTab, aria-selected, .react-aria-SelectionIndicator(밑줄)
     st.markdown("""<style>
-.st-key-da2_tabs [role="tablist"] { gap: 4px; background: #f1f5f9; padding: 5px; border-radius: 12px; border: none; width: fit-content; max-width: 100%; }
-.st-key-da2_tabs [data-testid="stTab"] { padding: 9px 18px; height: auto; border-radius: 9px; color: #64748b; transition: all .15s; }
-.st-key-da2_tabs [data-testid="stTab"]:hover { color: #0f172a; background: rgba(255,255,255,.6); }
-.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #ffffff; box-shadow: 0 1px 3px rgba(15,23,42,.12), 0 1px 2px rgba(15,23,42,.06); }
-.st-key-da2_tabs [data-testid="stTab"] p { font-size: 14.5px; color: inherit; }
+.st-key-da2_tabs [data-testid="stTabs"] { width: 100%; }
+.st-key-da2_tabs [role="tablist"] { display: flex; width: 100%; gap: 0; background: #ffffff; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 0; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+.st-key-da2_tabs [data-testid="stTab"] { flex: 1 1 0; min-width: 0; justify-content: center; padding: 15px 10px 13px; height: auto;
+    margin: 0; border-right: 1px solid #eef2f7; color: #64748b; background: #ffffff; transition: background .15s;
+    box-shadow: inset 0 -3px 0 transparent; }
+.st-key-da2_tabs [data-testid="stTab"]:last-child { border-right: none; }
+.st-key-da2_tabs [data-testid="stTab"]:hover { background: #f8fafc; color: #0f172a; }
+.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #eff6ff; box-shadow: inset 0 -3px 0 #2563eb; }
+.st-key-da2_tabs [data-testid="stTab"] p { font-size: 14.5px; color: inherit; text-align: center; line-height: 1.5; }
 .st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] p { color: #1d4ed8; font-weight: 700; }
 .st-key-da2_tabs .react-aria-SelectionIndicator { display: none; }
 </style>""", unsafe_allow_html=True)
-    tabs = st.container(key="da2_tabs").tabs([f"{k} {n}" for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
+
+    def _tab_label(k, n):
+        v = pr.get(k, {}).get("value")
+        if v is None:
+            return f"{k} {n}"
+        col = "green" if pr.get(k, {}).get("passed") else "red"
+        return f"{k} {n} :{col}-badge[{v:.2f} %]"
+    tabs = st.container(key="da2_tabs").tabs([_tab_label(k, n) for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
     for i, (k, n, *_r) in enumerate(sp["parts"]):
         with tabs[i]:
             d = os.path.join(run_dir, f"da2-{i + 1}")
