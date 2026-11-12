@@ -583,15 +583,16 @@ def render_da2(item, sp, area):
                            help="구성지표별 validation_result_da2.csv · summary.json · meta.json · OOPS! 응답 원문")
 
     # 탭이 글자처럼 보여 탭으로 알아보기 어려움(11-12 사용자) → DA2 탭에만 버튼형 디자인(다른 화면 탭은 그대로)
+    # Streamlit 1.66 탭 구조(react-aria): role=tablist, data-testid=stTab, aria-selected, .react-aria-SelectionIndicator(밑줄)
     st.markdown("""<style>
-.st-key-da2_tabs [data-baseweb="tab-list"] { gap: 6px; background: #f1f5f9; padding: 6px; border-radius: 10px; }
-.st-key-da2_tabs button[data-baseweb="tab"] { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;
-    padding: 8px 16px; height: auto; color: #475569; }
-.st-key-da2_tabs button[data-baseweb="tab"]:hover { border-color: #94a3b8; color: #1e293b; }
-.st-key-da2_tabs button[data-baseweb="tab"][aria-selected="true"] { background: #1e293b; border-color: #1e293b; color: #ffffff; }
-.st-key-da2_tabs button[data-baseweb="tab"][aria-selected="true"] p { color: #ffffff; font-weight: 600; }
-.st-key-da2_tabs button[data-baseweb="tab"] p { font-size: 14px; }
-.st-key-da2_tabs [data-baseweb="tab-highlight"], .st-key-da2_tabs [data-baseweb="tab-border"] { display: none; }
+.st-key-da2_tabs [role="tablist"] { gap: 6px; background: #f1f5f9; padding: 6px; border-radius: 10px; border: none; box-shadow: none; }
+.st-key-da2_tabs [data-testid="stTab"] { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 16px;
+    height: auto; color: #475569; cursor: pointer; }
+.st-key-da2_tabs [data-testid="stTab"]:hover { border-color: #64748b; color: #0f172a; }
+.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #1e293b; border-color: #1e293b; }
+.st-key-da2_tabs [data-testid="stTab"] p { font-size: 14px; color: inherit; }
+.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] p { color: #ffffff; font-weight: 600; }
+.st-key-da2_tabs .react-aria-SelectionIndicator { display: none; }
 </style>""", unsafe_allow_html=True)
     tabs = st.container(key="da2_tabs").tabs([f"{k} {n}" for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
     for i, (k, n, *_r) in enumerate(sp["parts"]):
