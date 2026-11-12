@@ -6,13 +6,13 @@
 #   (Fuseki 원본이 아니라 해시로 고정한 파일이 대상)
 # 역할 구분: DA2-2는 '데이터가 스키마 선언·설계 패턴을 지키는가'. 선언 자체의 누락·모순(OOPS! 계열)은 DA2-4에서 봄.
 #
-#   python tools/da2_schema_check.py freeze          → spec_data/da2/da2_schema_checklist.zip (목록 CSV + checks/*.rq)
+#   python tools/da2_schema_check.py freeze          → spec_data/da2/aips_da2_schema_checklist.zip (목록 CSV + checks/*.rq)
 #   python tools/da2_schema_check.py run <out_dir>   → <out_dir>/validation_result_da2.csv
 import csv, io, json, os, sys, time, zipfile
 
 DA2 = "spec_data/da2"
 TTL = {k: f"{DA2}/landcheck_{k}_v1.0.ttl" for k in ("schema", "instance", "shapes")}
-ZIP = f"{DA2}/da2_schema_checklist.zip"
+ZIP = f"{DA2}/aips_da2_schema_checklist.zip"
 
 PFX = """PREFIX aip: <https://onto.go.kr/aip/>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -115,6 +115,18 @@ ASK_ITEMS = [
     ("SCH-PRP-10", G_PRP, "함수형 속성(owl:FunctionalProperty)은 주체마다 값이 1개 이하임",
      "?p a owl:FunctionalProperty . ?s ?p ?o .",
      "?p a owl:FunctionalProperty . ?focus ?p ?o1 , ?o2 . FILTER (?o1 != ?o2)"),
+    # 11-12 규격서 v.14: 평가항목 50개 — 선언된 domain·range 준수 점검을 아직 보지 않은 주요 관계 3개로 확장
+    ("SCH-PRP-11", G_PRP, "hasLimit: 주체는 조·항·별표, 대상은 한도 진술(LimitStatement) (선언된 domain·range 준수)",
+     "?x aip:hasLimit ?l .",
+     "{ ?focus aip:hasLimit ?l . " + not_typed("focus", "Article", "ArticleUnit", "Appendix") + " } UNION "
+     "{ ?x aip:hasLimit ?focus . " + not_typed("focus", "LimitStatement") + " }"),
+    ("SCH-PRP-12", G_PRP, "delegatesTo: 주체는 조·항·별표, 대상은 법령·조·항 (선언된 domain·range 준수)",
+     "?a aip:delegatesTo ?b .",
+     "{ ?focus aip:delegatesTo ?b . " + not_typed("focus", "Article", "ArticleUnit", "Appendix") + " } UNION "
+     "{ ?a aip:delegatesTo ?focus . " + not_typed("focus", "Law", "Article", "ArticleUnit") + " }"),
+    ("SCH-PRP-13", G_PRP, "relatedArticle: 주체가 모두 별표(Appendix) (선언된 domain 준수)",
+     "?p aip:relatedArticle ?a .",
+     "?focus aip:relatedArticle ?a . " + not_typed("focus", "Appendix")),
 ]
 
 

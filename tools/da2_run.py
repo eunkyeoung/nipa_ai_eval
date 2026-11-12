@@ -8,14 +8,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import qa_runner                                                    # noqa: E402 (상태 파일 형식을 다른 시험과 같게)
 
 DA2 = "spec_data/da2"
-ASSETS = {"cq": f"{DA2}/da2_cq_testset.zip", "schema_check": f"{DA2}/da2_schema_checklist.zip",
-          "mapping": f"{DA2}/da2_mapping_testset.csv", "schema": f"{DA2}/landcheck_schema_v1.0.ttl",
+ASSETS = {"cq": f"{DA2}/aips_da2_cq_testset.zip", "schema_check": f"{DA2}/aips_da2_schema_checklist.zip",
+          "mapping": f"{DA2}/aips_da2_mapping_testset.csv", "schema": f"{DA2}/landcheck_schema_v1.0.ttl",
           "instance": f"{DA2}/landcheck_instance_v1.0.ttl", "shapes": f"{DA2}/landcheck_shapes_v1.0.ttl"}
 NEED = {1: ("cq", "schema", "instance"), 2: ("schema_check", "schema", "instance", "shapes"),
         3: ("mapping", "schema", "instance"), 4: ("schema", "instance")}
 PARTS = {1: ("DA 2-1", "CQ 질의 응답 정확도", 0.35), 2: ("DA 2-2", "온톨로지 스키마 적합률", 0.15),
          3: ("DA 2-3", "온톨로지 기반 데이터 매핑 정확도", 0.30), 4: ("DA 2-4", "논리적 일관성·무결성", 0.20)}
 TARGET = 96.0
+# 규격서 v.14(11-12) 구성지표별 예상결과: 2-1·2-3·2-4 각 96% 이상, 2-2는 ○○(미정 → 목표 없이 값만 표기)
+PART_TARGET = {1: 96.0, 2: None, 3: 96.0, 4: 96.0}
 
 
 def sha256(p):
@@ -110,7 +112,9 @@ def main():
     total = trunc2(sum(res[p]["value"] * PARTS[p][2] for p in (1, 2, 3, 4))) if full else None
     summ = dict(item="DA2", value=total, target=TARGET, cmp=">=", passed=(total is not None and total >= TARGET),
                 n=res.get(1, {}).get("n"), scope=meta["scope"], scored=time.time(),
-                parts={PARTS[p][0]: dict(name=PARTS[p][1], weight=PARTS[p][2], **res[p]) for p in res})
+                parts={PARTS[p][0]: dict(name=PARTS[p][1], weight=PARTS[p][2], target=PART_TARGET[p],
+                                         passed=(None if PART_TARGET[p] is None or res[p].get("value") is None
+                                                 else res[p]["value"] >= PART_TARGET[p]), **res[p]) for p in res})
     with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as f:
         json.dump(summ, f, ensure_ascii=False, indent=1, default=str)
     msg = " · ".join(f"{PARTS[p][0]} {res[p]['value'] if res[p]['value'] is not None else '오류'}" for p in res)

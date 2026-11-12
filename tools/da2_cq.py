@@ -4,13 +4,13 @@
 # 정규화: 결과 노드의 rdfs:label → '법령명.조.항' (항이 없으면 '법령명.조', 별표는 '법령명.별표N', 호·목은 비교에서 뺌)
 # 대상: 동결한 ttl(스키마+인스턴스)을 메모리에 적재해 실행
 #
-#   python tools/da2_cq.py freeze              → spec_data/da2/da2_cq_testset.zip (da2_cq_testset.csv + sparql/*.rq)
+#   python tools/da2_cq.py freeze              → spec_data/da2/aips_da2_cq_testset.zip (da2_cq_testset.csv + sparql/*.rq)
 #   python tools/da2_cq.py run <out_dir>       → <out_dir>/validation_result_da2.csv
 import csv, io, json, os, re, sys, time, zipfile
 
 DA2 = "spec_data/da2"
 TTL = {k: f"{DA2}/landcheck_{k}_v1.0.ttl" for k in ("schema", "instance")}
-ZIP = f"{DA2}/da2_cq_testset.zip"
+ZIP = f"{DA2}/aips_da2_cq_testset.zip"
 LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
 ALIAS = [("국토의계획및이용에관한법률", "국토계획법")]
 RX = re.compile(r"^(\S+)\s+(?:제(\d+)조(?:의(\d+))?(?:제(\d+)항)?|별표(\d+(?:의\d+)?))")
