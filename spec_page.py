@@ -606,7 +606,7 @@ def render_da2(item, sp, area):
                 g["전체"] = full.groupby("odp_type").size()
                 g["불일치"] = g["전체"] - g["일치"]
                 g["일치율"] = [_rate(a, b) for a, b in zip(g["일치"], g["전체"])]
-                show_table(g.reset_index().rename(columns={"odp_type": "ODP 유형"}))
+                show_table(g.reset_index().rename(columns={"odp_type": "ODP 유형"})[["ODP 유형", "전체", "일치", "불일치", "일치율"]])
                 _da2_table(df.rename(columns={"cq_id": "CQ ID", "odp_type": "ODP 유형", "municipality": "지자체", "question": "질문",
                                               "expected_bindings": "정답", "actual_bindings": "실제 결과", "missing_bindings": "누락",
                                               "extra_bindings": "추가", "match": "일치"})[
@@ -625,7 +625,7 @@ def render_da2(item, sp, area):
                 g["전체"] = full.groupby("item_group").size()
                 g["부적합"] = g["전체"] - g["적합"]
                 g["적합률"] = [_rate(a, b) for a, b in zip(g["적합"], g["전체"])]
-                show_table(g.reset_index().rename(columns={"item_group": "항목군"}))
+                show_table(g.reset_index().rename(columns={"item_group": "항목군"})[["항목군", "전체", "적합", "부적합", "적합률"]])
                 _da2_table(df.rename(columns={"check_id": "평가항목", "item_group": "항목군", "description": "점검 내용", "method": "방법",
                                               "actual": "결과", "conforms": "적합", "focus_node": "위반 노드", "message": "내용"})[
                     ["평가항목", "항목군", "점검 내용", "문제", "사유", "방법", "결과", "적합", "위반 노드", "내용", "status", "error_message"]])
@@ -633,7 +633,7 @@ def render_da2(item, sp, area):
             elif i == 2:                                                    # 2-3 매핑: 검증 단위별 일치·불일치
                 units = [("class_match", "클래스 매핑"), ("property_match", "속성 매핑"), ("relation_match", "관계 매핑"),
                          ("datatype_match", "자료형"), ("exact_match", "정확 매핑(4개 모두)")]
-                show_table(pd.DataFrame([{"검증 단위": nm, "일치": int((full[c] == "true").sum()), "불일치": int((full[c] == "false").sum()),
+                show_table(pd.DataFrame([{"검증 단위": nm, "전체": len(full), "일치": int((full[c] == "true").sum()), "불일치": int((full[c] == "false").sum()),
                                           "일치율": _rate(int((full[c] == "true").sum()), len(full))} for c, nm in units]))
                 if "value_match" in full:
                     vm = full[full["value_match"] != ""]
