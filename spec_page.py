@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 
 import spec_eval as S
+from tools import da2_cq as _cq                                                  # DA2-1 조문 표기(cite·cite_list·cite_text)
 
 DATA = "spec_data"
 FILES = {"AI1": ["testset_ai1", "answer_ai1"], "AI2": ["testset_ai2", "answer_ai2"], "AI3": ["testset_ai3"],
@@ -410,10 +411,10 @@ def _da2_cause(i, r):
         if g("match") == "true":
             return ""
         out = []
-        if g("missing_bindings"):
-            out.append(f"정답 중 못 찾은 조문: {g('missing_bindings')}")
-        if g("extra_bindings"):
-            out.append(f"정답에 없는 조문이 나옴: {g('extra_bindings')}")
+        if g("missing_bindings") not in ("", "[]"):
+            out.append(f"정답 중 못 찾은 조문: {_cq.cite_list(g('missing_bindings'))}")
+        if g("extra_bindings") not in ("", "[]"):
+            out.append(f"정답에 없는 조문이 나옴: {_cq.cite_list(g('extra_bindings'))}")
         return " / ".join(out) or "결과 불일치"
     if i == 1:                                                              # 2-2 스키마
         return "" if g("conforms") == "true" else ("부적합: " + (g("message") or g("actual") or "-"))
@@ -495,6 +496,21 @@ def _da2_logzip(run_dir):
     return buf.getvalue()
 
 
+def _da2_cq_disp(df):
+    """DA2-1 표를 보이는 표기로(11-12 사용자): 조문 '건축법.44.1' → '건축법 제44조 제1항', 별표 '○○ 별표 2',
+    사유 글 속 조문도 같게, 질문 끝 '[조 단위]' 표시는 뺌. 채점에 쓰는 내부 값(csv)은 그대로"""
+    df = df.copy()
+    for c in ("expected_bindings", "actual_bindings", "missing_bindings", "extra_bindings"):
+        if c in df:
+            df[c] = [_cq.cite_list(v) for v in df[c]]
+    for c in ("문제", "사유"):
+        if c in df:
+            df[c] = [_cq.cite_text(v) for v in df[c]]
+    if "question" in df:
+        df["question"] = df["question"].astype(str).str.replace(" [조 단위]", "", regex=False)
+    return df
+
+
 def _da2_xlsx(run_dir, sp, sm, rows):
     """DA2 결과 엑셀: 요약 시트 + 구성지표별 시트(검증 로그 전체 + 문제·사유)"""
     buf = io.BytesIO()
@@ -512,6 +528,8 @@ def _da2_xlsx(run_dir, sp, sm, rows):
             df = _read_csv(p).copy()
             df["문제"] = [_da2_cause(i, r) for _, r in df.iterrows()]          # 화면과 같이 오른쪽 끝(11-12 사용자)
             df["사유"] = [_da2_reason(i, r) for _, r in df.iterrows()]
+            if i == 0:
+                df = _da2_cq_disp(df)
             df.to_excel(w, sheet_name=k.replace("DA ", "DA"), index=False)
     return buf.getvalue()
 
@@ -582,16 +600,15 @@ def render_da2(item, sp, area):
                            key=f"dl_da2_log_{i}", width="stretch",
                            help="구성지표별 validation_result_da2.csv · summary.json · meta.json · OOPS! 응답 원문")
 
-    # 탭이 글자처럼 보여 탭으로 알아보기 어려움(11-12 사용자) → DA2 탭에만 버튼형 디자인(다른 화면 탭은 그대로)
+    # 탭 디자인(11-12 사용자, shadcn/ui·Vercel 방식 벤치마킹): 회색 틀 안에서 선택한 탭만 흰 카드로 떠오름
     # Streamlit 1.66 탭 구조(react-aria): role=tablist, data-testid=stTab, aria-selected, .react-aria-SelectionIndicator(밑줄)
     st.markdown("""<style>
-.st-key-da2_tabs [role="tablist"] { gap: 6px; background: #f1f5f9; padding: 6px; border-radius: 10px; border: none; box-shadow: none; }
-.st-key-da2_tabs [data-testid="stTab"] { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 16px;
-    height: auto; color: #475569; cursor: pointer; }
-.st-key-da2_tabs [data-testid="stTab"]:hover { border-color: #64748b; color: #0f172a; }
-.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #1e293b; border-color: #1e293b; }
-.st-key-da2_tabs [data-testid="stTab"] p { font-size: 14px; color: inherit; }
-.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] p { color: #ffffff; font-weight: 600; }
+.st-key-da2_tabs [role="tablist"] { gap: 4px; background: #f1f5f9; padding: 5px; border-radius: 12px; border: none; width: fit-content; max-width: 100%; }
+.st-key-da2_tabs [data-testid="stTab"] { padding: 9px 18px; height: auto; border-radius: 9px; color: #64748b; transition: all .15s; }
+.st-key-da2_tabs [data-testid="stTab"]:hover { color: #0f172a; background: rgba(255,255,255,.6); }
+.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #ffffff; box-shadow: 0 1px 3px rgba(15,23,42,.12), 0 1px 2px rgba(15,23,42,.06); }
+.st-key-da2_tabs [data-testid="stTab"] p { font-size: 14.5px; color: inherit; }
+.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] p { color: #1d4ed8; font-weight: 700; }
 .st-key-da2_tabs .react-aria-SelectionIndicator { display: none; }
 </style>""", unsafe_allow_html=True)
     tabs = st.container(key="da2_tabs").tabs([f"{k} {n}" for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
@@ -606,6 +623,8 @@ def render_da2(item, sp, area):
             df = df.copy()
             df["문제"] = [_da2_cause(i, r) for _, r in df.iterrows()]
             df["사유"] = [_da2_reason(i, r) for _, r in df.iterrows()]
+            if i == 0:
+                df = _da2_cq_disp(df)
             bad = df["문제"] != ""
             only = st.toggle(f"문제 사례만 보기 (문제 {int(bad.sum())}건)", key=f"da2_only_{i}")
             full = df
@@ -630,7 +649,7 @@ def render_da2(item, sp, area):
                     with st.expander("CQ별 SPARQL 질의 (동결한 시험셋)"):
                         with zipfile.ZipFile(zp) as z:
                             for _, r in full.iterrows():
-                                st.markdown(f"**{r['cq_id']}** {r['question']}")
+                                st.markdown(f"**{r['cq_id']}** {r['question']}")             # 질문은 _da2_cq_disp 로 [조 단위] 뺌
                                 st.code(z.read(r["query_file"]).decode("utf-8"), language="sparql")
             elif i == 1:                                                    # 2-2 스키마: 항목군별 적합·부적합
                 g = full.groupby("item_group")["conforms"].agg(lambda s: (s == "true").sum()).rename("적합").to_frame()

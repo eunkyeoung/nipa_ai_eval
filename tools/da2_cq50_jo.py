@@ -1,7 +1,7 @@
 # [DA 2-1] CQ 50건 — 1안: 조 단위 질문·정답 (2026-11-12 사용자 결정, 변경내역 88절)
 # 배경: 온톨로지의 위임·예외 연결(implementedBy 등)이 조 단위로 붙어 있고 항 노드에는 본문·제목이 없음
 #       → 질문 개념만으로는 정답 항만 골라낼 수 없음(같은 조의 다른 항이 함께 나옴, 84·87절)
-# 1안: 질문이 묻는 단위를 '조'로 맞추고(질문 끝에 [조 단위]), 정답은 기존 정답(작성자 답변·법령 원문 근거)을 조로 올림.
+# 1안: 질문이 묻는 단위를 '조'로 맞추고(질문 문구는 그대로, 11-12 사용자: [조 단위] 표시 안 함), 정답은 기존 정답(작성자 답변·법령 원문 근거)을 조로 올림.
 #      정답은 시스템 결과를 옮기지 않음. 별표는 그대로 '법령명.별표N'.
 # 질의: 기존 질의(tools/da2_cq50.py) 결과 노드를 그 노드가 속한 조로 올림(조·별표는 그대로). 정답값·LIMIT 없음.
 # 따로 고친 것(질문 개념으로 범위를 좁힘, 정답 조문 번호는 질의에 넣지 않음):
@@ -99,8 +99,8 @@ SPARQL["CQ-052"] = to_jo(sel(" ".join([B.Z("계획관리지역", "z"), G("?z aip
 SPARQL["CQ-053"] = to_jo(sel(" ".join([art(B.BLDR, "상습 침수 우려지역", "c"),
                                        G("?x aip:implementedBy ?c . ?ans aip:hasUnit* ?x . ?ans a aip:Article ."), B.national("ans", "n")])))
 
-_ALL = sorted([(cid, typ, area, Q[cid] + " [조 단위]", GOLD[cid], NOTE[cid]) for cid, typ, area, _, _, _ in B.ROWS if cid not in DROP]
-              + [(cid, typ, area, q + " [조 단위]", gold, note) for cid, typ, area, q, gold, note in NEW])
+_ALL = sorted([(cid, typ, area, Q[cid], GOLD[cid], NOTE[cid]) for cid, typ, area, _, _, _ in B.ROWS if cid not in DROP]
+              + [(cid, typ, area, q, gold, note) for cid, typ, area, q, gold, note in NEW])
 # 번호 다시 매김(사용자, 11-12): CQ-001 ~ CQ-050. 작성자 파일 번호는 근거 칸 앞에 '[원번호 CQ-0xx]'로 남김
 ORIG = {f"CQ-{i:03d}": r[0] for i, r in enumerate(_ALL, 1)}
 CQS = [(f"CQ-{i:03d}", typ, area, q, gold, f"[원번호 {cid}] {note}") for i, (cid, typ, area, q, gold, note) in enumerate(_ALL, 1)]

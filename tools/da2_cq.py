@@ -30,6 +30,50 @@ def norm(label):
     return f"{law}.{jo}" + (f".{m.group(4)}" if m.group(4) else "")
 
 
+# ── 보이는 표기(화면·엑셀): 내부 비교 키 '건축법.44.1' → '건축법 제44조 제1항' (11-12 사용자: 점·가운데 점 대신 '제○조 제○항') ──
+_ORD = re.compile(r"^(.+?(?:광역시|시|군))(건축|도시계획|주차장)조례$")
+_KEY = re.compile(r"([가-힣]+)\.(별표\d+(?:의\d+)?|\d+(?:의\d+)?)(?:\.(\d+))?")
+
+
+def law_disp(name):
+    """'건축법시행령' → '건축법 시행령', '음성군주차장조례' → '음성군 주차장 조례'"""
+    if name == "인천광역시계양구개발제한구역내건축행위등허가에관한조례":
+        return "인천광역시 계양구 개발제한구역 내 건축행위 등 허가에 관한 조례"
+    m = _ORD.match(name)
+    if m:
+        return f"{m.group(1)} {m.group(2)} 조례"
+    return re.sub(r"(시행령|시행규칙)$", r" \1", name)
+
+
+def cite(k):
+    """비교 키 1개 → 법령 표기. 별표는 '○○ 별표 2'"""
+    m = _KEY.fullmatch(str(k).strip())
+    if not m:
+        return str(k)
+    law, jo, hang = law_disp(m.group(1)), m.group(2), m.group(3)
+    if jo.startswith("별표"):
+        return f"{law} 별표 {jo[2:]}"
+    a, _, b = jo.partition("의")
+    return f"{law} 제{a}조" + (f"의{b}" if b else "") + (f" 제{hang}항" if hang else "")
+
+
+def cite_list(v):
+    """JSON 목록 문자열(또는 목록) → '건축법 제44조, 건축법 시행령 제28조'. 빈 목록은 '-'"""
+    try:
+        xs = json.loads(v) if isinstance(v, str) else list(v or [])
+    except Exception:                                                   # noqa: BLE001
+        return str(v)
+    return ", ".join(cite(x) for x in xs) if xs else "-"
+
+
+def cite_text(s):
+    """글 속의 비교 키·붙여 쓴 조항·가운데 점을 법령 표기로 ('제44조제1항·제2항' → '제44조 제1항, 제2항')"""
+    s = _KEY.sub(lambda m: cite(m.group(0)), str(s or ""))
+    s = re.sub(r"\[별표 ?(\d+(?:의\d+)?)\]", r"별표 \1", s)
+    s = re.sub(r"(조(?:의\d+)?|항|호)(제\d)", r"\1 \2", s)
+    return re.sub(r"(?<=[조항호목\d])·(?=\s*(?:제\d|별표|법 |영 |같은 법|시행령|시행규칙))", ", ", s)
+
+
 def reason(exp, got, keys):
     """불일치 사유: 정답·결과 키와 온톨로지에 있는 조문 키로 판정"""
     jo = lambda k: ".".join(k.split(".")[:2])                         # '법령.조'
