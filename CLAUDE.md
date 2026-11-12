@@ -45,14 +45,15 @@ spec_runner.py     실행기: 질의 → raw/ 저장 → 로그(jsonl) → 채�
 qa_runner.py       AIPS SSE 질의(stream_query), 응답에서 판정·근거 추출(extract)
 qa_eval.py         조문 별칭(LAW_ALIAS), 인허가 종류 분류
 tools/             build_law_article_db.py(AI5 조문 DB), export_ontology.py(DA2 온톨로지 내보내기),
-                   law_text.py(법령 원문 조회), da2_cq_draft.py(DA2-1 CQ 정의)
+                   law_text.py(법령 원문 조회), da2_run.py(DA2 실행기), da2_cq.py·da2_cq50_mix.py·da2_cq_hangrel.py(2-1 CQ),
+                   da2_schema_check.py(2-2), da2_mapping.py(2-3), da2_consistency.py(2-4)
 deploy/            Containerfile, Quadlet(nipa-qa.container), sync_results.sh, after_*.sh(실행 후 재채점·재시작 예약)
 spec_data/         시험 데이터 (아래 4절)
 spec/              실행 결과 (git 제외)
 backup/            교체 전 데이터 백업 (변경내역에 사유 기록)
 ```
 
-## 4. 성과지표별 현재 상태 (2026-11-12)
+## 4. 성과지표별 현재 상태 (2026-11-13)
 
 | 항목 | 지표·목표 | 데이터 | 최근 결과 | 메모 |
 |---|---|---|---|---|
