@@ -31,9 +31,9 @@ def norm(label):
 
 
 def freeze():
-    """지금 작성된 CQ(tools/da2_cq_recv.py)를 zip 으로 동결"""
+    """지금 작성된 CQ(tools/da2_cq50.py, 50건 0.1v)를 zip 으로 동결"""
     sys.path.insert(0, ".")
-    from tools import da2_cq_recv as R
+    from tools import da2_cq50 as R
     buf = io.BytesIO()
     rows = []
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
