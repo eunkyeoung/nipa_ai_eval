@@ -681,7 +681,11 @@ def render_da2(item, sp, area):
         show_table(pd.DataFrame([{"검증 자산": k, "파일": v.get("path"), "크기(KB)": f"{v.get('bytes', 0) / 1024:,.0f}", "SHA-256": v.get("sha256")}
                                  for k, v in (meta.get("assets") or {}).items()]))
         show_table(pd.DataFrame([{"도구": k, "버전": v} for k, v in (meta.get("tools") or {}).items()]))
-        st.caption(f"시작 {meta.get('started', '-')} · 구성지표 {meta.get('parts')} · CQ 선택 {meta.get('ids') or '전체'}")
+        _pp = meta.get("parts") or []
+        st.caption(f"이 실행의 정보 — 시작 시각 {meta.get('started', '-')} · 실행한 구성지표 "
+                   f"{', '.join(f'2-{p}' for p in _pp) or '-'}{' (전체)' if _pp == [1, 2, 3, 4] else ' (일부)'} · "
+                   f"DA 2-1 CQ {'일부만: ' + ', '.join(meta.get('ids')) if meta.get('ids') else '전체'} · "
+                   "위 표는 이 실행에 쓴 검증 자산 파일과 SHA-256(동결본 확인용), 검증 도구 버전")
 
 
 def render(item, area, help_fn=None):
