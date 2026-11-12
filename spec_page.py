@@ -748,7 +748,7 @@ def _da2_cause(i, r):
             n = len(json.loads(tgt)) if tgt else 0
         except Exception:
             n = 0
-        return f"{lv}{what}" + (f" — 대상 {n}개(전체 IRI·스키마 파일 줄은 '대상 위치' 열)" if n else "")
+        return f"{lv}{what}" + (f" — 대상 {n}개(아래 펼침 표: IRI·파일 위치·비고)" if n else "")
     return ""
 
 
@@ -878,7 +878,7 @@ def render_da2(item, sp, area):
                 show_table(df.rename(columns={"check_id": "항목", "category": "구분", "item": "내용", "level": "중요도", "detected": "검출",
                                               "count": "건수", "affected": "영향 요소 수(계수 안 함)", "elements": "대상",
                                               "location": "대상 위치(IRI @ 파일:줄)"}).reindex(
-                    columns=["항목", "구분", "내용", "중요도", "원인", "검출", "건수", "영향 요소 수(계수 안 함)", "대상 위치(IRI @ 파일:줄)",
+                    columns=["항목", "구분", "내용", "중요도", "원인", "검출", "건수", "영향 요소 수(계수 안 함)",
                              "대상", "status", "error_message"], fill_value=""))
                 for _, r in df[df["check_id"].astype(str).str.startswith("OOPS")].iterrows():
                     try:
@@ -886,8 +886,13 @@ def render_da2(item, sp, area):
                     except Exception:
                         locs = []
                     if locs:
-                        with st.expander(f"{r['check_id']} 대상 {len(locs)}개 — 전체 IRI와 스키마 파일 위치"):
-                            show_table(pd.DataFrame([{"대상(IRI)": x.split(" @ ")[0], "위치(파일:줄)": x.split(" @ ")[-1]} for x in locs]))
+                        aff = str(r.get("affected") or "").strip()
+                        cnt = f"대상 요소 {aff}개" + (f"({len(locs)}줄 — 역관계 후보 쌍은 한 줄)" if aff and aff != str(len(locs)) else "")
+                        with st.expander(f"{r['check_id']} {cnt} — 전체 IRI와 스키마 파일 위치 (감점은 함정 유형 1개당 1번)"):
+                            show_table(pd.DataFrame([
+                                {"대상(IRI)": x["iri"], "위치(파일:줄)": x["loc"], "종류": x.get("kind", ""), "라벨": x.get("label", ""),
+                                 "비고(원인·고치는 법)": x.get("note", "")} if isinstance(x, dict)
+                                else {"대상(IRI)": x.split(" @ ")[0], "위치(파일:줄)": x.split(" @ ")[-1]} for x in locs]))
                 op = os.path.join(d, "oops_response.xml")
                 if os.path.exists(op):
                     st.download_button("⬇ OOPS! 응답 원문", open(op, "rb").read(), file_name="oops_response.xml", key="dl_oops")

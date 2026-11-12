@@ -125,13 +125,56 @@ def locate(iris):
     return out
 
 
+_KIND = {"Class": "클래스", "ObjectProperty": "객체 속성(관계)", "DatatypeProperty": "자료 속성(값)",
+         "AnnotationProperty": "주석 속성", "SymmetricProperty": "대칭 속성", "TransitiveProperty": "전이 속성"}
+
+
+def describe(code, el, g):
+    """대상 요소 1개 → (종류, 라벨, 비고: 왜 걸렸는지·어떻게 고치는지)"""
+    import rdflib
+    R, S = rdflib.RDF, rdflib.RDFS
+    iri = el.split(" ↔ ")[0].split(" (")[0]
+    u = rdflib.URIRef(iri)
+    kind = ", ".join(sorted({_KIND.get(str(o).split("#")[-1], str(o).split("#")[-1]) for o in g.objects(u, R.type)})) or "(타입 선언 없음)"
+    lab = next((str(o) for o in g.objects(u, S.label) if getattr(o, "language", None) == "ko"), None) or next((str(o) for o in g.objects(u, S.label)), "")
+    has_c = any(True for _ in g.objects(u, S.comment))
+    if code == "P04":
+        sub = sum(1 for _ in g.subjects(S.subClassOf, u))
+        dr = sum(1 for _ in g.subjects(S.domain, u)) + sum(1 for _ in g.subjects(S.range, u))
+        subs = ", ".join(sorted(str(x).split("/")[-1] for x in g.subjects(S.subClassOf, u)))
+        if sub:
+            note = (f"스키마에는 하위 클래스 연결 {sub}개({subs})가 있으나 OOPS!는 외부 어휘(SKOS) 클래스를 별도 요소로 보고 "
+                    f"'연결 안 됨'으로 표시함(domain·range 사용 {dr}개). P34 해소를 위해 skos:Concept 을 클래스로 선언하면서 생긴 Minor 항목")
+        else:
+            note = f"스키마 안에서 이 클래스를 가리키는 선언이 없음(하위 클래스·domain·range 0개)"
+    elif code == "P08":
+        miss = [n for n, ok in (("rdfs:label", bool(lab)), ("rdfs:comment", has_c)) if not ok]
+        note = f"없는 주석: {', '.join(miss) or '-'}. 고치려면 이 요소에 {' · '.join(miss) or '주석'}을 추가"
+    elif code == "P13":
+        if " ↔ " in el:
+            pair = [x.split("/")[-1] for x in el.split(" (")[0].split(" ↔ ")]
+            note = f"서로 반대 방향 관계일 수 있음({pair[0]} ↔ {pair[1]}). 실제로 역관계면 owl:inverseOf 선언, 아니면 그대로 둬도 됨"
+        else:
+            note = "역관계(반대 방향 속성)가 선언되지 않았고 OOPS!가 찾은 짝 후보도 없음. 필요할 때만 역속성을 만들어 owl:inverseOf 선언"
+    else:
+        note = ""
+    return kind, lab, note
+
+
 def oops_rows(pits, t=None):
+    import rdflib
+    g = rdflib.Graph()
+    g.parse(SCHEMA)
     rows = []
     for p in pits or []:
         loc = locate(p["elements"])
+        info = []
+        for e, l in zip(p["elements"][:100], loc):
+            kind, lab, note = describe(p["code"], e, g)
+            info.append(dict(iri=e, loc=l, kind=kind, label=lab, note=note))
         rows.append(dict(check_id=f"OOPS-{p['code']}", category="OOPS!", item=f"{p['code']} {p['name']}", level=p["level"],
                          detected="true", count=1, elements=json.dumps(p["elements"][:100], ensure_ascii=False),
-                         location=json.dumps([f"{e} @ {l}" for e, l in zip(p["elements"][:100], loc)], ensure_ascii=False),
+                         location=json.dumps(info, ensure_ascii=False),
                          affected=p["affected"], elapsed_ms=int((time.time() - t) * 1000) if t else "", status="completed", error_message=""))
     return rows
 
