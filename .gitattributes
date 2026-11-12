@@ -7,3 +7,10 @@ deploy/*.sh text eol=lf
 # [DA 2] 검증 자산 — 해시가 바뀌지 않도록 줄바꿈 변환 금지
 spec_data/da2/*.ttl -text
 spec_data/da2/*.txt -text
+
+# [AI 6] 시험 데이터·동결 기록 — 화면의 SHA-256·동결 기록·제공한 SHA256SUMS가 서버에서도 같도록 줄바꿈 변환 금지
+# (Windows PC에서 받아 서버로 옮길 때 CRLF로 바뀌면 해시가 달라져 동결 확인에서 실행이 거부됨)
+spec_data/testset_ai6.csv -text
+spec_data/answer_ai6.csv -text
+spec_data/intent_map_ai6.csv -text
+spec_data/freeze_ai6.json -text
