@@ -18,6 +18,7 @@
 """
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -43,6 +44,12 @@ END_EVENTS = ("turn.finished", "error")
 LLM_MODEL = os.environ.get("AI6_LLM_MODEL", "gpt-oss-120b")
 # 규격서 동결 버전 'vLLM 0.24.0' — LLM 서버 /version 이 이것과 다르면 사전 점검 실패 (빈 값이면 기록만)
 VLLM_VERSION = os.environ.get("AI6_VLLM_VERSION", "0.24.0")
+GIS_API_VERSION = os.environ.get("AI6_GIS_API_VERSION", "v0.1")   # 규격서 2-6 시험조건 공간분석 API 버전 — 읽은 값이 다르면 사전 점검 실패
+# 규격서 2-6 시험조건: 시험 기간 중 고정(바뀌면 전체 재수행) — 시험방법 (2) '동결 버전 확인' 표의 '시험 조건' 칸
+SPEC_VERSIONS = [("AI 모델", "GPT-OSS 120B (gpt-oss-120b)"), ("추론 서버 (vLLM)", "0.24.0"),
+                 ("지도제어·공간분석 Sub 오케스트레이터", "v1.0"), ("지도제어·공간분석 에이전트", "v1.0"),
+                 ("공간분석 API", "v0.1"),
+                 ("지도 데이터 기준일", "연속지적도 2026-10-14 · 토지이용계획 2026-05-06·05-07 · LX맵 2026-08-31·09-01")]
 
 
 def llm_key_env():
@@ -434,7 +441,11 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120, llm_key=N
                           + (f" · 중계 실패 {', '.join(bad)}" if bad else f" · 중계 {sum(1 for a in RELAY_AGENTS if a in relay)}개 정상"))
             elif name.startswith("공간분석 API"):                # 동결 버전 확인용 — OpenAPI 문서의 info.version (시스템 조회값)
                 info = r["body"].get("info") if isinstance(r["body"].get("info"), dict) else {}
-                detail = f"{info.get('title') or 'GIS API'} 버전 {info.get('version') or '미제공'}"
+                ver = str(info.get("version") or "").strip()
+                detail = f"{info.get('title') or 'GIS API'} 버전 {ver or '미제공'}"
+                if ver and GIS_API_VERSION and ver.lstrip("vV") != GIS_API_VERSION.lstrip("vV"):   # 규격: 시험 기간 중 v0.1 고정
+                    r["ok"] = False
+                    detail += f" — 시험 조건({GIS_API_VERSION})과 다름"
         elif not r["ok"]:
             detail = str(r["body"])[:200]
         rows.append({"항목": name, "주소": url, "결과": "정상" if r["ok"] else "실패", "응답(ms)": r["ms"], "내용": detail})
@@ -446,6 +457,49 @@ def precheck(base=None, checks=None, probe_message=None, deadline=120, llm_key=N
         rows.append({"항목": "주소 검색 1건 (V-World 경유)", "주소": res["url"], "결과": "정상" if ok else "실패",
                      "응답(ms)": round((res["elapsed"] or 0) * 1000),
                      "내용": (res["error"] or f"위치 확정 호출 {len(loc)}건 · 상태 {turn['status']}")[:200]})
+    return rows
+
+
+def _pre_text(pre, prefix):
+    return next((str(r.get("내용") or "") for r in pre or [] if str(r.get("항목") or "").startswith(prefix)), "")
+
+
+def version_rows(pre=None, ready=None, llm=None):
+    """규격 시험방법 (2) '동결 버전 확인' 표 — [{항목, 시험 조건, 확인값, 확인 방법, 결과}]. 네트워크를 쓰지 않음:
+    사전 점검 행(pre) · 실행 기록의 /ready 조회값(ready) · LLM 서버 확인값(llm) 으로 만듦.
+    결과 = 일치 / 불일치 / 확인 못 함 / 선언값(시스템이 알려 주지 않아 의뢰기업 선언값으로 기록)"""
+    ready, llm = ready or {}, llm or {}
+    want = dict(SPEC_VERSIONS)
+    rows = []
+
+    def add(name, got, how, ok):
+        rows.append({"항목": name, "시험 조건": want[name], "확인값": got or "-", "확인 방법": how,
+                     "결과": "확인 못 함" if ok is None else ("일치" if ok is True else "불일치" if ok is False else ok)})
+    served = [m for m in llm.get("모델") or [] if m]
+    llm_row = next((r for r in pre or [] if str(r.get("항목") or "").startswith("LLM")), None)
+    llm_bad = bool(llm_row) and llm_row.get("결과") != "정상"   # 키 오류·모델 없음 등 — 모델 목록 없이 '일치'로 보이지 않게
+    m = re.search(r"모델=([^\s·]+)", _pre_text(pre, "공간오케 준비"))
+    conf = ready.get("LLM 모델") or llm.get("공간오케 설정 모델") or (m.group(1) if m else "")
+    if served:
+        add("AI 모델", ", ".join(map(str, served)), "LLM 서버 /v1/models (LLM 키로 확인)",
+            _model_name(LLM_MODEL) in {_model_name(x) for x in served})
+    elif llm_bad:
+        add("AI 모델", conf, "LLM 점검 실패 — 사전 점검 표의 LLM 행 참고", None)
+    else:
+        add("AI 모델", conf, "공간오케 /ready 설정 모델 (LLM 키가 없으면 서버의 모델 목록은 확인 못 함)",
+            (_model_name(conf) == _model_name(LLM_MODEL)) if conf else None)
+    v = llm.get("vLLM") if llm.get("vLLM") not in (None, "", "미확인") else None
+    if not v:
+        m = re.search(r"vLLM (\d+(?:\.\d+)+)", _pre_text(pre, "LLM"))
+        v = m.group(1) if m else None
+    add("추론 서버 (vLLM)", v, "LLM 서버 /version", (v == want["추론 서버 (vLLM)"]) if v else None)
+    for name in ("지도제어·공간분석 Sub 오케스트레이터", "지도제어·공간분석 에이전트"):
+        add(name, "시스템 미제공", "버전을 알려 주는 API 없음 — 의뢰기업 선언값으로 기록 (연결 에이전트 목록은 위 표)", "선언값")
+    m = re.search(r"버전 (\S+)", _pre_text(pre, "공간분석 API"))
+    g = m.group(1) if m and m.group(1) != "미제공" else None
+    add("공간분석 API", g, "GIS API /v3/api-docs info.version",
+        (g.lstrip("vV") == want["공간분석 API"].lstrip("vV")) if g else None)
+    add("지도 데이터 기준일", "시스템 미제공", "기준일을 알려 주는 API 없음 — 의뢰기업 선언값으로 기록", "선언값")
     return rows
 
 

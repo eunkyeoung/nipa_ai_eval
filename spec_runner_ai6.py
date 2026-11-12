@@ -56,6 +56,10 @@ COOLDOWN = float(os.environ.get("AI6_COOLDOWN", "10"))     # 대기 상한 초�
 MAX_CONN_FAILS = 3                                          # 연결 실패가 이만큼 이어지면 환경 문제로 보고 멈춤(전체 재수행 대상)
 FREEZE_FILE = "freeze_ai6.json"                             # 시험 데이터 폴더의 동결 기록 — 있으면 해시가 같아야 실행
 STOP_NOTE = "사용자 중지 — 끝까지 돌리기 전(↻ 이어서로 마저 돌리면 공식)"   # 동결한 전체 실행을 멈췄을 때의 예비 사유
+RUN_NOTE = "끝까지 실행하기 전(실행 중이거나 중간에 멈춤)"   # 공식 조건 실행은 시작 때 예비로 쓰고, 정상으로 끝날 때만 공식으로 바꿈
+CRASH_NOTE = "비정상 종료"                                   # 실행 중 예외로 멈춤 — 이어서 돌려 공식이 되는지는 resume_outlook() 이 알려 줌
+INCOMPLETE_NOTE = "원본 실행이 끝까지 돌지 않음"            # 다시 판정 폴더: 원본이 중간에 멈춘 실행
+PENDING_NOTES = (STOP_NOTE, RUN_NOTE)
 
 
 def refuse(status_file, msg):
@@ -90,7 +94,7 @@ def freeze_check(freeze_path, cur):
     with open(freeze_path, encoding="utf-8") as f:
         fz = json.load(f)
     names = {"testset_sha256": "시험셋", "answer_sha256": "정답셋", "intent_map_sha256": "의도 대응표",
-             "criteria_sha256": "판정 기준(코드)", "deadline_s": "응답 대기 상한", "base": "공간오케 주소"}
+             "criteria_sha256": "판정 기준(규칙·옵션)", "deadline_s": "응답 대기 상한", "base": "공간오케 주소"}
     return [names[k] for k in names if k in fz and str(fz.get(k)) != str(cur.get(k))]
 
 
@@ -125,6 +129,14 @@ def write_jsonl(path, rows):
 def append_jsonl(path, row):
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+
+
+def resume_outlook(run_dir):
+    """멈춘 실행 폴더 → 보냈지만 판정 기록도 응답 원문도 없는 사례 ID 목록.
+    '↻ 이어서' 때 이 사례들은 명령 1회 입력 원칙에 따라 다시 보내지 않고 응답 오류로 남으므로, 하나라도 있으면 이어서 돌려도 공식이 아님"""
+    done = {str(r.get("사례ID")) for r in read_jsonl(os.path.join(run_dir, E.GIS_LOG))}
+    sent = [str(r.get("사례ID")) for r in read_jsonl(os.path.join(run_dir, "attempts.jsonl"))]
+    return [c for c in dict.fromkeys(sent) if c not in done and not os.path.exists(os.path.join(run_dir, "raw", f"{c}.json"))]
 
 
 def save_meta(path, meta):
@@ -242,7 +254,11 @@ def rescore(run_dir, answer, testset, intent_map):
         with open(om, encoding="utf-8") as f:
             meta = json.load(f)
     first = meta.get("원본") or src                               # 처음 실행한 폴더(다시 판정을 거듭해도 그대로)
-    why = [w for w in meta.get("예비사유") or [] if not str(w).startswith("다시 판정(")]
+    why = [w for w in meta.get("예비사유") or [] if not str(w).startswith("다시 판정(")
+           and w not in PENDING_NOTES and not str(w).startswith(CRASH_NOTE)]   # 다시 판정 폴더는 이어서 돌릴 수 없음 — 보류 문구는 빼고
+    if (meta.pop("완료전", None) or meta.pop("중지", None)) and INCOMPLETE_NOTE not in why:
+        why.append(INCOMPLETE_NOTE)
+    meta.pop("중지", None)
     meta.update(원본=first, 공식=False, 예비사유=why + [f"다시 판정(원본 {os.path.basename(first)})"],
                 rescored=dict(at=time.strftime("%Y-%m-%d %H:%M:%S"), answer=answer, answer_sha256=sha256(answer),
                               intent_map=intent_map or "기본 대응표", intent_map_sha256=rules_sha256(intent_map)),
@@ -373,25 +389,36 @@ def main():
         with open(mp, encoding="utf-8") as f:
             meta = {**json.load(f)}
         meta.setdefault("resumed", []).append(time.strftime("%Y-%m-%d %H:%M:%S"))
+        if meta.pop("중지", None) or meta.get("공식"):            # 예전 기록(중지 표시·시작 때 공식) → 끝낼 때 공식 여부를 다시 정함
+            meta.update(공식=False, 완료전=True)
         cur = freeze_record(a.testset, a.answer, a.intent_map, deadline, base)   # 처음 실행 때와 같은 조건인가 — 그사이 동결을 다시 걸었어도
         changed = [name for key, mkey, name in (("testset_sha256", "testset_sha256", "시험셋"), ("answer_sha256", "answer_sha256", "정답셋"),
                                                 ("intent_map_sha256", "intent_rules_sha256", "의도 대응표"),
-                                                ("criteria_sha256", "criteria_sha256", "판정 기준(코드)"),
+                                                ("criteria_sha256", "criteria_sha256", "판정 기준(규칙·옵션)"),
                                                 ("deadline_s", "deadline_s", "응답 대기 상한"), ("base", "base", "공간오케 주소"))
                    if meta.get(mkey) is not None and (float(meta[mkey]) != float(cur[key]) if key == "deadline_s"
                                                       else str(meta[mkey]) != str(cur.get(key)))]
+        blockers = []                                      # 이어서 돌려도 공식이 될 수 없는 사유 — 시작할 때 바로 예비로
         if changed:
-            meta["공식"] = False
-            meta.setdefault("예비사유", []).append("이어서 실행 때 처음 실행과 조건이 다름 (" + ", ".join(changed) + ")")
+            blockers.append("이어서 실행 때 처음 실행과 조건이 다름 (" + ", ".join(changed) + ")")
         if a.retry_errors:
-            meta["공식"] = False
-            meta.setdefault("예비사유", []).append("응답 오류 재전송")
+            blockers.append("응답 오류 재전송")
         if lost:                                           # QA 쪽 중단 — 시스템 무응답이 아니므로 공식 결과로 쓰지 않고 전체 재수행 권장
-            meta["공식"] = False
-            meta.setdefault("예비사유", []).append(f"QA 중단으로 응답을 기록 못 한 사례 {lost}건(응답 오류로 남김) — 전체 재수행 권장")
-        if not a.no_precheck:                              # 이어서 실행도 환경을 다시 점검
+            blockers.append(f"QA 중단으로 응답을 기록 못 한 사례 {lost}건(응답 오류로 남김) — 전체 재수행 권장")
+        if meta.get("완료전"):
+            fz0 = freeze_check(freeze_path, freeze_record(a.testset, a.answer, a.intent_map, deadline, base))   # 보낸 데이터(사본) 대 지금 동결 기록
+            if fz0 is None or fz0:
+                blockers.append("이어서 실행 때 동결 기록과 다름" + (f" ({', '.join(fz0)})" if fz0 else " (동결 풀림)"))
+            if pilot and not a.retry_errors:
+                blockers.append("이어서 실행을 예비 조건으로 함(일부 ID·사전 점검 생략 등)")
+        if blockers:
+            meta.pop("완료전", None)
+            meta.update(공식=False, 예비사유=[w for w in meta.get("예비사유") or [] if w not in PENDING_NOTES
+                                             and not str(w).startswith(CRASH_NOTE)] + blockers)
+        if not a.no_precheck:                              # 이어서 실행도 환경을 다시 점검 (그때의 /ready·LLM 값도 함께 — 결과 화면 동결 버전 표)
             fresh = C.precheck(base, probe_message=a.probe)
-            meta.setdefault("resume_precheck", []).append(dict(at=time.strftime("%Y-%m-%d %H:%M:%S"), rows=fresh))
+            meta.setdefault("resume_precheck", []).append(dict(at=time.strftime("%Y-%m-%d %H:%M:%S"), rows=fresh,
+                                                               ready=C.ready_info(base), llm=C.llm_info(base)))
     else:
         meta = dict(item="AI6", 시험항목="[AI 6] 자연어 기반 지도 제어 기능", base=base, endpoint=f"{base}/api/chat",
                     deadline_s=deadline, origin=C.ORIGIN, cases=[r["사례ID"] for r in ts] if a.cases else [],
@@ -400,11 +427,13 @@ def main():
                     intent_rules=[{k: (sorted(v) if isinstance(v, set) else v) for k, v in r.items()} for r in rules],
                     data_check=data_check,
                     intent_rules_sha256=rules_sha256(a.intent_map), criteria_sha256=E.criteria_fingerprint(),
-                    frozen=os.path.exists(freeze_path), 공식=os.path.exists(freeze_path) and not pilot,
+                    frozen=os.path.exists(freeze_path), 공식=False,   # 공식 여부는 정상으로 끝날 때 정함(중간에 죽은 실행이 공식으로 남지 않게)
                     예비사유=[x for x, on in (("일부 ID만 실행", a.cases), ("응답 오류 재전송", a.retry_errors),
                                               ("사전 점검 생략", a.no_precheck), ("시험셋 밖 ID(예비 실측)", outside),
                                               ("동결 전 실행", not os.path.exists(freeze_path))) if on],
                     gap_s=GAP, started=time.strftime("%Y-%m-%d %H:%M:%S"))
+        if meta["frozen"] and not pilot:                   # 공식 조건 실행 — 끝까지 마치면 공식
+            meta.update(완료전=True, 예비사유=meta["예비사유"] + [RUN_NOTE])
         if not a.no_precheck:
             fresh = meta["precheck"] = C.precheck(base, probe_message=a.probe)
             meta["ready"] = C.ready_info(base)
@@ -434,8 +463,8 @@ def main():
             if os.path.exists(STOP_FILE):
                 os.remove(STOP_FILE)
                 status.update(state="stopped", message=f"사용자가 중지 ({status['done']}/{total}건 완료)")
-                if meta.get("공식"):                           # 다 돌리기 전에는 공식 점수로 쓰지 않음 — '↻ 이어서'로 끝까지 돌리면 되돌림
-                    meta.update(공식=False, 중지=True, 예비사유=(meta.get("예비사유") or []) + [STOP_NOTE])
+                if meta.get("완료전"):                         # 다 돌리기 전에는 공식 점수로 쓰지 않음 — '↻ 이어서'로 끝까지 돌리면 공식
+                    meta.update(공식=False, 예비사유=[w for w in meta.get("예비사유") or [] if w not in PENDING_NOTES] + [STOP_NOTE])
                     save_meta(mp, meta)
                 break
             cid, cmd = r["사례ID"], r["명령문"]                 # 문장은 그대로 — strip 도 하지 않음(시험셋에 적힌 그대로 입력)
@@ -468,17 +497,19 @@ def main():
                 status.update(state="error", message=f"연결 실패 {fails}회 연속 ({status['done']}/{total}건) — 시험 환경 문제로 보고 멈췄어요. "
                                                      "원인을 고친 뒤 전체를 다시 실행하세요(규격: 환경이 바뀌면 전체 재수행).")
                 status.pop("argv", None)                   # 화면에 '↻ 이어서'를 내지 않음 — 이 폴더를 이어 돌려도 공식이 아님
-                meta.update(공식=False, 예비사유=(meta.get("예비사유") or []) + [f"연결 실패 {fails}회 연속으로 멈춤 — 전체 재수행 대상"])
+                meta.pop("완료전", None)
+                meta.update(공식=False, 예비사유=[w for w in meta.get("예비사유") or [] if w not in PENDING_NOTES]
+                            + [f"연결 실패 {fails}회 연속으로 멈춤 — 전체 재수행 대상"])
                 with open(mp, "w", encoding="utf-8") as f:
                     json.dump(meta, f, ensure_ascii=False, indent=1, default=str)
                 break
             pause(COOLDOWN if res.get("ended_by") == "deadline" else GAP)
         if status["state"] == "running":
-            if meta.pop("중지", None):                      # 사용자 중지 뒤 '↻ 이어서'로 끝까지 — 보낸 데이터(사본)가 지금도 동결 그대로이고 다른 예비 사유가 없으면 공식
-                why = [w for w in meta.get("예비사유") or [] if w != STOP_NOTE]
+            if meta.pop("완료전", None):                    # 끝까지 마침(처음부터 · 중지·비정상 종료 뒤 이어서) — 보낸 데이터(사본)가 지금도 동결 그대로이고 다른 예비 사유가 없으면 공식
+                why = [w for w in meta.get("예비사유") or [] if w not in PENDING_NOTES and not str(w).startswith(CRASH_NOTE)]
                 fz = freeze_check(freeze_path, freeze_record(a.testset, a.answer, a.intent_map, deadline, base))
                 if fz is None or fz:
-                    why.append("이어서 실행 때 동결 기록과 다름" + (f" ({', '.join(fz)})" if fz else " (동결 풀림)"))
+                    why.append("실행을 마칠 때 동결 기록과 다름" + (f" ({', '.join(fz)})" if fz else " (동결 풀림)"))
                 if pilot and not why:
                     why.append("이어서 실행을 예비 조건으로 함(일부 ID·사전 점검 생략 등)")
                 meta.update(예비사유=why, 공식=bool(meta.get("frozen")) and not why)
@@ -492,6 +523,13 @@ def main():
         print(status.get("message"), flush=True)
     except Exception as e:                                  # noqa: BLE001
         status.update(state="error", message=f"{type(e).__name__}: {e}")
+        if meta.get("완료전"):                              # 공식 조건 실행이 중간에 죽음 → 예비로 남김(↻ 이어서로 마저 돌리면 공식)
+            meta["예비사유"] = [w for w in meta.get("예비사유") or [] if w not in PENDING_NOTES and not str(w).startswith(CRASH_NOTE)] \
+                + [f"{CRASH_NOTE}({type(e).__name__})"]
+            try:
+                save_meta(mp, meta)
+            except OSError:
+                pass
         raise
     finally:
         alive.set()

@@ -281,6 +281,31 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
         v, ext = run(ev, GOLD_OVERLAP)
         self.assertTrue(v["정상수행"], v["불일치"])
         self.assertFalse(ext["unmapped_calls"])
+        self.assertNotIn("land_attr_b:attr", ext["spec_output"]["핵심파라미터"]["분석대상"])
+
+    def test_auxiliary_call_not_shown_as_target_or_type(self):  # 실측 AI6-0042: ATTR(보조) 뒤 개발가능지 → 명령유형·분석대상은 개발가능지 기준
+        gold = dict(GOLD_OVERLAP, 명령유형="산지·농지 규제 분석", 정답의도="지도 이동; 개발가능지 추출; 분석 결과 표출",
+                    정답파라미터=f"PNU={PNU}; 분석대상=개발가능지", 정답시나리오="표출대상=대상 필지 도형; 분석결과표출=개발가능 영역 도형")
+        ev = (locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "ATTR", call_id="c3", geom=None)
+              + analysis_events("land_regulation", "tool.land.regulation", "operation", "DEVELOPABLE_AREA", call_id="c4") + finish())
+        v, ext = run(ev, gold)
+        self.assertTrue(v["정상수행"], v["불일치"])
+        so = ext["spec_output"]
+        self.assertEqual(so["실행대상기능"]["명령유형"], "산지·농지 규제 분석")
+        self.assertEqual(so["핵심파라미터"]["분석대상"], ["개발가능지"])
+
+    def test_unmapped_intent_shown_in_spec_output(self):        # 대응표 밖 호출은 규격 출력 '의도'에도 보임 — ① 판정에 쓴 집합과 같게
+        ev = (locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY")
+              + analysis_events("spatial_regulation", "tool.x", "operation", "NEW_OP", call_id="c9") + finish())
+        v, ext = run(ev, GOLD_OVERLAP)
+        self.assertFalse(v["①"])
+        self.assertIn("(대응표 밖) spatial_regulation:NEW_OP", ext["spec_output"]["의도"])
+
+    def test_intent_mismatch_text_is_stable(self):              # 불일치 문구 순서 = 정답 순서 (다시 판정해도 같은 문구)
+        gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 산지전용 검토; 지도 확대/축소; 분석 결과 표출")
+        ev = [("turn.started", {"thread_id": "t1"})] + finish(answer="지원하지 않는 요청입니다.")
+        v = run(ev, gold)[0]
+        self.assertTrue(v["불일치"][0].startswith("① 의도 누락 지도 이동, 산지전용 검토, 지도 확대/축소, 분석 결과 표출"), v["불일치"][0])
 
     def _ask(self, reason):
         ev = locate_events(select_ok=False) + [("ask", {"key": "user:1", "kind": "user", "question": "어느 곳인가요?",
@@ -299,23 +324,72 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
         self.assertEqual(v["오류원인"], "의도 해석 오류")
         self.assertTrue(v["세부원인"].startswith("되묻기"))
 
-    def test_unlocated_default_is_spec_order(self):            # 기본: 규격 순서(①부터) — 위치 미확정은 세부 원인으로만
+    def test_unlocated_system_fail_is_response_error(self):    # 위치 확정 호출이 시스템 사유로 실패 → 규격 '시스템 오류로 응답하지 못한 사례' = 응답 오류
         ev = locate_events(select_ok=False)
         ev = [(e, {**d, "status": "error", "reason_code": "not_connected"}) if e == "call.finished" else (e, d) for e, d in ev]
         v, _ = run(ev + finish(), GOLD_OVERLAP)
-        self.assertEqual(v["오류원인"], "의도 해석 오류")
+        self.assertEqual(v["오류원인"], "응답 오류")
+        self.assertFalse(v["정상수행"])
+        self.assertIn("INTEGRATED_LOCATION_SEARCH error", v["응답오류"])
+        self.assertTrue(v["불일치"][0].startswith("시스템 오류로 위치를 확정하지 못함"))
         self.assertIn("위치 확정 호출 실패", v["세부원인"])
         self.assertTrue(any("위치 미확정" in m for m in v["불일치"]))
+        self.assertIs(v["①"], False)                                # ①②③ 대조 결과는 그대로 남김
+        E.SYSTEM_FAIL_RULE = False                                  # 끄면 규격 순서(①부터)만 — 위치 미확정은 세부 원인으로만
+        try:
+            v = run(ev + finish(), GOLD_OVERLAP)[0]
+            self.assertEqual(v["오류원인"], "의도 해석 오류")
+            self.assertEqual(v["응답오류"], "")
+        finally:
+            E.SYSTEM_FAIL_RULE = True
+
+    def test_system_fail_real_shapes(self):                     # 2026-11-12 실측 2건 모양: 도구 오류 목록 · 피호출자 실패 보고(문자열)
+        def failing(errors, resolve):
+            pay = {"status": "error", "errors": errors}
+            if resolve:
+                pay["resolve"] = {"status": resolve}
+            return [("turn.started", {"thread_id": "t1"}),
+                    ("call.started", {"call_id": "c1", "callee": "map_navigation_b", "tool": "locationSearch",
+                                      "args": plan("locationSearch", action="INTEGRATED_LOCATION_SEARCH", query="경산시 신천동 31-1")}),
+                    ("call.finished", {"call_id": "c1", "callee": "map_navigation_b", "tool": "locationSearch", "status": "error",
+                                       "reason_code": "rejected", "payload": pay})] + \
+                finish(answer="위치 검색이 일시적으로 되지 않아 위치를 확인하지 못했습니다.")
+        conn = [{"tool": "locationSearch", "kind": "tool_error", "layer": "mcp", "recoverable": False,
+                 "message": "공간분석 API 요청에 실패했습니다: /api/address/location (All connection attempts failed)"}]
+        v = run(failing(conn, "failed"), GOLD_OVERLAP)[0]
+        self.assertEqual(v["오류원인"], "응답 오류")
+        self.assertIn("All connection attempts failed", v["응답오류"])
+        v = run(failing("피호출자가 실패를 보고했습니다. map_navigation_b: 응답에 task 가 없습니다.", None), GOLD_OVERLAP)[0]
+        self.assertEqual(v["오류원인"], "응답 오류")
+        self.assertIn("응답에 task 가 없습니다", v["응답오류"])
+        rows = [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "판정": "오류", "오류원인": v["오류원인"], "불일치내용": v["불일치"]}]
+        s = E.score(rows, [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "x"}])
+        self.assertEqual(s["응답오류"], 1)
+        self.assertEqual({r["오류 원인"]: r["건수"] for r in s["오류원인별"]}["응답 오류"], 1)
+
+    def test_system_fail_then_recovered_is_judged_normally(self):   # 시스템 실패 뒤 다시 찾아 끝까지 했으면 응답 오류가 아님
+        fail = [("call.started", {"call_id": "c0", "callee": "map_navigation_b", "tool": "locationSearch",
+                                  "args": plan("locationSearch", action="INTEGRATED_LOCATION_SEARCH", query="경산시 신천동 31-1")}),
+                ("call.finished", {"call_id": "c0", "callee": "map_navigation_b", "tool": "locationSearch", "status": "error",
+                                   "reason_code": "rejected", "payload": {"status": "error", "errors": [{"message": "timeout"}]}})]
+        ok = locate_events()
+        ev = ok[:1] + fail + ok[1:] + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+        v = run(ev, GOLD_OVERLAP)[0]
+        self.assertTrue(v["정상수행"], v["불일치"])
+        self.assertEqual(v["응답오류"], "")
 
     def test_unlocated_rule_option(self):                     # 회의에서 위치 미확정 규칙을 택하면(UNLOCATED_RULE=True)
+        ev = locate_events(select_ok=False)
+        ev = [(e, {**d, "status": "error", "reason_code": "not_connected"}) if e == "call.finished" else (e, d) for e, d in ev]
         E.UNLOCATED_RULE = True
         try:
-            ev = locate_events(select_ok=False)
-            ev = [(e, {**d, "status": "error", "reason_code": "not_connected"}) if e == "call.finished" else (e, d) for e, d in ev]
-            self.assertEqual(run(ev + finish(), GOLD_OVERLAP)[0]["오류원인"], "GIS 지도 제어 실행 오류")
+            self.assertEqual(run(ev + finish(), GOLD_OVERLAP)[0]["오류원인"], "응답 오류")       # 시스템 실패는 응답 오류가 먼저
             self.assertEqual(run(locate_events(select_ok=False) + finish(), GOLD_OVERLAP)[0]["오류원인"], "핵심 파라미터 추출 오류")
+            E.SYSTEM_FAIL_RULE = False
+            self.assertEqual(run(ev + finish(), GOLD_OVERLAP)[0]["오류원인"], "GIS 지도 제어 실행 오류")
         finally:
             E.UNLOCATED_RULE = False
+            E.SYSTEM_FAIL_RULE = True
 
     def test_unlocated_needs_location_call_and_ok_select(self):  # 위치 미확정 = 위치 확정 호출은 했고, 성공한 SELECT·분석 호출이 없음
         none = [("turn.started", {"thread_id": "t1"})] + finish(answer="지원하지 않는 요청입니다.")   # 호출 없음 → ① (P02)
@@ -332,14 +406,17 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
         self.assertIn("위치 확정 호출 실패: SELECT error", run(sel, GOLD_OVERLAP)[0]["세부원인"])
         self.assertIn("위치 확정 호출 실패", run(search("failed"), GOLD_OVERLAP)[0]["세부원인"])
         self.assertIn("대상 필지를 정하지 못함", run(search("no_data"), GOLD_OVERLAP)[0]["세부원인"])
-        E.UNLOCATED_RULE = True
+        self.assertEqual(run(sel, GOLD_OVERLAP)[0]["오류원인"], "응답 오류")              # 기본: 시스템 사유 실패 = 응답 오류
+        self.assertEqual(run(search("failed"), GOLD_OVERLAP)[0]["오류원인"], "응답 오류")
+        self.assertEqual(run(search("no_data"), GOLD_OVERLAP)[0]["오류원인"], "의도 해석 오류")   # 못 찾음은 시스템 오류가 아님 → 규격 순서
+        E.UNLOCATED_RULE, E.SYSTEM_FAIL_RULE = True, False
         try:
             self.assertEqual(run(none, GOLD_OVERLAP)[0]["오류원인"], "의도 해석 오류")
             self.assertEqual(run(sel, GOLD_OVERLAP)[0]["오류원인"], "GIS 지도 제어 실행 오류")
             self.assertEqual(run(search("failed"), GOLD_OVERLAP)[0]["오류원인"], "GIS 지도 제어 실행 오류")
             self.assertEqual(run(search("no_data"), GOLD_OVERLAP)[0]["오류원인"], "핵심 파라미터 추출 오류")
         finally:
-            E.UNLOCATED_RULE = False
+            E.UNLOCATED_RULE, E.SYSTEM_FAIL_RULE = False, True
 
     def test_search_candidate_pnu_not_used(self):             # 검색 호출의 첫 후보 PNU 는 ② 대조에 쓰지 않음
         ev = locate_events()
@@ -557,11 +634,17 @@ class Rules2(unittest.TestCase):                                  # 설계 결�
 
     def test_criteria_fingerprint_tracks_options(self):
         a = E.criteria_fingerprint()
-        E.REQUIRE_TARGET_GEOMETRY = not E.REQUIRE_TARGET_GEOMETRY
+        E.ACTION_ALIAS["setzoom"] = "ZOOM_TO"                    # ③ 대조에 쓰는 지도 동작 이름 대응도 지문에 들어감
         try:
             self.assertNotEqual(a, E.criteria_fingerprint())
         finally:
-            E.REQUIRE_TARGET_GEOMETRY = not E.REQUIRE_TARGET_GEOMETRY
+            E.ACTION_ALIAS["setzoom"] = "SET_ZOOM"
+        for name in ("REQUIRE_TARGET_GEOMETRY", "SYSTEM_FAIL_RULE", "UNLOCATED_RULE"):
+            setattr(E, name, not getattr(E, name))
+            try:
+                self.assertNotEqual(a, E.criteria_fingerprint(), name)
+            finally:
+                setattr(E, name, not getattr(E, name))
         self.assertEqual(a, E.criteria_fingerprint())
 
 
@@ -884,7 +967,7 @@ class Runner(unittest.TestCase):                                   # 실행기 m
         with open(os.path.join(rd, "attempts.jsonl"), "w", encoding="utf-8") as f:
             f.write(json.dumps({"사례ID": "AI6-0001", "thread_id": "t1", "at": "2026-11-10 12:00:00"}) + "\n")
         with open(os.path.join(rd, "meta.json"), "w", encoding="utf-8") as f:
-            json.dump({"공식": True, "예비사유": []}, f)
+            json.dump({"공식": True, "frozen": True, "예비사유": []}, f)
 
     def test_bad_testset_writes_error_status(self):                # 시험셋 칸이 틀리면 상태 파일에 오류로 남김(화면이 '시작 중'에 머물지 않게)
         ts = self._csv("testset_ai6.csv", [{"사례ID": "AI6-0001", "명령유형": "지도 이동", "질의": "경산시 신천동 31-1로 이동"}])
@@ -996,11 +1079,115 @@ class Runner(unittest.TestCase):                                   # 실행기 m
 
     def test_resume_judges_saved_raw(self):                        # 원문은 저장했는데 기록 전에 멈춘 사례 → 저장된 원문으로 판정(응답 오류 아님)
         rd = os.path.join(self.tmp, "run")
-        args = self._data(1, freeze=False)
+        args = self._data(1)
         self._lost_case(rd, raw=True)
-        self._main(*args, "--run-dir", rd, "--resume", "--no-precheck")
+        self._main(*args, "--run-dir", rd, "--resume")
         self.assertEqual(self._gis(rd, "AI6-0001")["판정"], "정상 수행")
-        self.assertTrue(self._meta(rd)["공식"])
+        m = self._meta(rd)
+        self.assertTrue(m["공식"], m.get("예비사유"))
+        self.assertNotIn("완료전", m)
+
+    def _chat_ok(self, hook=None):
+        ev = locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish()
+
+        def chat(*a, **k):
+            if hook:
+                hook()
+            return dict(OK_RES, url=self.BASE + "/api/chat", request={}, http_status=200, t_first_event=0.1, deadline=5,
+                        error=None, events=list(ev))
+        return chat
+
+    def test_official_only_after_finishing(self):              # 공식 조건 실행 — 도는 동안은 예비(끝까지 실행하기 전), 정상으로 끝나야 공식
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        seen = []
+        hook = lambda: seen.append(self._meta(rd)) if os.path.exists(os.path.join(rd, "meta.json")) else None
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=self._chat_ok(hook)):
+            self._main(*self._data(2), "--run-dir", rd)
+        self.assertTrue(seen)
+        self.assertFalse(seen[0]["공식"])
+        self.assertTrue(seen[0]["완료전"])
+        self.assertIn(self.R6.RUN_NOTE, seen[0]["예비사유"])
+        m = self._meta(rd)
+        self.assertTrue(m["공식"], m.get("예비사유"))
+        self.assertEqual(m["예비사유"], [])
+        self.assertNotIn("완료전", m)
+
+    def test_crash_leaves_preliminary_then_resume_makes_official(self):   # 실행 중 예외 → 예비(비정상 종료) · ↻ 이어서로 끝까지 → 공식
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        args = self._data(3)
+        real, calls = self.R6.judge_one, []
+
+        def boom(*a, **k):
+            calls.append(1)
+            if len(calls) == 2:
+                raise RuntimeError("판정 중 예외(시험)")
+            return real(*a, **k)
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=self._chat_ok()), um.patch.object(self.R6, "judge_one", side_effect=boom):
+            with self.assertRaises(RuntimeError):
+                self._main(*args, "--run-dir", rd)
+        m, st = self._meta(rd), self._status()
+        self.assertEqual(st["state"], "error")
+        self.assertFalse(m["공식"])
+        self.assertTrue(any(str(w).startswith(self.R6.CRASH_NOTE) for w in m["예비사유"]), m["예비사유"])
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=self._chat_ok()):
+            self._main(*args, "--run-dir", rd, "--resume")         # 원문은 저장됐으므로 그 사례는 원문으로 판정, 나머지는 보냄
+        m = self._meta(rd)
+        self.assertEqual(self._status()["state"], "done")
+        self.assertTrue(m["공식"], m.get("예비사유"))
+        self.assertEqual(m["예비사유"], [])
+
+    def test_resume_with_lost_case_is_preliminary_from_start(self):   # 응답을 기다리다 멈춘 사례(원문·기록 없음) → 이어서 돌리는 동안에도 예비
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        args = self._data(2)
+        self._lost_case(rd)                                        # AI6-0001: 보낸 기록만 있음 (옛 기록 모양: 공식 True)
+        self.assertEqual(self.R6.resume_outlook(rd), ["AI6-0001"])
+        seen = []
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=self._chat_ok(lambda: seen.append(self._meta(rd)))):
+            self._main(*args, "--run-dir", rd, "--resume")
+        self.assertTrue(seen)                                      # AI6-0002 를 보내는 동안
+        self.assertFalse(seen[0]["공식"])
+        self.assertNotIn("완료전", seen[0])                         # 화면이 '공식 조건으로 실행 중'으로 보이지 않게
+        m = self._meta(rd)
+        self.assertFalse(m["공식"])
+        self.assertTrue(any("QA 중단" in w for w in m["예비사유"]), m["예비사유"])
+        self.assertFalse(any(w in self.R6.PENDING_NOTES for w in m["예비사유"]), m["예비사유"])
+        self.assertEqual(set(m["resume_precheck"][-1]), {"at", "rows", "ready", "llm"})
+
+    def test_resume_outlook_counts_only_unrecorded_sends(self):  # 원문이 있으면 이어서 때 원문으로 판정 — 기록·원문 둘 다 없는 사례만
+        rd = os.path.join(self.tmp, "run")
+        self._lost_case(rd, raw=True)
+        self.assertEqual(self.R6.resume_outlook(rd), [])
+        with open(os.path.join(rd, "attempts.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"사례ID": "AI6-0002", "thread_id": "t2"}) + "\n")
+        self.assertEqual(self.R6.resume_outlook(rd), ["AI6-0002"])
+
+    def test_rescore_of_stopped_run_drops_resume_notes(self):    # 중지한 폴더를 다시 판정 → '이어서 돌리면 공식' 문구는 빼고 '원본이 끝까지 돌지 않음'
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        args = self._data(3)
+        stop = os.path.join(self.tmp, "stop.flag")
+        hook = lambda: open(stop, "w").close()
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=self._chat_ok(hook)), um.patch.object(self.R6, "STOP_FILE", stop):
+            self._main(*args, "--run-dir", rd)
+        self.assertIn(self.R6.STOP_NOTE, self._meta(rd)["예비사유"])
+        new, _ = self.R6.rescore(rd, args[3], args[1], None)
+        m = self._meta(new)
+        self.assertFalse(m["공식"])
+        self.assertNotIn(self.R6.STOP_NOTE, m["예비사유"])
+        self.assertIn(self.R6.INCOMPLETE_NOTE, m["예비사유"])
+        self.assertNotIn("완료전", m)
+
+    def test_unfrozen_run_stays_preliminary(self):              # 동결 안 한 실행은 끝까지 돌아도 예비
+        import unittest.mock as um
+        rd = os.path.join(self.tmp, "run")
+        with um.patch.object(self.R6.C, "stream_chat", side_effect=self._chat_ok()):
+            self._main(*self._data(1, freeze=False), "--run-dir", rd)
+        m = self._meta(rd)
+        self.assertFalse(m["공식"])
+        self.assertEqual(m["예비사유"], ["동결 전 실행"])
 
     def test_resume_uses_run_snapshot(self):                       # 이어서 실행은 처음 실행 때 사본(data/)으로 판정 — 그 사이 고친 정답이 섞이지 않게
         import shutil
@@ -1176,12 +1363,37 @@ class LlmCheck(unittest.TestCase):                                 # 사전 점�
 
 
 class GisVersion(unittest.TestCase):
-    def test_precheck_records_gis_api_version(self):            # 동결 버전 확인 — 공간분석 API 버전은 OpenAPI 문서 info.version
+    def _pre(self, version):
         import unittest.mock as um
-        doc = dict(ok=True, status=200, ms=1, body={"openapi": "3.0.1", "info": {"title": "GIS API", "version": "1.4.2"}})
+        info = {"title": "GIS API", **({"version": version} if version else {})}
+        doc = dict(ok=True, status=200, ms=1, body={"openapi": "3.0.1", "info": info})
         with um.patch.object(C, "_get", return_value=doc):
-            rows = C.precheck("http://127.0.0.1:1", checks={"공간분석 API (GIS API Server)": "http://127.0.0.1:1/v3/api-docs"})
-        self.assertEqual((rows[0]["결과"], rows[0]["내용"]), ("정상", "GIS API 버전 1.4.2"))
+            return C.precheck("http://127.0.0.1:1", checks={"공간분석 API (GIS API Server)": "http://127.0.0.1:1/v3/api-docs"})
+
+    def test_precheck_checks_gis_api_version(self):             # 동결 버전 확인 — 공간분석 API 버전(info.version)이 시험 조건(v0.1)과 다르면 실패
+        self.assertEqual((self._pre("v0.1")[0]["결과"], self._pre("v0.1")[0]["내용"]), ("정상", "GIS API 버전 v0.1"))
+        self.assertEqual(self._pre("0.1")[0]["결과"], "정상")                    # 앞의 v 는 있어도 없어도 같음
+        r = self._pre("1.4.2")[0]
+        self.assertEqual(r["결과"], "실패")
+        self.assertIn("시험 조건(v0.1)과 다름", r["내용"])
+        self.assertEqual((self._pre(None)[0]["결과"], self._pre(None)[0]["내용"]), ("정상", "GIS API 버전 미제공"))   # 못 읽으면 기록만
+
+    def test_version_rows(self):                                 # 규격 시험방법 (2) 동결 버전 확인 표 — 사전 점검·실행 기록 값으로(네트워크 없음)
+        pre = [{"항목": "공간오케 준비 상태 (/ready)", "결과": "정상", "내용": "ready=True · 모델=gpt-oss-120b"},
+               {"항목": "LLM (GPT-OSS 120B)", "결과": "정상", "내용": "서버 응답 401 · vLLM 0.24.0 — 키가 없어 띄운 모델 목록은 확인 못 함"},
+               {"항목": "공간분석 API (GIS API Server)", "결과": "정상", "내용": "공간 분석 API 버전 v0.1"}]
+        got = {r["항목"]: r["결과"] for r in C.version_rows(pre)}
+        self.assertEqual(got, {"AI 모델": "일치", "추론 서버 (vLLM)": "일치", "지도제어·공간분석 Sub 오케스트레이터": "선언값",
+                               "지도제어·공간분석 에이전트": "선언값", "공간분석 API": "일치", "지도 데이터 기준일": "선언값"})
+        self.assertEqual([r["항목"] for r in C.version_rows([])], [k for k, _ in C.SPEC_VERSIONS])
+        rows = {r["항목"]: r for r in C.version_rows([], {"LLM 모델": "other-model"}, {"vLLM": "0.25.0", "모델": []})}
+        self.assertEqual((rows["AI 모델"]["결과"], rows["추론 서버 (vLLM)"]["결과"], rows["공간분석 API"]["결과"]),
+                         ("불일치", "불일치", "확인 못 함"))
+        bad = [{"항목": "LLM (GPT-OSS 120B)", "결과": "실패", "내용": "서버 응답 401 — LLM 키가 맞지 않아요"}]
+        self.assertEqual({r["항목"]: r["결과"] for r in C.version_rows(bad, {"LLM 모델": "gpt-oss-120b"})}["AI 모델"], "확인 못 함")
+        served = {r["항목"]: r for r in C.version_rows([], {}, {"모델": ["gpt-oss-120b"], "vLLM": "0.24.0"})}
+        self.assertEqual(served["AI 모델"]["결과"], "일치")
+        self.assertIn("/v1/models", served["AI 모델"]["확인 방법"])
 
 
 class Rules(unittest.TestCase):

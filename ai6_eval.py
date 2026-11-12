@@ -4,9 +4,11 @@
 공간오케(17006) 응답을 ai6_client.gather() 로 묶은 것(turn)을 받아 규격서 2-6 기준으로 판정합니다.
 
   ① 의도 추출   : 시스템 해석 의도(의도 대응표 적용) == 정답 의도 (집합 완전 일치 — 빠져도·남아도 오류)
-  ② 파라미터    : 위치는 PNU 로, 분석대상(레이어·분석 종류)·반경·확대 레벨은 값으로 대조 (표기 차이 무시: '263번지' = '263')
+  ② 파라미터    : 위치는 PNU 로, 분석대상(레이어·분석 종류)·반경은 값으로 대조 (표기 차이 무시: '263번지' = '263').
+                  확대 레벨 숫자는 로그에만 기록 (JUDGE_ZOOM_LEVEL=False — 규격: 줌 레벨은 판정에 쓰지 않음)
   ③ 지도 제어   : 응답의 지도 제어 명령(이동·확대 등) + 표출 도형(대상 필지·분석 결과)이 정답 시나리오와 일치
   - 셋 다 맞아야 정상 수행 1건. 되묻기 = 오류. 무응답·대기 상한 초과·시스템 오류 = '응답 오류'
+    (위치 확정 호출이 시스템 사유로 실패해 분석을 시작하지 못한 사례 포함 — SYSTEM_FAIL_RULE)
   - 오류 원인 = ① → ② → ③ 중 처음 어긋난 것 (응답 오류는 그 앞)
   - 정확도(%) = 정상 수행 / 전체 테스트 건수 × 100, 소수점 셋째자리 이하 버림 (반올림 없음: 2/3 → 66.66)
   - 판정에 쓰지 않는 값(로그만): 호출 순서, 중심 좌표·줌 힌트, 분석으로 산출된 면적·거리
@@ -34,13 +36,18 @@ GIS_LOG = "gis_execution_log_ai6.jsonl"          # 실행 결과 로그 (지도 
 REQUIRE_TARGET_GEOMETRY = True        # ③ 표출대상: SELECT 등 이동 명령에 대상 필지 도형이 실려야 함 (2026-11-10 실측: map.SELECT 에 MultiPolygon)
 # 규격: '중심 좌표·줌 레벨 … 로그에 기록하되 판정에 사용하지 않음(명령에 포함된 반경·거리 등 분석 조건 값은 ②에서 판정)'
 # → 확대 레벨 숫자는 참고로만 기록. 확대 명령이 나갔는지는 ③ 지도제어=확대 로 판정
-JUDGE_ZOOM_LEVEL = False                  # True 면 '대상 필지 도형'에 도형 원본(geometry)까지 요구 — 기본은 PNU 로 지정된 선택·이동 명령
+JUDGE_ZOOM_LEVEL = False                  # True 면 정답 '확대레벨'을 시스템 zoomLevel 과 숫자로 대조(②) — 기본 끔(로그에만 기록)
 ASK_CAUSE = "order"                             # 되묻기 원인: reason = 사유가 위치 후보 여럿·필요한 값 없음이면 '핵심 파라미터 추출 오류', 그 밖은 ①→②→③ · param = 늘 파라미터
 ASK_PARAM_REASONS = {"ambiguous_candidates", "missing_required_value"}
 RADIUS_OPS = {"BUFFER", "LAYER_NEARBY"}
 RADIUS_EPS = 1e-6                     # 반경은 단위만 맞추고(0.3km = 300m) 값은 같아야 함 — 규격: 표기만 다른 경우만 일치
 UNLOCATED_RULE = False                # True 면 '위치 미확정'(분석 미시작·PNU 없음)을 시스템 실패=GIS / 못 찾음=파라미터로 돌림.
 #                                       규격(①→②→③ 처음 불일치)과 다른 운영 정의라 기본은 끔 — 세부 원인으로만 기록
+#                                       (SYSTEM_FAIL_RULE 이 켜져 있으면 시스템 실패는 그쪽 '응답 오류'가 먼저)
+SYSTEM_FAIL_RULE = True               # 규격 2-6 판정기준 '시스템 오류로 응답하지 못한 사례 → 응답 오류': 위치 확정 호출이 시스템 사유로 실패해
+#                                       (호출 상태 error·unknown 또는 resolve failed·error — 못 찾음 no_data 는 아님) 분석이 시작되지 않은 사례.
+#                                       ①②③ 대조 결과는 그대로 남김. 2026-11-12 실측 2건: 위치 검색 API 연결 실패 · '응답에 task 가 없습니다'
+#                                       (둘 다 workflow 분류 의도는 정답과 같았음 — ①로 세면 의도 해석 오류로 잘못 보임)
 SEARCH_OPS = {"INTEGRATED_LOCATION_SEARCH", "LEGAL_BOUNDARY_SEARCH", "ROAD_SEARCH", "GEOCODE", "GEOCODE_NORMALIZE"}
 LAYER_ANALYSIS_OPS = {"INTERSECTIONLAYER", "LAYER_NEARBY"}                  # 명령에 든 반경이 넘어가는 분석 — 정답에 반경이 없는데 쓰면 ② 오류
 # ② 레이어 자료 대조 — 이름이 맞아도 고른 레이어 ID 가 그 레이어의 자료 테이블이 아니면 ② 오류.
@@ -463,12 +470,14 @@ for _k, _ops in TARGET_OPS.items():
         OP_LABEL.setdefault(_o, _k)
 
 
-def target_labels(calls, layers, chosen=None):
-    """규격 출력 '분석대상' — 분석 호출 operation 을 정답지 낱말(용도지역·지구 · 접도 …)로, 레이어 분석은 고른 레이어 이름으로"""
+def target_labels(calls, layers, chosen=None, skip=()):
+    """규격 출력 '분석대상' — 분석 호출 operation 을 정답지 낱말(용도지역·지구 · 접도 …)로, 레이어 분석은 고른 레이어 이름으로.
+    skip = 의도 대응표에서 '(무시)'로 정한 보조 호출(callee:OP — 예: land_attr_b:ATTR 토지 정보 조회)은 분석대상으로 적지 않음"""
     out = []
     names = {c.get("lyr_id"): layer_name(c.get("name")) for c in chosen or [] if c.get("name")}
     for c in calls:
-        if c["callee"] == "map_navigation_b" or c["operation"] in LOCATE_OPS or c["operation"] == "LAYER_FIND":
+        if c["callee"] == "map_navigation_b" or c["operation"] in LOCATE_OPS or c["operation"] == "LAYER_FIND" \
+                or f"{c['callee']}:{c['operation']}" in skip:
             continue
         a = c["args"] or {}
         lab = OP_LABEL.get(c["operation"]) or names.get(a.get("lyr_id")) \
@@ -530,7 +539,7 @@ def extract(turn, rules=None):
         for code in set(codes.get("classified") or []) | set(codes.get("called") or []):
             if str(code).upper() in r["values"]:
                 add(r["intent"], "인텐트", str(code))
-    for key in unmapped:                                           # 대응표에 없는 성공 호출 = 정답에 없는 의도 (① 오류)
+    for key in unmapped:                                           # 대응표에 없는 호출(성공 여부 무관) = 정답에 없는 의도 (① 오류)
         intents.append(f"?{key}")
 
     ok_calls = [c for c in calls if call_ok(c)]
@@ -573,14 +582,16 @@ def extract(turn, rules=None):
             functions.append(label)
     if geom_calls or any(a["type"] == "SHOW_LAYER" for a in actions):
         functions.append("지도 표출")
-    main = next((c for c in ok_calls if c["callee"] in TYPE_OF_CALLEE and c["operation"] not in ("LAYER_FIND",)), None)
+    kinds = [c for c in calls if c["callee"] in TYPE_OF_CALLEE and c["operation"] != "LAYER_FIND"
+             and f"{c['callee']}:{c['operation']}" not in ignored]     # 명령유형 = 분석 호출 기준 (보조 호출 '(무시)'는 빼고)
+    main = next((c for c in kinds if call_ok(c)), None) or next(iter(kinds), None)
     move = [a for a in actions if a["type"] in MOVE_ACTIONS]
     asked = bool(turn.get("asks")) or str(turn.get("status") or "").lower() == "asking"
     spec_output = OrderedDict([
-        ("의도", [i for i in intents if not i.startswith("?")]),
+        ("의도", [f"(대응표 밖) {i[1:]}" if i.startswith("?") else i for i in intents]),   # ① 판정에 쓴 집합 그대로
         ("핵심파라미터", OrderedDict([
             ("위치", next((str((c["args"] or {}).get("query")) for c in calls if (c["args"] or {}).get("query")), "")),
-            ("PNU", sorted({p for _, p in pnus})), ("분석대상", target_labels(calls, layers, chosen)),
+            ("PNU", sorted({p for _, p in pnus})), ("분석대상", target_labels(calls, layers, chosen, ignored)),
             ("반경(m)", sorted(set(dists))), ("확대레벨", sorted(set(zooms)))])),
         ("실행대상기능", OrderedDict([("명령유형", TYPE_OF_CALLEE.get(main["callee"], "") if main else ""),
                                 ("Function", functions)])),
@@ -669,16 +680,19 @@ def layer_id_problem(tok, ext):
 
 
 def criteria_fingerprint():
-    """판정 기준(분석대상·시나리오 대조 규칙과 판정 옵션)의 SHA-256 — 대응표와 함께 동결·기록"""
+    """판정 기준(분석대상·시나리오 대조 규칙, 지도 동작 이름 대응, 판정 옵션)의 SHA-256 — 대응표와 함께 동결·기록.
+    규칙·옵션 값의 지문이며 판정 코드 논리 자체는 담지 않음(코드는 시험방법 (3) 소스 확인 대상)"""
     blob = json.dumps({"TARGET_OPS": {k: sorted(v) for k, v in TARGET_OPS.items()},
                        "SCENARIO_RULES": [[a, sorted(b), list(c)] for a, b, c in SCENARIO_RULES],
                        "MAP_CONTROL": {k: sorted(v) for k, v in MAP_CONTROL.items()},
                        "LOCATE_OPS": sorted(LOCATE_OPS), "MOVE_ACTIONS": sorted(MOVE_ACTIONS), "RADIUS_OPS": sorted(RADIUS_OPS),
                        "REQUIRE_TARGET_GEOMETRY": REQUIRE_TARGET_GEOMETRY, "JUDGE_ZOOM_LEVEL": JUDGE_ZOOM_LEVEL,
                        "ASK_CAUSE": ASK_CAUSE, "ASK_PARAM_REASONS": sorted(ASK_PARAM_REASONS), "DEC": DEC, "TARGET": TARGET,
-                       "UNLOCATED_RULE": UNLOCATED_RULE, "RADIUS_EPS": RADIUS_EPS, "SEARCH_OPS": sorted(SEARCH_OPS),
+                       "UNLOCATED_RULE": UNLOCATED_RULE, "SYSTEM_FAIL_RULE": SYSTEM_FAIL_RULE,
+                       "RADIUS_EPS": RADIUS_EPS, "SEARCH_OPS": sorted(SEARCH_OPS),
                        "LAYER_ANALYSIS_OPS": sorted(LAYER_ANALYSIS_OPS), "LAYER_ID_CHECK": LAYER_ID_CHECK,
-                       "LAYER_TABLES": {k: sorted(v) for k, v in LAYER_TABLES.items()}},
+                       "LAYER_TABLES": {k: sorted(v) for k, v in LAYER_TABLES.items()},
+                       "ACTION_ALIAS": dict(sorted(ACTION_ALIAS.items())), "DOTS": DOTS},
                       ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -704,6 +718,17 @@ def _control_done(a, v):
     return a["type"] != "SHOW_LAYER" or bool(a["layers"])
 
 
+def _fail_text(c):
+    """실패한 호출 한 줄 — '기능 호출상태/resolve상태: 오류 메시지' (응답 오류 사유에 씀)"""
+    e = c.get("errors") or c.get("error") or ""
+    if isinstance(e, list):
+        e = "; ".join(str(x.get("message") or x) if isinstance(x, dict) else str(x) for x in e)
+    elif isinstance(e, dict):
+        e = str(e.get("message") or e)
+    head = f"{c.get('operation')} {c.get('status') or '-'}/{c.get('resolve_status') or '-'}"
+    return head + (f": {str(e)[:200]}" if e else "")
+
+
 def judge(gold, ext, res=None, turn=None):
     """정답 1행(dict) + extract() 결과 → {①, ②, ③, 정상수행, 오류원인, 되묻기, 응답오류, 불일치}"""
     out = OrderedDict([("①", None), ("②", None), ("③", None), ("정상수행", False), ("오류원인", ""),
@@ -724,8 +749,8 @@ def judge(gold, ext, res=None, turn=None):
     gold_names = {norm(x): x for x in split_list(gold.get("정답의도"))}
     ok1 = bool(want) and want == got
     if not ok1:
-        lack = [gold_names[x] for x in want - got]
-        extra = [names[x] for x in got - want]
+        lack = [gold_names[x] for x in dict.fromkeys(norm(y) for y in split_list(gold.get("정답의도"))) if x not in got]
+        extra = [names[x] for x in dict.fromkeys(norm(y) for y in ext["intents"]) if x not in want]   # 순서 고정(다시 판정해도 같은 문구)
         miss.append("① 의도 " + " / ".join(filter(None, [f"누락 {', '.join(lack)}" if lack else "",
                                                        f"초과 {', '.join(extra)}" if extra else ""])))
     # ② 파라미터 — 레이어는 공간오케가 실제로 고른 레이어(lyr_id → LAYER_FIND 목록의 이름). 못 찾으면 검색어(lyr_query)로
@@ -868,6 +893,10 @@ def judge(gold, ext, res=None, turn=None):
     first = ("의도 해석 오류" if not ok1 else "핵심 파라미터 추출 오류" if not ok2 else "GIS 지도 제어 실행 오류" if not ok3 else "")
     if ok1 and ok2 and ok3 and not asked:
         out["정상수행"] = True
+    elif unlocated and failed and SYSTEM_FAIL_RULE:               # 규격: 시스템 오류로 응답하지 못한 사례 → '응답 오류' (①②③ 대조는 남김)
+        out["오류원인"] = "응답 오류"
+        out["응답오류"] = "시스템 오류로 위치를 확정하지 못함 — " + "; ".join(_fail_text(c) for c in failed)
+        miss.insert(0, out["응답오류"])
     elif asked and (ASK_CAUSE == "param" or (ASK_CAUSE == "reason" and reasons & ASK_PARAM_REASONS)):
         out["오류원인"] = "핵심 파라미터 추출 오류"
     elif unlocated and UNLOCATED_RULE:
@@ -1033,7 +1062,7 @@ def validate(testset_rows, answer_rows, rules=None):
     for t, want in TYPE_COUNTS.items():
         if cnt.get(t, 0) != want:
             probs.append(f"명령유형 '{t}' {cnt.get(t, 0)}건 (규격 {want}건)")
-    for t in set(cnt) - set(TYPE_COUNTS):
+    for t in sorted(set(cnt) - set(TYPE_COUNTS)):
         probs.append(f"규격에 없는 명령유형 '{t}' {cnt[t]}건")
     ans = {str(r.get("사례ID", "")).strip(): r for r in answer_rows}
     for cid in ids:
@@ -1067,7 +1096,7 @@ def validate(testset_rows, answer_rows, rules=None):
         for v in [t.strip() for t in str(scen.get("지도제어") or "").split(",") if t.strip()]:
             if v not in MAP_CONTROL:
                 probs.append(f"{cid}: 대조 규칙이 없는 지도제어 값 '{v}' ({' · '.join(MAP_CONTROL)} 중에서 쓸 것)")
-    for cid in set(ans) - set(ids):
+    for cid in sorted(set(ans) - set(ids)):
         probs.append(f"{cid}: 시험셋에 없는 정답")
     # 검증자·검증일 칸은 선택(있으면 그대로 옮김). 규격서는 칸을 요구하지 않으므로 비어 있어도 점검 항목으로 올리지 않음
     return probs

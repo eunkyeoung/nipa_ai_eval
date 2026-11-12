@@ -92,9 +92,9 @@ NOT_PROVIDED = [   # 시험의뢰서가 요구하지만 AIPS가 질의 응답(SS
 NOT_PROVIDED_AI6 = [   # [AI 6] 규격 시험방법 (2) '동결 버전 확인' 중 공간오케·에이전트가 알려 주지 않는 값 → 대신 쓰는 방법
     "**AI 모델** — 공간오케 /ready 의 설정 모델, LLM 서버 /v1/models 목록(LLM 키를 넣었을 때), vLLM 버전은 LLM 서버 /version 으로 확인 "
     "(위 'LLM 모델' 두 행과 'vLLM 버전' 행, 조회값)",
-    "**공간분석 API 버전** — 사전 점검 때 /v3/api-docs 의 info.version 을 기록 (위 '실행 전 사전 점검 결과', 조회값)",
-    "**Sub 오케스트레이터·에이전트 버전, 지도 데이터 기준일** — 시스템이 알려 주지 않음(/health 는 상태만) → 시험 기록에 "
-    "**선언값**으로 적고, 실행마다 '연결 에이전트' 목록이 같은지로 바뀌었는지만 확인",
+    "**공간분석 API 버전** — 사전 점검 때 /v3/api-docs 의 info.version 을 읽어 시험 조건(v0.1)과 대조 — 다르면 사전 점검 실패로 실행하지 않음 (조회값)",
+    "**Sub 오케스트레이터·에이전트 버전, 지도 데이터 기준일** — 시스템이 알려 주지 않음(/health 는 상태만) → 위 '동결 버전 확인' 표에 "
+    "**의뢰기업 선언값**으로 적고, 실행마다 '연결 에이전트' 목록이 같은지로 바뀌었는지만 확인",
 ]
 CRITERIA = {
     "AI1": "AI 판단 결과(판단 유형)가 정답 판단 유형과 정확히 일치하는지 평가. 개별 테스트 사례에 대해 판단 유형이 정답과 "
@@ -132,8 +132,9 @@ CRITERIA = {
            "정답에 없는 반경을 쓰면 오류\n\n"
            "③ GIS 지도 제어: 응답의 지도 제어 명령(대상 필지 선택·이동, 확대/축소 — 이동+확대 한 번 명령 포함)과 표출 도형(대상 필지 도형·분석 결과 도형)이 "
            "정답 시나리오와 일치 — 정답의 도형이 모두 와야 함(남는 도형은 기록만)\n\n"
-           "되묻기(후보 선택 요청)는 오류. 무응답·응답 대기 상한 초과·연결 실패·시스템 오류 이벤트는 '응답 오류'로 따로 집계"
-           "(도구가 실패해도 답변이 오면 응답한 것으로 보고 ①②③으로 판정). "
+           "되묻기(후보 선택 요청)는 오류. 무응답·응답 대기 상한 초과·연결 실패·시스템 오류 이벤트, 그리고 위치 확정 호출이 "
+           "시스템 사유로 실패해(연결 실패 등 — '못 찾음'은 제외) 분석을 시작하지 못한 사례는 규격('시스템 오류로 응답하지 못한 사례')대로 "
+           "'응답 오류'로 따로 집계(그 밖의 도구 실패는 답변이 오면 응답한 것으로 보고 ①②③으로 판정). "
            "오류 원인은 규격대로 ① → ② → ③ 중 처음 어긋난 기준 — 되묻기 사유·위치 미확정 같은 내용은 '세부 원인'으로 따로 남김. "
            "\n\n"
            "호출 순서·중심 좌표·줌 레벨·산출 면적·거리는 로그에만 기록하고 판정에 쓰지 않음(명령에 든 반경만 ②에서 판정). "
@@ -328,11 +329,13 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
             st.caption("작성 규칙 — 여러 값은 세미콜론(;)으로 구분 · 근거조문은 `법령명.조.항` (예: `건축법.2.1; 건축법.44`) "
                        "또는 `건축법 제44조 제1항`처럼 '제'를 붙여 표기 (자세한 내용: README 9-2)")
         for stem in need:
+            if item == "AI6" and stem.startswith("result_"):         # AI6 는 자동 실행 — 결과 파일을 올리지 않음
+                continue
             p = data_path(stem)
             kind = LABEL.get(stem.split("_")[0], LABEL.get(stem, stem))
             n = len(S.read_table(p)) if p else 0
             st.markdown(f"**{kind}** `{stem}` — " + (f"✅ {n}건" if p else ("기본 대응표 사용" if stem.startswith("intent_") else "❌ 없음"))
-                        + (f" · SHA-256 `{S.sha256(p)[:16]}…`" if p and item == "AI6" else ""))
+                        + (f" · SHA-256 `{S.sha256(p)}`" if p and item == "AI6" else ""))   # 규격서에 적힌 64자리와 그대로 대조
             up = st.file_uploader(stem, type=["csv", "xlsx"], key=f"up_{stem}", label_visibility="collapsed")
             if up is not None and st.session_state.get(f"up_done_{stem}") != up.file_id:   # 올린 파일은 한 번만 저장 (다시 그릴 때 덮어쓰지 않게)
                 ext = os.path.splitext(up.name)[1].lower()
@@ -368,6 +371,8 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
         st.divider()
         st.markdown("**양식**")
         for stem in need:
+            if item == "AI6" and stem.startswith("result_"):         # AI6 는 자동 실행 — 결과 파일 양식은 쓰지 않음
+                continue
             cols, rows = S.TEMPLATES[item][stem + ".csv"]
             st.download_button(f"⬇ {stem}.csv 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
                                file_name=f"{stem}.csv", mime="text/csv", width="stretch", key=f"tpl_{stem}")
@@ -552,19 +557,22 @@ def sidebar_ai6(side, launch, running, missing):
         with st.spinner("사전 점검 중…"):
             st.session_state["ai6_precheck"] = dict(at=time.strftime("%H:%M:%S"),
                                                     rows=C6.precheck(base, probe_message=C6.PROBE_MESSAGE if probe else None,
-                                                                     llm_key=llm_key))
+                                                                     llm_key=llm_key),
+                                                    llm=C6.llm_info(base, llm_key=llm_key))   # 키는 저장하지 않음(모델 목록·vLLM 버전만)
     pc = st.session_state.get("ai6_precheck")
     if pc:
         bad = [r for r in pc["rows"] if r["결과"] != "정상"]
         side.caption(("✅ 사전 점검 정상" if not bad else f"❌ 사전 점검 실패 {len(bad)}건 — 실행하면 시작하지 않고 멈춰요") + f" · {pc['at']}")
         with side.expander("사전 점검 결과", expanded=bool(bad)):
             show_table(pd.DataFrame(pc["rows"]))
+            st.markdown("**동결 버전 확인** (규격 시험방법 (2) — 선언값 = 시스템이 알려 주지 않아 의뢰기업 선언값으로 기록)")
+            show_table(pd.DataFrame(C6.version_rows(pc["rows"], llm=pc.get("llm")))[["항목", "시험 조건", "확인값", "결과", "확인 방법"]])
     cur = R6.freeze_record(ts_p, ans_p, map_p, deadline, base) if ts_p and ans_p else None
     diff = R6.freeze_check(fz_path, cur) if cur else None
     if fz:                                                         # 규격: 의도 대응표는 시험 전에 확정, 시험 기간 중 변경 안 함
         side.caption(f"🔒 동결됨 · {fz.get('frozen_at', '')}" + (f" — ❌ 바뀐 항목: {', '.join(diff)} (실행 안 됨)" if diff else
                                                                  " — 시험셋·정답셋·의도 대응표·판정 기준·대기 상한 고정"))
-        if side.button("동결 해제", width="stretch", disabled=running, help="시험 기간 중에는 풀지 마세요. 풀면 실행 기록에 남아요."):
+        if side.button("동결 해제", width="stretch", disabled=running, help="시험 기간 중에는 풀지 마세요. 풀고 돌린 실행은 '동결 전 실행(예비)'으로 기록돼요."):
             os.remove(fz_path)
             st.rerun()
     elif side.button("🔒 시험 데이터·대응표 동결", width="stretch", disabled=running or not cur or bool(rule_err),
@@ -845,7 +853,7 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             st.session_state[sk] = hit
     if st.session_state.get(sk) not in rs:
         st.session_state[sk] = rs[0]
-    hc = st.columns([3, 1, 1] if item == "AI6" else [3, 1], vertical_alignment="bottom")
+    hc = st.columns([3, 1], vertical_alignment="bottom")
     c1, c2 = hc[0], hc[1]
     run_dir = c1.selectbox("결과 폴더", rs, format_func=lambda d: d.replace("\\", "/"), key=sk)
     r, meta, (ans, ts, law) = score_run(item, run_dir)
@@ -854,11 +862,11 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
     if r is None:
         st.warning("이 폴더에는 아직 로그가 없어요 (실행 중이거나 중단됨).")
         return
-    if c2.button("💾 결과 파일 다시 저장", width="stretch", disabled=busy, help="현재 정답셋으로 다시 채점해 result.xlsx / summary.json 저장"):
+    if not auto6 and c2.button("💾 결과 파일 다시 저장", width="stretch", disabled=busy, help="현재 정답셋으로 다시 채점해 result.xlsx / summary.json 저장"):
         import spec_runner
         spec_runner.run_score(item, run_dir, ans, ts, law)
         st.toast("저장했어요")
-    if auto6 and hc[2].button("🔁 다시 판정", width="stretch", disabled=busy,
+    if auto6 and c2.button("🔁 다시 판정", width="stretch", disabled=busy,
                               help="공간오케에 다시 묻지 않고, 저장된 응답 원문을 지금 spec_data 의 정답셋·의도 대응표로 다시 판정해 "
                                    "새 폴더 '<이 폴더>_재판정_<시각>'에 '예비'로 남겨요. 이 실행 폴더(공식 결과)는 바뀌지 않아요."):
         import spec_runner_ai6
@@ -932,11 +940,22 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                    ("로그 파일", " · ".join(os.path.join(run_dir, n).replace("\\", "/") for n in (E6.PARSE_LOG, E6.GIS_LOG))),
                    env[-2], env[-1],
                    ("의도 대응표 SHA-256", f"{meta.get('intent_map_sha256') or '-'}  ({meta.get('intent_map') or '기본 대응표 (ai6_eval.DEFAULT_RULES)'})")]
-            env.insert(1, ("실행 구분", "공식" if meta.get("공식", True) else
-                           "예비 — " + ", ".join(meta.get("예비사유") or []) + " (공식 결과로 쓰지 않음)"))
+            if meta.get("완료전") and busy:
+                kind = "공식 조건으로 실행 중 — 모두 마치면 공식으로 기록 (지금 값은 중간 값)"
+            elif meta.get("공식", True):
+                kind = "공식"
+            else:
+                kind = "예비 — " + ", ".join(meta.get("예비사유") or []) + " (공식 결과로 쓰지 않음)"
+                if meta.get("완료전"):                                 # 멈춘 공식 조건 실행 — 이어서 끝까지 돌리면 공식이 되나
+                    import spec_runner_ai6 as R6
+                    lost = R6.resume_outlook(run_dir)
+                    kind += (f" · 이어서 돌려도 공식 아님 — 응답을 기록 못 한 사례 {len(lost)}건({', '.join(lost[:3])})은 다시 보내지 않으므로 전체 재수행"
+                             if lost else " · 이어서 끝까지 돌리면 공식 (진행 창의 '↻ 이어서')")
+            env.insert(1, ("실행 구분", kind))
             env.append(("판정 기준 지문", f"{str(meta.get('criteria_sha256') or '-')[:16]}… (ai6_eval 판정 규칙·옵션)"))
-            env.append(("동결", "예 — 동결된 시험셋·정답셋·대응표·판정 기준·대기 상한으로 실행" if meta.get("frozen")
-                        else "아니오 (동결 전 실행)"))
+            env.append(("동결", ("예 — 동결된 시험셋·정답셋·대응표·판정 기준·대기 상한으로 실행" if meta.get("frozen")
+                                else "아니오 (동결 전 실행)")
+                        + (" · 이 폴더는 다시 판정 — 그때의 정답셋·대응표·판정 기준으로 매김(아래 '다시 판정' 행)" if rsc else "")))
             if rsc:
                 env.append(("다시 판정", f"{rsc.get('at')} — 정답셋 {str(rsc.get('answer_sha256') or '-')[:16]}… · "
                                        f"대응표 {str(rsc.get('intent_map_sha256') or '기본')[:16]}…"
@@ -949,6 +968,10 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
         if auto6 and meta.get("precheck"):
             rp = (meta.get("resume_precheck") or [{}])[-1]                  # 이어서 실행했으면 그때 다시 한 점검이 기준
             pre = rp.get("rows") or meta["precheck"]
+            import ai6_client as C6
+            st.markdown("**동결 버전 확인** (규격 시험방법 (2) — 실행 때 사전 점검 · 조회값 기준, 선언값 = 시스템이 알려 주지 않아 의뢰기업 선언값으로 기록)")
+            show_table(pd.DataFrame(C6.version_rows(pre, rp.get("ready"), rp.get("llm")) if rp.get("rows")
+                                    else C6.version_rows(pre, meta.get("ready"), meta.get("llm"))))
             bad = [p for p in pre if p.get("결과") != "정상"]
             with st.expander("실행 전 사전 점검 결과" + (f" (이어서 실행 {rp.get('at')})" if rp.get("rows") else "")
                              + (f" — ❌ 실패 {len(bad)}건" if bad else " — 정상"), expanded=bool(bad)):
