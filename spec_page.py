@@ -578,7 +578,9 @@ def render_da2(item, sp, area):
                     except Exception:
                         locs = []
                     if locs:
-                        with st.expander(f"{r['check_id']} 대상 {len(locs)}개 — 전체 IRI와 스키마 파일 위치"):
+                        aff = str(r.get("affected") or "").strip()
+                        cnt = f"대상 요소 {aff}개" + (f"({len(locs)}줄 — 역관계 후보 쌍은 한 줄)" if aff and aff != str(len(locs)) else "")
+                        with st.expander(f"{r['check_id']} {cnt} — 전체 IRI와 스키마 파일 위치 (감점은 함정 유형 1개당 1번)"):
                             show_table(pd.DataFrame([{"대상(IRI)": x.split(" @ ")[0], "위치(파일:줄)": x.split(" @ ")[-1]} for x in locs]))
                 op = os.path.join(d, "oops_response.xml")
                 if os.path.exists(op):
