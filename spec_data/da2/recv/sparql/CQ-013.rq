@@ -1,7 +1,7 @@
-# CQ-013 도시지역 밖의 동·읍이 아닌 지역에서 건축법상 대지 접도기준이 적용되는가?
+# CQ-013 자연녹지지역 안에서 건축할 수 있는 건축물을 정한 별표와 그 근거 조항은 무엇인가?
 # 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
 PREFIX aip: <https://onto.go.kr/aip/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-SELECT DISTINCT ?ans WHERE { { ?L_x aip:lawName "건축법" . ?L_x aip:hasArticle ?x . ?x aip:articleTitle ?t_x . FILTER(CONTAINS(REPLACE(STR(?t_x), " ", ""), "대지와도로의관계")) } { ?ans aip:excludesArticle ?x . } }
+SELECT DISTINCT ?ans WHERE { { { ?ans a aip:Appendix . } { ?ans aip:appendixTitle ?ans_t . FILTER(CONTAINS(STR(?ans_t), "자연녹지지역") && CONTAINS(STR(?ans_t), "건축할 수 있는")) } { ?ansn_L (aip:hasArticle|aip:hasAppendix) ?ans . ?ansn_L aip:hierarchy ?ansn_h . FILTER(?ansn_h <= 3) } } UNION { { ?p a aip:Appendix . } { ?p aip:appendixTitle ?p_t . FILTER(CONTAINS(STR(?p_t), "자연녹지지역") && CONTAINS(STR(?p_t), "건축할 수 있는")) } { ?pn_L (aip:hasArticle|aip:hasAppendix) ?p . ?pn_L aip:hierarchy ?pn_h . FILTER(?pn_h <= 3) } { ?p aip:relatedArticle ?ra . } { ?ans aip:hasUnit* ?ra . ?ans aip:unitType ?hut . FILTER(STR(?hut) = "항") } } }

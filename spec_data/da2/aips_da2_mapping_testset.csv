@@ -49,5 +49,3 @@ MAP-047,sido.ctpr_cd,ipss.sido gid=4,29,https://onto.go.kr/aip/Sido_29,,"{""clas
 MAP-048,sido.ctpr_nm,ipss.sido gid=4,광주광역시,https://onto.go.kr/aip/Sido_29,,"{""class"": ""aip:Sido"", ""property"": ""skos:prefLabel"", ""relation"": """", ""datatype"": ""rdf:langString""}",
 MAP-049,sido.ctpr_cd,ipss.sido gid=5,30,https://onto.go.kr/aip/Sido_30,,"{""class"": ""aip:Sido"", ""property"": ""skos:notation"", ""relation"": """", ""datatype"": ""xsd:string""}",
 MAP-050,sido.ctpr_nm,ipss.sido gid=5,대전광역시,https://onto.go.kr/aip/Sido_30,,"{""class"": ""aip:Sido"", ""property"": ""skos:prefLabel"", ""relation"": """", ""datatype"": ""rdf:langString""}",
-MAP-051,zone.yongdo_code,ipss.land_use_zone_code yongdo_code=UAZ999,UAZ999,https://onto.go.kr/aip/Zone_UAZ999,,"{""class"": ""aip:Zone"", ""property"": ""skos:notation"", ""relation"": """", ""datatype"": ""xsd:string""}",
-MAP-052,zone.yongdo_name,ipss.land_use_zone_code yongdo_code=UAZ999,국토이용기타용도지역지구기타,https://onto.go.kr/aip/Zone_UAZ999,,"{""class"": ""aip:Zone"", ""property"": ""skos:prefLabel"", ""relation"": """", ""datatype"": ""rdf:langString""}",

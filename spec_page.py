@@ -238,7 +238,7 @@ DA2_TEMPLATES = {
     "da2_schema_checklist.csv": (
         ["check_id", "item_group", "description", "method", "validator_file", "expected"],
         [["SCH-001", "핵심 클래스", "법령(aip:Law)마다 법령명(aip:lawName)이 있다", "SPARQL ASK", "checks/SCH-001.rq", "true"]]),
-    "da2_mapping_testset.csv": (
+    "aips_da2_mapping_testset.csv": (
         ["mapping_id", "source_field", "target_element", "expected_mapping"],
         [["MAP-001", "(원천 테이블).(필드) 예: 법령수집DB.법령.법령명", "https://onto.go.kr/aip/lawName",
           '{"class": "aip:Law", "property": "aip:lawName", "relation": "", "datatype": "xsd:string"}']]),
@@ -707,8 +707,9 @@ def render_da2(item, sp, area):
     if not rs:
         with area("box_spec_cases"):
             st.markdown("#### 구성지표 (세부 시험항목 1-1 ~ 1-4)")
-            show_table(pd.DataFrame([{"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %", "판정 방식": how, "산출식": f,
-                                      "결과": "미실행"} for k, n, w, how, f in sp["parts"]]))
+            show_table(pd.DataFrame([{"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %",
+                                      "목표": (f"{sp['part_target'][k]:.0f} % 이상" if sp["part_target"].get(k) else "미정(○○)"),
+                                      "판정 방식": how, "산출식": f, "결과": "미실행"} for k, n, w, how, f in sp["parts"]]))
             st.markdown(f"- 산정식: {sp['formula']}\n- 목표: 온톨로지(ODP) 설계 완성도 {target_txt(item)}\n- 시험 데이터: {sp['data']}")
             st.info("왼쪽 '📂 시험 데이터 (검증 자산)'에서 준비 상태를 확인하고 실행하세요.")
         return
@@ -742,10 +743,13 @@ def render_da2(item, sp, area):
             ok, tot = p.get("ok"), p.get("n")
             rows.append({"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %",
                          "결과": fmt_pct(p.get("value")) if p.get("value") is not None else ("오류" if p else "미실행"),
+                         "목표": (f"{sp['part_target'][k]:.0f} % 이상" if sp["part_target"].get(k) else "미정(○○)"),
+                         "달성 여부": ("-" if not sp["part_target"].get(k) or p.get("value") is None
+                                    else ("✅ 달성" if p["value"] >= sp["part_target"][k] else "❌ 미달성")),
                          "일치(적합)/전체": f"{ok} / {tot}" if tot else "-", "오류": str(p.get("error", "-")) if p else "-",
                          "산출식": f})
         show_table(pd.DataFrame(rows))
-        st.caption(f"산정식: {sp['formula']} · 결과는 소수점 셋째자리 이하 버림")
+        st.caption(f"산정식: {sp['formula']} · 종합 96 % 이상, 구성지표별 목표는 2-1 ~ 2-4 각 96 % 이상 · 결과는 소수점 셋째자리 이하 버림")
 
     tabs = st.tabs([f"{k} {n}" for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
     for i, (k, n, *_r) in enumerate(sp["parts"]):
@@ -771,7 +775,7 @@ def render_da2(item, sp, area):
                     ["CQ ID", "ODP 유형", "지자체", "질문", "정답", "실제 결과", "누락", "추가", "일치", "status", "error_message"]])
                 with st.expander("CQ별 SPARQL 질의"):
                     import zipfile
-                    zp = os.path.join(run_dir, "data", "da2_cq_testset.zip")
+                    zp = os.path.join(run_dir, "data", "aips_da2_cq_testset.zip")
                     if os.path.exists(zp):
                         with zipfile.ZipFile(zp) as z:
                             for _, r in df.iterrows():

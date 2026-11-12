@@ -198,6 +198,55 @@ def norm(label):
     return f"{law_}.{jo}" + (f".{m.group(4)}" if m.group(4) else "")
 
 
+# ── 11-12 교체 5건 (의뢰기업 결정, 변경내역 79절) ────────────────────────────────
+# 원래 002·005·013·014·015는 정답 조문이 온톨로지에 그 단위로 연결되지 않아 질의로 정답을 얻을 수 없었음 → 다른 질문으로 교체
+# 정답은 조례 원문의 위임 표기("영 제28조제2항에 따라" 등)·별표 제목("(제71조제1항제16호관련)")으로 정함
+YS = "음성군 건축 조례"
+
+
+def upper_of(law_name, kw):
+    """law_name 의 조(제목 kw)를 구체화하도록 위임한 상위 법령 조항(항)"""
+    return sel(" ".join([art(law_name, kw, "c"), G("?up aip:implementedBy ?c ."),
+                         G('?ans aip:hasUnit* ?up . ?ans aip:unitType ?hut . FILTER(STR(?hut) = "항")')]))
+
+
+def appx_zone(zone, kw):
+    """국가 법령 별표 중 제목에 구역명과 kw 가 함께 있는 별표 + 그 별표의 근거 조문(항)"""
+    blk = lambda v: " ".join([G(f"?{v} a aip:Appendix ."),
+                              G(f'?{v} aip:appendixTitle ?{v}_t . FILTER(CONTAINS(STR(?{v}_t), "{zone}") && CONTAINS(STR(?{v}_t), "{kw}"))'),
+                              national(v, v + "n")])
+    return sel(UNION(blk("ans"), " ".join([blk("p"), G("?p aip:relatedArticle ?ra ."),
+                                           G('?ans aip:hasUnit* ?ra . ?ans aip:unitType ?hut . FILTER(STR(?hut) = "항")')])))
+
+
+def appx_basis(law_name, kw):
+    """law_name 의 별표(제목 kw)의 근거 조문"""
+    return sel(" ".join([G(f'?L aip:lawName "{law_name}" . ?L aip:hasAppendix ?p . ?p aip:appendixTitle ?pt . '
+                           f'FILTER(CONTAINS(REPLACE(STR(?pt), " ", ""), "{kw.replace(" ", "")}"))'),
+                         G("?p aip:relatedArticle ?ans .")]))
+
+
+REPLACED = {
+    "CQ-002": ((T_RC, "음성군", "음성군 건축 조례에서 이해관계인의 동의 없이 도로로 지정할 수 있는 경우를 정하도록 한 상위 법령 조항은 무엇인가?",
+                ["건축법.45.1"], "11-12 교체. 근거: 음성군 건축 조례 제28조 \"법 제45조제1항제2호에 따라\""),
+               upper_of(YS, "도로의 지정")),
+    "CQ-005": ((T_HI, "음성군", "음성군 건축 조례의 '대지와 도로의 관계' 조항은 상위 법령의 어느 조항에 따라 정한 것인가?",
+                ["건축법시행령.28.2"], "11-12 교체. 근거: 음성군 건축 조례 제27조의2 \"영 제28조제2항에 따라\""),
+               upper_of(YS, "대지와 도로의 관계")),
+    "CQ-013": ((T_RC, "공통", "자연녹지지역 안에서 건축할 수 있는 건축물을 정한 별표와 그 근거 조항은 무엇인가?",
+                ["국토계획법시행령.71.1", "국토계획법시행령.별표17"], "11-12 교체. 근거: [별표 17] 제목 \"(제71조제1항제16호관련)\""),
+               appx_zone("자연녹지지역", "건축할 수 있는")),
+    "CQ-014": ((T_RC, "공통", "생산관리지역 안에서 건축할 수 있는 건축물을 정한 별표와 그 근거 조항은 무엇인가?",
+                ["국토계획법시행령.71.1", "국토계획법시행령.별표19"], "11-12 교체. 근거: [별표 19] 제목 \"(제71조제1항제18호관련)\""),
+               appx_zone("생산관리지역", "건축할 수 있는")),
+    "CQ-015": ((T_RC, "음성군", "음성군 건축 조례의 대지안의 공지 기준 별표는 어느 조문에 근거하는가?",
+                ["음성군건축조례.30"], "11-12 교체. 근거: [별표 3] 제목 \"(제30조 관련)\""),
+               appx_basis(YS, "대지안의 공지")),
+}
+CQS = [(cid, *REPLACED[cid][0]) if cid in REPLACED else row for row in CQS for cid in [row[0]]]
+SPARQL.update({cid: q for cid, (_, q) in REPLACED.items()})
+
+
 if __name__ == "__main__":                                  # 정답셋 CSV + 질의 파일(.rq) 저장
     import csv, os
     out = "spec_data/da2/recv"

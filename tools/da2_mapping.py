@@ -12,13 +12,14 @@
 #   relation = 상위 원천 레코드의 노드 → 대상 노드 를 잇는 속성 (상위 레코드가 없으면 "")
 #   datatype = 그 값의 자료형
 #
-#   python tools/da2_mapping.py build <URL엑셀> <ipss_spatial_db.html>  → spec_data/da2/da2_mapping_testset.csv
+#   python tools/da2_mapping.py build <URL엑셀> <ipss_spatial_db.html>  → spec_data/da2/aips_da2_mapping_testset.csv
 #   python tools/da2_mapping.py run <out_dir>                         → <out_dir>/validation_result_da2.csv
 import csv, json, os, re, sys, time
 
 DA2 = "spec_data/da2"
 TTL = {k: f"{DA2}/landcheck_{k}_v1.0.ttl" for k in ("schema", "instance")}
-OUT = f"{DA2}/da2_mapping_testset.csv"
+OUT = f"{DA2}/aips_da2_mapping_testset.csv"
+ZONE_SAMPLE = False                                                       # 용도지역 코드 표본 넣지 않음 (11-12, 50건 기준)
 AIP = "https://onto.go.kr/aip/"
 SKOS = "http://www.w3.org/2004/02/skos/core#"
 XSD = "http://www.w3.org/2001/XMLSchema#"
@@ -149,8 +150,10 @@ def build(url_xlsx, spec_html):
         node = f"{AIP}Sido_{r[1]}"
         add("sido", "ctpr_cd", r[1], node, "", f"ipss.sido gid={r[0]}")
         add("sido", "ctpr_nm", r[2], node, "", f"ipss.sido gid={r[0]}")
+    # 11-12 규격서 v.14: 매핑 검증 50건 — 용도지역 코드 표본(명세 5행 중 사용 여부를 확인할 수 있는 1행뿐, 근거가 가장 약함)은 넣지 않음
+    #   (법령 24 + 조문 10 + 별표 6 + 시도 10 = 50). 아래는 다시 넣을 때를 위해 남겨 둠 (ZONE_SAMPLE=True)
     hist_stop = {r[0] for r in sample("land_use_zone_code_hist") if "사용중지" in str(r[3])}
-    for r in sample("land_use_zone_code"):
+    for r in (sample("land_use_zone_code") if ZONE_SAMPLE else []):
         if r[0] in hist_stop:                                               # 사용중지 코드는 표본에서 제외 (원천 변경이력 기준)
             continue
         node = f"{AIP}Zone_{r[0]}"

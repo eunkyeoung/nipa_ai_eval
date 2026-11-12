@@ -1,7 +1,7 @@
-# CQ-014 대지에 접한 통과 도로가 도로폭 미달일 경우 도로폭 확보 기준은?
+# CQ-014 생산관리지역 안에서 건축할 수 있는 건축물을 정한 별표와 그 근거 조항은 무엇인가?
 # 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
 PREFIX aip: <https://onto.go.kr/aip/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-SELECT DISTINCT ?ans WHERE { { { ?L_b aip:lawName "건축법" . ?L_b aip:hasArticle ?b . ?b aip:articleTitle ?t_b . FILTER(CONTAINS(REPLACE(STR(?t_b), " ", ""), "건축선의지정")) } { ?b aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } } UNION { { ?L_d aip:lawName "건축법" . ?L_d aip:hasArticle ?d . ?d aip:articleTitle ?t_d . FILTER(CONTAINS(REPLACE(STR(?t_d), " ", ""), "정의")) } { ?d aip:hasUnit ?ans . ?ans aip:unitType ?ut_ans . FILTER(STR(?ut_ans) = "항") } { ?ans aip:hasUnit ?dh . } { ?dh aip:implementedBy ?di . } { ?di aip:articleTitle ?dit . FILTER(CONTAINS(STR(?dit), "도로")) } } }
+SELECT DISTINCT ?ans WHERE { { { ?ans a aip:Appendix . } { ?ans aip:appendixTitle ?ans_t . FILTER(CONTAINS(STR(?ans_t), "생산관리지역") && CONTAINS(STR(?ans_t), "건축할 수 있는")) } { ?ansn_L (aip:hasArticle|aip:hasAppendix) ?ans . ?ansn_L aip:hierarchy ?ansn_h . FILTER(?ansn_h <= 3) } } UNION { { ?p a aip:Appendix . } { ?p aip:appendixTitle ?p_t . FILTER(CONTAINS(STR(?p_t), "생산관리지역") && CONTAINS(STR(?p_t), "건축할 수 있는")) } { ?pn_L (aip:hasArticle|aip:hasAppendix) ?p . ?pn_L aip:hierarchy ?pn_h . FILTER(?pn_h <= 3) } { ?p aip:relatedArticle ?ra . } { ?ans aip:hasUnit* ?ra . ?ans aip:unitType ?hut . FILTER(STR(?hut) = "항") } } }

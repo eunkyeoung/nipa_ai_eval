@@ -72,12 +72,13 @@ SPEC = {
                         "정확 매핑 건수 / 전체 매핑 검증 건수 × 100"),
                        ("DA 2-4", "논리적 일관성·무결성", 20, "OWL Reasoner(일관성 점수) + OOPS!(함정 점수)",
                         "(일관성 점수 + 함정 점수) / 2")],
-                assets=[("CQ 목록·SPARQL 질의·정답셋", "spec_data/da2/da2_cq_testset.zip"),
-                        ("스키마 평가항목·검증 질의", "spec_data/da2/da2_schema_checklist.zip"),
-                        ("매핑 검증 표본·정답", "spec_data/da2/da2_mapping_testset.csv"),
+                assets=[("CQ 목록·SPARQL 질의·정답셋", "spec_data/da2/aips_da2_cq_testset.zip"),
+                        ("스키마 평가항목·검증 질의", "spec_data/da2/aips_da2_schema_checklist.zip"),
+                        ("매핑 검증 표본·정답", "spec_data/da2/aips_da2_mapping_testset.csv"),
                         ("온톨로지 스키마", "spec_data/da2/landcheck_schema_v1.0.ttl"),
                         ("인스턴스 데이터", "spec_data/da2/landcheck_instance_v1.0.ttl"),
                         ("SHACL 제약규칙", "spec_data/da2/landcheck_shapes_v1.0.ttl")],
+                part_target={"DA 2-1": 96.0, "DA 2-2": 96.0, "DA 2-3": 96.0, "DA 2-4": 96.0},   # 규격서 v.14 구성지표별 예상결과 (2-2 ○○ → 96, 11-12 의뢰기업)
                 source="Fuseki 그래프 DB(116:3030, dataset nipa)에서 내보냄 — 스키마 aip/semantic, SHACL aip/shapes, 인스턴스 그 외 그래프 (tools/export_ontology.py)"),
 }
 TYPE2 = ["허가 가능", "허가 불가능"]
