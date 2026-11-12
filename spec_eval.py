@@ -75,7 +75,7 @@ SPEC = {
                         ("온톨로지 스키마", "spec_data/da2/landcheck_schema_v1.0.ttl"),
                         ("인스턴스 데이터", "spec_data/da2/landcheck_instance_v1.0.ttl"),
                         ("SHACL 제약규칙", "spec_data/da2/landcheck_shapes_v1.0.ttl")],
-                part_target={"DA 2-1": 96.0, "DA 2-2": None, "DA 2-3": 96.0, "DA 2-4": 96.0},   # 규격서 v.14 구성지표별 예상결과 (2-2는 ○○ 미정)
+                part_target={"DA 2-1": 96.0, "DA 2-2": 96.0, "DA 2-3": 96.0, "DA 2-4": 96.0},   # 규격서 v.14 구성지표별 예상결과 (2-2 ○○ → 96, 11-12 의뢰기업)
                 source="Fuseki 그래프 DB(116:3030, dataset nipa)에서 내보냄 — 스키마 aip/semantic, SHACL aip/shapes, 인스턴스 그 외 그래프 (tools/export_ontology.py)"),
 }
 TYPE2 = ["허가 가능", "허가 불가능"]

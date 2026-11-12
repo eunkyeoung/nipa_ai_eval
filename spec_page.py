@@ -441,7 +441,7 @@ def render_da2(item, sp, area):
                          "일치(적합)/전체": f"{ok} / {tot}" if tot else "-", "오류": str(p.get("error", "-")) if p else "-",
                          "산출식": f})
         show_table(pd.DataFrame(rows))
-        st.caption(f"산정식: {sp['formula']} · 종합 96 % 이상, 구성지표별 목표는 2-1·2-3·2-4 각 96 % 이상(2-2는 규격서 미정) · 결과는 소수점 셋째자리 이하 버림")
+        st.caption(f"산정식: {sp['formula']} · 종합 96 % 이상, 구성지표별 목표는 2-1 ~ 2-4 각 96 % 이상 · 결과는 소수점 셋째자리 이하 버림")
 
     tabs = st.tabs([f"{k} {n}" for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
     for i, (k, n, *_r) in enumerate(sp["parts"]):
