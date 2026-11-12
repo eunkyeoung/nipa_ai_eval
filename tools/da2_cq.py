@@ -98,8 +98,8 @@ def reason(exp, got, keys):
     return " / ".join(out)
 
 
-def freeze(mod="da2_cq50_jo"):
-    """지금 작성된 CQ를 zip 으로 동결. 기본 = 1안 조 단위(tools/da2_cq50_jo.py, 11-12). 항 단위 원본은 mod='da2_cq50'"""
+def freeze(mod="da2_cq50_mix"):
+    """지금 작성된 CQ를 zip 으로 동결. 기본 = 혼합 기준(tools/da2_cq50_mix.py, 91절). 전부 조 단위는 mod="da2_cq50_jo". 항 단위 원본은 mod='da2_cq50'"""
     sys.path.insert(0, ".")
     import importlib
     R = importlib.import_module(f"tools.{mod}")
@@ -115,6 +115,8 @@ def freeze(mod="da2_cq50_jo"):
         w.writerow(COLS)
         w.writerows(rows)
         z.writestr("da2_cq_testset.csv", "﻿" + s.getvalue())
+        if hasattr(R, "REL"):                                          # 혼합 기준(91절): 고유 관계 있는 항 목록 — 채점 때 결과에 같은 규칙
+            z.writestr("hang_rel.json", json.dumps(sorted(R.REL), ensure_ascii=False))
     with open(ZIP, "wb") as f:
         f.write(buf.getvalue())
     print(ZIP, len(rows), "건")
@@ -125,7 +127,17 @@ def load(zp=ZIP):
         rows = list(csv.DictReader(io.StringIO(z.read("da2_cq_testset.csv").decode("utf-8-sig"))))
         for r in rows:
             r["_query"] = z.read(r["query_file"]).decode("utf-8")
+        rel = set(json.loads(z.read("hang_rel.json"))) if "hang_rel.json" in z.namelist() else None
+    for r in rows:
+        r["_rel"] = rel
     return rows
+
+
+def mixkey(k, rel):
+    """혼합 기준(91절): 고유 관계가 없는 항은 조로 올림. rel 이 없으면(이전 시험셋) 그대로"""
+    if rel is None or k.count(".") != 2 or k in rel:
+        return k
+    return ".".join(k.split(".")[:2])
 
 
 def run(out_dir, zp=ZIP, only=None, store=None, progress=None):
@@ -158,7 +170,7 @@ def run(out_dir, zp=ZIP, only=None, store=None, progress=None):
                 if n is None:
                     continue
                 lb = [q.object.value for q in st.quads_for_pattern(n, lab, None)] if isinstance(n, ox.NamedNode) else []
-                got.add(norm(lb[0] if lb else n.value))
+                got.add(mixkey(norm(lb[0] if lb else n.value), r.get("_rel")))
             got = sorted(got)
             rec.update(actual_bindings=json.dumps(got, ensure_ascii=False),
                        missing_bindings=json.dumps(sorted(set(exp) - set(got)), ensure_ascii=False),
