@@ -1,7 +1,7 @@
-# CQ-005 음성군 건축 조례에서 천막과 유사한 구조의 창고용 가설건축물을 정한 상위 법령은 무엇인가?
+# CQ-005 음성군 건축 조례의 '대지와 도로의 관계' 조항은 상위 법령의 어느 조항에 따라 정한 것인가?
 # 결과 ?ans 노드의 라벨을 '법령명.조.항'(호 제외)으로 정규화해 정답과 집합 비교
 PREFIX aip: <https://onto.go.kr/aip/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-SELECT DISTINCT ?ans WHERE { { ?L_c aip:lawName "음성군 건축 조례" . ?L_c aip:hasArticle ?c . ?c aip:articleTitle ?t_c . FILTER(CONTAINS(REPLACE(STR(?t_c), " ", ""), "가설건축물")) } { ?up aip:implementedBy ?c . } { ?h aip:hasUnit* ?up . ?h aip:unitType ?hut . FILTER(STR(?hut) = "항") BIND(?h AS ?ans) } }
+SELECT DISTINCT ?ans WHERE { { ?L_c aip:lawName "음성군 건축 조례" . ?L_c aip:hasArticle ?c . ?c aip:articleTitle ?t_c . FILTER(CONTAINS(REPLACE(STR(?t_c), " ", ""), "대지와도로의관계")) } { ?up aip:implementedBy ?c . } { ?ans aip:hasUnit* ?up . ?ans aip:unitType ?hut . FILTER(STR(?hut) = "항") } }
