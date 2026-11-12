@@ -30,6 +30,30 @@ def norm(label):
     return f"{law}.{jo}" + (f".{m.group(4)}" if m.group(4) else "")
 
 
+def reason(exp, got, keys):
+    """불일치 사유: 정답·결과 키와 온톨로지에 있는 조문 키로 판정"""
+    jo = lambda k: ".".join(k.split(".")[:2])                         # '법령.조'
+    out = []
+    for k in sorted(set(exp) - set(got)):
+        if k not in keys:
+            out.append(f"정답 조문 {k}이(가) 온톨로지에 없음 — 질의로 낼 수 없음")
+        elif not got:
+            out.append(f"{k}: 질의 결과가 없음 — 질문의 출발점(법령·조문)이 온톨로지에 없거나 연결이 없음")
+        elif jo(k) in got:
+            out.append(f"{k}: 결과가 항이 아니라 조({jo(k)})로 나옴 — 위임 연결이 조 단위라 항을 구분할 수 없음")
+        else:
+            out.append(f"{k}: 정답 조문까지 이어지는 연결이 없음 — 질문 개념에서 이 조문으로 가는 관계가 온톨로지에 없음")
+    gold_jo = {jo(k) for k in exp}
+    extra = sorted(set(got) - set(exp))
+    same = [k for k in extra if jo(k) in gold_jo and k.count(".") == 2]
+    if same:
+        out.append(f"같은 조의 다른 항이 함께 나옴({', '.join(same)}) — 온톨로지 연결이 조 단위라 질문 개념만으로는 정답 항만 고를 수 없음")
+    other = [k for k in extra if k not in same and not any(k == jo(x) for x in exp)]   # 조 단위로 나온 것은 위에서 설명
+    if other:
+        out.append(f"정답에 없는 다른 조문이 함께 나옴({', '.join(other[:8])}{' 외' if len(other) > 8 else ''}) — 질문 개념으로 걸리는 조문이 정답보다 넓음")
+    return " / ".join(out)
+
+
 def freeze():
     """지금 작성된 CQ(tools/da2_cq50.py, 50건 0.1v)를 zip 으로 동결"""
     sys.path.insert(0, ".")
@@ -70,6 +94,10 @@ def run(out_dir, zp=ZIP, only=None, store=None, progress=None):
         for k in ("schema", "instance"):
             st.bulk_load(path=TTL[k], format=ox.RdfFormat.TURTLE)
     lab = ox.NamedNode(LABEL)
+    keys = set()                                                       # 온톨로지에 있는 조문 키(사유 판정용)
+    for b in st.query("PREFIX aip:<https://onto.go.kr/aip/> PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#> SELECT ?lb WHERE { "
+                      "{ ?n a aip:Article } UNION { ?n a aip:Appendix } UNION { ?n a aip:ArticleUnit . ?n aip:unitType \"항\" } ?n rdfs:label ?lb }"):
+        keys.add(norm(b["lb"].value))
     res = []
     for i, r in enumerate(rows):
         t = time.time()
@@ -91,6 +119,8 @@ def run(out_dir, zp=ZIP, only=None, store=None, progress=None):
                        missing_bindings=json.dumps(sorted(set(exp) - set(got)), ensure_ascii=False),
                        extra_bindings=json.dumps(sorted(set(got) - set(exp)), ensure_ascii=False),
                        match=str(set(got) == set(exp)).lower())
+            if set(got) != set(exp):
+                rec["reason"] = reason(exp, got, keys)
         except Exception as e:                                             # noqa: BLE001
             rec.update(status="error", error_message=f"{type(e).__name__}: {str(e)[:300]}")
         rec["elapsed_ms"] = int((time.time() - t) * 1000)
@@ -99,7 +129,7 @@ def run(out_dir, zp=ZIP, only=None, store=None, progress=None):
         if progress:
             progress(i + 1, len(rows), r["cq_id"])
     os.makedirs(out_dir, exist_ok=True)
-    cols = COLS + ["actual_bindings", "missing_bindings", "extra_bindings", "match", "elapsed_ms", "status", "error_message"]
+    cols = COLS + ["actual_bindings", "missing_bindings", "extra_bindings", "match", "reason", "elapsed_ms", "status", "error_message"]
     with open(os.path.join(out_dir, "validation_result_da2.csv"), "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()

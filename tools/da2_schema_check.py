@@ -185,6 +185,25 @@ def load_checklist(zp=ZIP):
     return rows, rq
 
 
+def _lab(st, iri):
+    import pyoxigraph as ox
+    lb = [q.object.value for q in st.quads_for_pattern(ox.NamedNode(iri), ox.NamedNode("http://www.w3.org/2000/01/rdf-schema#label"), None)]
+    return f"{lb[0]}({iri.split('/')[-1]})" if lb else iri.split("/")[-1]
+
+
+def _reason(st, foc, viol_pattern):
+    """위반 노드마다 '라벨(ID): 위반 패턴에 나온 속성 중 없는 것' — 무엇이 빠져서 부적합인지"""
+    import re
+    import pyoxigraph as ox
+    props = sorted(set(re.findall(r"aip:([a-z][A-Za-z]*)", viol_pattern)))   # 속성만(클래스는 대문자로 시작)
+    out = []
+    for iri in foc[:5]:
+        n = ox.NamedNode(iri)
+        miss = [p for p in props if not any(True for _ in st.quads_for_pattern(n, ox.NamedNode("https://onto.go.kr/aip/" + p), None))]
+        out.append(f"{_lab(st, iri)}: " + (", ".join(f"{p} 없음" for p in miss) if miss else "값의 자료형·개수가 조건과 다름"))
+    return " / ".join(out) + (f" 외 {len(foc) - 5}건" if len(foc) > 5 else "")
+
+
 def run(out_dir, zp=ZIP, only=None):
     import pyoxigraph as ox
     import pyshacl
@@ -212,6 +231,7 @@ def run(out_dir, zp=ZIP, only=None):
                 foc = [str(b["focus"].value) if hasattr(b["focus"], "value") else str(b["focus"]) for b in st.query(viol_text(by_id[r["check_id"]]))]
                 rec["focus_node"] = json.dumps(foc, ensure_ascii=False)
                 rec["message"] = "위반 노드 있음" if foc else "존재 패턴 없음(해당 데이터 없음)"
+                rec["reason"] = _reason(st, foc, " ".join(by_id[r["check_id"]][3:])) if foc else "온톨로지에 이 점검 대상 데이터가 없음"
         except Exception as e:                                      # noqa: BLE001
             rec.update(status="error", error_message=f"{type(e).__name__}: {e}")
         rec["elapsed_ms"] = int((time.time() - t) * 1000)
@@ -258,13 +278,15 @@ def run(out_dir, zp=ZIP, only=None):
                     rec["focus_node"] = json.dumps([x[0] for x in v[:5]], ensure_ascii=False)
                     rec["result_path"] = json.dumps(sorted({x[1] for x in v})[:5], ensure_ascii=False)
                     rec["message"] = f"위반 {len(v)}건: " + "; ".join(sorted({x[2] for x in v})[:3])
+                    rec["reason"] = " / ".join(f"{_lab(st, x[0])}: {x[1].split('/')[-1] or '-'} — {x[2]}" for x in v[:5]) + (
+                        f" 외 {len(v) - 5}건" if len(v) > 5 else "")
             res.append(rec)
             print(r["check_id"], rec["actual"], rec["message"][:80], flush=True)
     order = {r["check_id"]: i for i, r in enumerate(rows)}
     res.sort(key=lambda x: order[x["check_id"]])
     os.makedirs(out_dir, exist_ok=True)
     cols = ["check_id", "item_group", "description", "method", "validator_file", "expected", "actual", "conforms",
-            "focus_node", "result_path", "message", "elapsed_ms", "status", "error_message"]
+            "focus_node", "result_path", "message", "reason", "elapsed_ms", "status", "error_message"]
     with open(os.path.join(out_dir, "validation_result_da2.csv"), "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
