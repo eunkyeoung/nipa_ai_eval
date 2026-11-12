@@ -4,7 +4,7 @@
 # 정규화: 결과 노드의 rdfs:label → '법령명.조.항' (항이 없으면 '법령명.조', 별표는 '법령명.별표N', 호·목은 비교에서 뺌)
 # 대상: 동결한 ttl(스키마+인스턴스)을 메모리에 적재해 실행
 #
-#   python tools/da2_cq.py freeze              → spec_data/da2/aips_da2_cq_testset.zip (da2_cq_testset.csv + sparql/*.rq)
+#   python tools/da2_cq.py freeze [모듈]        → spec_data/da2/aips_da2_cq_testset.zip (da2_cq_testset.csv + sparql/*.rq). 모듈 기본 da2_cq50_jo(1안 조 단위)
 #   python tools/da2_cq.py run <out_dir>       → <out_dir>/validation_result_da2.csv
 import csv, io, json, os, re, sys, time, zipfile
 
@@ -54,10 +54,11 @@ def reason(exp, got, keys):
     return " / ".join(out)
 
 
-def freeze():
-    """지금 작성된 CQ(tools/da2_cq50.py, 50건 0.1v)를 zip 으로 동결"""
+def freeze(mod="da2_cq50_jo"):
+    """지금 작성된 CQ를 zip 으로 동결. 기본 = 1안 조 단위(tools/da2_cq50_jo.py, 11-12). 항 단위 원본은 mod='da2_cq50'"""
     sys.path.insert(0, ".")
-    from tools import da2_cq50 as R
+    import importlib
+    R = importlib.import_module(f"tools.{mod}")
     buf = io.BytesIO()
     rows = []
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -142,6 +143,6 @@ def run(out_dir, zp=ZIP, only=None, store=None, progress=None):
 
 if __name__ == "__main__":
     if sys.argv[1] == "freeze":
-        freeze()
+        freeze(*sys.argv[2:3])
     elif sys.argv[1] == "run":
         run(sys.argv[2], only=set(sys.argv[3:]) or None)
