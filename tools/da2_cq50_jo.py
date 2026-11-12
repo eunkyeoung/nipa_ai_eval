@@ -12,7 +12,7 @@
 #   CQ-036      결합건축 대상지 조를 구체화한 조는 국가 법령만(질문 지자체 '공통'; 조례 위임 항 제외)
 #   CQ-040      개발제한구역 시행령 별표 중 제목에 질문의 '건축'이 있는 별표(별표1)만, 그 별표로 위임한 조는 개발제한구역을 제한하는 조만
 #   CQ-030      온톨로지에 인천광역시 건축 조례 제18조가 없음 → 질문을 연장 횟수를 정한 별표로 좁힘(정답 별표5)
-#   CQ-015      작성자 교체본 대기(그대로)
+#   CQ-015      빠짐(53건본 반영, 아래 NEW·DROP)
 import sys
 sys.path.insert(0, ".")
 from tools import da2_cq50 as B
@@ -76,8 +76,36 @@ SPARQL["CQ-040"] = to_jo(sel(UNION(
               G('?p aip:appendixTitle ?pt . FILTER(CONTAINS(STR(?pt), "건축"))'), G("?p aip:relatedArticle ?ans .")]),
     art("인천광역시 계양구 개발제한구역 내 건축행위 등 허가에 관한 조례", "자격", "ans"))))
 
-CQS = [(cid, typ, area, Q[cid] + " [조 단위]", GOLD[cid], NOTE[cid]) for cid, typ, area, _, _, _ in B.ROWS]
+# ── 작성자 53건본(11-12 22시, spec_data/da2/DA2-1_CQ_질문답변작성_53건_20261112.xlsx) 반영 (변경내역 89절) ──
+# 새 문항 4건(013·038·052·053), 중복 CQ-016-2 삭제. 50건으로 맞추려고 사용자 지시로 3건 뺌:
+#   CQ-015(미수정·훈령이 온톨로지에 없음, 053이 같은 위계 추적 유형으로 대체), CQ-018(CQ-001과 정답 같음), CQ-041(053과 같은 건축법 제11조제4항)
+NEW = [
+    ("CQ-013", B.T_RC, "공통", "건축물이 건축선의 수직면을 넘어서는 안되는 근거조문은?", ["건축법.47"],
+     "답변: 건축법 제47조제1항·제2항(건축선에 따른 건축제한)"),
+    ("CQ-038", B.T_EX, "공통", "두 토지 간 건축협정 체결 시 두 토지를 1인이 소유해도 협정 체결이 가능한 단서 조건은?", ["건축법.77의4"],
+     "답변: 건축법 제77조의4제2항(1인 소유 시 건축협정). 제1항 각 호는 가능 지역(같은 조)"),
+    ("CQ-052", B.T_CF, "영천시", "영천시 계획관리지역에서 성장관리계획을 수립한 지역의 용적률을 영천시 도시계획 조례와 국토의 계획 및 이용에 관한 법률과 "
+     "다르게 정하고 있는 경우 어느 조문을 따라야 하는가?", ["영천시도시계획조례.62"],
+     "답변 결론: 영천시 도시계획 조례 제62조제1항제19호(성장관리계획 수립 지역 125% 이하). 법 제78조·제75조의3, 영 제85조는 위임 근거라 뺌. "
+     "질문 칸의 괄호 속 다른 표현(법 제78조제1항 명시)은 쓰지 않음"),
+    ("CQ-053", B.T_HI, "경산시", "상습 침수 우려지역인 방재지구에서 건축위원회의 심의를 거쳐 건축허가를 하지 않을 수 있는 근거가 되는 상위 법령은?",
+     ["건축법.11"], "답변 결론: 건축법 제11조제4항제2호. 영 제9조의2(상습 침수 우려지역)는 질문의 출발점이라 뺌"),
+]
+DROP = {"CQ-015", "CQ-016-2", "CQ-018", "CQ-041"}
+SPARQL["CQ-013"] = to_jo(sel(" ".join([art(B.BLD, "건축선", "ans"), title_has("ans", "제한")])))
+SPARQL["CQ-038"] = to_jo(sel(art(B.BLD, "건축협정의 체결", "ans")))
+SPARQL["CQ-052"] = to_jo(sel(" ".join([B.Z("계획관리지역", "z"), G("?z aip:restrictedBy ?ans ."), B.law_has("ans", "영천시", "L"),
+                                       title_has("ans", "용적률"), G("?nu aip:implementedBy ?ans .")])))
+SPARQL["CQ-053"] = to_jo(sel(" ".join([art(B.BLDR, "상습 침수 우려지역", "c"),
+                                       G("?x aip:implementedBy ?c . ?ans aip:hasUnit* ?x . ?ans a aip:Article ."), B.national("ans", "n")])))
+
+_ALL = sorted([(cid, typ, area, Q[cid] + " [조 단위]", GOLD[cid], NOTE[cid]) for cid, typ, area, _, _, _ in B.ROWS if cid not in DROP]
+              + [(cid, typ, area, q + " [조 단위]", gold, note) for cid, typ, area, q, gold, note in NEW])
+# 번호 다시 매김(사용자, 11-12): CQ-001 ~ CQ-050. 작성자 파일 번호는 근거 칸 앞에 '[원번호 CQ-0xx]'로 남김
+ORIG = {f"CQ-{i:03d}": r[0] for i, r in enumerate(_ALL, 1)}
+CQS = [(f"CQ-{i:03d}", typ, area, q, gold, f"[원번호 {cid}] {note}") for i, (cid, typ, area, q, gold, note) in enumerate(_ALL, 1)]
 
 
 def query(cid):
-    return B.PREFIX + "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" + SPARQL[cid]
+    """새 번호(CQ-001~050) → 원번호의 질의"""
+    return B.PREFIX + "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" + SPARQL[ORIG[cid]]
