@@ -607,18 +607,22 @@ def render_da2(item, sp, area):
 .st-key-da2_tabs [data-testid="stTabs"] { width: 100%; }
 .st-key-da2_tabs [role="tablist"] { display: flex; width: 100%; gap: 6px; border-bottom: 3px solid #1d4ed8; padding: 0; }
 .st-key-da2_tabs [data-testid="stTab"] { flex: 1 1 0; min-width: 0; justify-content: center; height: auto; margin: 0;
-    padding: 11px 10px; background: #e2e8f0; overflow: hidden; align-items: center; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 10px 10px 0 0;
+    padding: 9px 8px; background: #e2e8f0; overflow: hidden; align-items: center; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 10px 10px 0 0;
     color: #334155; transition: background .15s; }
 .st-key-da2_tabs [data-testid="stTab"]:hover { background: #cbd5e1; color: #0f172a; }
 .st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff; }
-.st-key-da2_tabs [data-testid="stTab"] p { font-size: 15px; color: inherit; text-align: center; font-weight: 600;
-    white-space: normal; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.35; }
+.st-key-da2_tabs [data-testid="stTab"] p { font-size: clamp(11.5px, 0.95vw, 13px); color: inherit; text-align: center; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; margin: 0; }   /* 항상 두 줄: 이름은 한 줄(좁으면 글자 축소) */
+.st-key-da2_tabs [data-testid="stTab"] p strong { display: block; font-size: inherit; font-weight: 700;
+    opacity: .75; margin-bottom: 3px; }                                  /* 윗줄: 'DA 2-1' 번호 */
 .st-key-da2_tabs [data-testid="stTab"] > div { min-width: 0; max-width: 100%; }
 .st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] p { font-weight: 700; }
+.st-key-da2_tabs [data-testid="stTab"][aria-selected="true"] p strong { opacity: .9; }
 .st-key-da2_tabs .react-aria-SelectionIndicator { display: none; }
 </style>""", unsafe_allow_html=True)
 
-    tabs = st.container(key="da2_tabs").tabs([f"{k} {n}" for k, n, *_r in sp["parts"]] + ["검증 자산·도구"])
+    # 두 줄로 통일(11-12 사용자): 윗줄 번호(굵게 → CSS로 블록), 아랫줄 지표 이름. 모든 탭 높이 같게(flex stretch)
+    tabs = st.container(key="da2_tabs").tabs([f"**{k}** {n}" for k, n, *_r in sp["parts"]] + ["**DA 2** 검증 자산·도구"])
     for i, (k, n, *_r) in enumerate(sp["parts"]):
         with tabs[i]:
             d = os.path.join(run_dir, f"da2-{i + 1}")
