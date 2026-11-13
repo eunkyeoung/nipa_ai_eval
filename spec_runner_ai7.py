@@ -16,9 +16,9 @@
   sim_execution_log_ai7.jsonl        명령 1건당 1행 — 3D 명령·호출 결과·정답 대조·판정
   data/ · meta.json · progress.xlsx · result.xlsx · summary.json
 
-지금 판정 범위: ① 의도 · ② 파라미터. ③ 3D 실행(실행 후 3D 상태·캡처)은 3D 화면 연동 전이라 판정하지 않으며,
-그동안의 실행은 동결 여부와 관계없이 모두 '예비'입니다 (ai7_eval.JUDGE_EXEC).
-선행상태(카메라 방위·LOD·기상 등)는 아직 설정하지 않고 기록만 합니다 — 3D 화면 연동 때 적용.
+판정 범위: ① 의도 · ② 파라미터. ③ 3D 실행(실행 후 3D 상태·캡처)은 시험 범위 밖이라 판정하지 않습니다
+(AIPS 사전진단 성능테스트 — 3D 분석 파라미터가 제대로 들어오는지 확인, ai7_eval.JUDGE_EXEC). 동결 뒤 50건 전체 실행 = 공식.
+선행상태(카메라 방위·LOD·기상 등)는 기록만 합니다.
 """
 import argparse
 import glob
@@ -107,7 +107,7 @@ def score_run(run_dir, testset_path, quiet=False):
     tables = dict(zip(TABLES, (s["총괄"], s["유형별"], s["오류원인별"], s["사례별"])))
     files = save_tables(os.path.join(run_dir, "result.xlsx"), tables)
     summ = dict(item="AI7", value=s["value"], target=E.TARGET, cmp=">=", passed=s["passed"], n=s["n"], ok=s["ok"],
-                aux={"응답 오류": s["응답오류"], "되묻기": s["되묻기"], "③ 판정": "연결" if E.JUDGE_EXEC else "미연결(①② 기준 예비 값)",
+                aux={"응답 오류": s["응답오류"], "되묻기": s["되묻기"], "③ 판정": "함" if E.JUDGE_EXEC else "시험 범위 밖(①② 기준)",
                      "유형별": {r["명령 유형"]: r["정확도(%)"] for r in s["유형별"]},
                      "오류원인별": {r["오류 원인"]: r["건수"] for r in s["오류원인별"]}},
                 files=files, scored=time.time())
@@ -115,7 +115,7 @@ def score_run(run_dir, testset_path, quiet=False):
         json.dump(summ, f, ensure_ascii=False, indent=1, default=str)
     if not quiet:
         print(f"[AI7] 정확도 {'-' if s['value'] is None else format(s['value'], '.1f')} % ({s['ok']}/{s['n']}) · "
-              f"응답 오류 {s['응답오류']} · 되묻기 {s['되묻기']}" + ("" if E.JUDGE_EXEC else " · ③ 미판정(예비)"), flush=True)
+              f"응답 오류 {s['응답오류']} · 되묻기 {s['되묻기']}", flush=True)
     return s
 
 
@@ -314,7 +314,7 @@ def main():
         meta.setdefault("resumed", []).append(time.strftime("%Y-%m-%d %H:%M:%S"))
     else:
         why = [x for x, on in (("일부 ID만 실행", a.cases), ("사전 점검 생략", a.no_precheck), ("시험셋 밖 ID(예비 실측)", outside),
-                               ("동결 전 실행", not os.path.exists(freeze_path)), (E.EXEC_PENDING, not E.JUDGE_EXEC)) if on]
+                               ("동결 전 실행", not os.path.exists(freeze_path))) if on]
         meta = dict(item="AI7", 시험항목="[AI 7] 자연어 기반 3D 시뮬레이션 명령 처리 기능", base=base, endpoint=f"{base}/api/chat",
                     deadline_s=deadline, origin=ORIGIN, cases=[r["사례ID"] for r in ts] if a.cases else [],
                     testset=a.testset, testset_sha256=sha256(a.testset), answer=a.answer, answer_sha256=sha256(a.answer),
@@ -324,7 +324,7 @@ def main():
                     criteria_sha256=E.criteria_fingerprint(), judge_exec=E.JUDGE_EXEC,
                     frozen=os.path.exists(freeze_path), 공식=False, 예비사유=why, gap_s=GAP,
                     started=time.strftime("%Y-%m-%d %H:%M:%S"))
-        if meta["frozen"] and not pilot and E.JUDGE_EXEC:
+        if meta["frozen"] and not pilot:
             meta.update(완료전=True, 예비사유=meta["예비사유"] + [RUN_NOTE])
         if not a.no_precheck:
             fresh = meta["precheck"] = C.precheck(base, probe_message=a.probe)
@@ -409,7 +409,7 @@ def main():
             s = score_run(run_dir, snap_ts if os.path.exists(snap_ts) else a.testset)
             msg = f"완료 ({status['done']}/{total}건)"
             if s["value"] is not None:
-                msg += f" · 자연어 기반 3D 시뮬레이션 명령 정확도 {s['value']:.1f} %" + ("" if E.JUDGE_EXEC else " (①② 기준 예비)")
+                msg += f" · 자연어 기반 3D 시뮬레이션 명령 정확도 {s['value']:.1f} %"
             status.update(state="done", message=msg)
         print(status.get("message"), flush=True)
     except Exception as e:                                  # noqa: BLE001

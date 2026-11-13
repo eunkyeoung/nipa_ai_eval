@@ -12,8 +12,8 @@ ai6_client.gather() 로 묶은 응답(turn)을 받아 규격서 6.2.7 기준으�
                     (정답이 '필지 표시'면 이동은 세지 않고, 정답이 '위치 이동'뿐이면 그대로) (LOCATE_INTENTS · AUX_INTENTS)
   ② 파라미터    : 정답파라미터의 키마다 시스템 값(3D 호출 인자 · 3D 명령 parameters)과 대조
                   (PNU 집합 · 층수 · 용도 · 건축면적 · 건폐율 · 기준일(월-일) · 시간대(시) · 계획고 · 지형유형 · 기상 · 줌레벨 …)
-  ③ 3D 실행     : 실행 후 3D 지도 상태(중심좌표·줌·방위·On/Off·생성 객체·'완료')로 판정해야 하나 응답에는 명령까지만 있음
-                  → 3D 화면(브라우저) 연동 전까지 판정하지 않음(JUDGE_EXEC=False). 그동안의 실행은 모두 '예비'
+  ③ 3D 실행     : 판정하지 않음(JUDGE_EXEC=False) — 이 시험은 AIPS 사전진단 성능테스트로, 3D 분석에 쓸 명령·파라미터가
+                  응답에 제대로 들어오는지(①②)만 봄. 3D 화면 실행 상태·캡처는 시험 범위 밖(사용자 결정 11-13, 변경내역 100절)
   - 되묻기 = 오류 (규격: 명령문 1회 입력). 무응답·대기 상한 초과·시스템 오류 = '응답 오류'
   - 오류 원인 = ① → ② → ③ 중 처음 어긋난 것 (응답 오류는 그 앞)
   - 정확도(%) = 정상 수행 / 전체 × 100, 소수점 둘째자리 이하 버림 (DEC=1 — 2/3 → 66.6)
@@ -41,8 +41,8 @@ TARGET = 90.0
 DEC = 1                                          # 규격서 6.2.7: 소수점 둘째자리 이하 버림
 PARSE_LOG = "command_parse_log_ai7.jsonl"        # 명령 해석 로그 (의도·핵심 파라미터·실행 대상 기능)
 SIM_LOG = "sim_execution_log_ai7.jsonl"          # 3D 실행 결과 로그 (3D 명령·호출 결과·정답 대조·판정)
-JUDGE_EXEC = False                               # ③ 3D 실행 판정 — 3D 화면 상태 연동 전에는 끔(판정 '-', 실행은 예비)
-EXEC_PENDING = "③ 3D 실행 판정 미연결(3D 화면 상태·캡처 연동 전)"
+JUDGE_EXEC = False                               # ③ 3D 실행 판정 안 함 — 시험 범위 밖(판정 '-', ①② 로 정상 수행)
+EXEC_SCOPE = "③ 3D 실행은 시험 범위 밖 — ① 의도 · ② 파라미터로 판정(3D 분석 파라미터 확인)"
 AUX_INTENTS = {"위치 이동"}                       # 보조 의도 — 정답 의도가 이것뿐일 때만 판정
 # 위치 보조 의도 — 3D 의도가 있는 명령이면 '위치 이동'·'필지 표시' 모두 빼고 비교(시스템이 분석 대상 필지를 강조하는 일이 잦음,
 # 11-13 예비 실행 0024·0040·0050). 이동·표시만 있는 기본 제어 명령에서는 그대로 판정
@@ -440,10 +440,10 @@ def judge(gold, ext, res=None, turn=None):
             why2.append(f"{key} 불일치 (정답 {val} / 시스템 {shown})")
     if not ok2:
         miss.append("② " + "; ".join(why2))
-    # ③ 3D 실행 — 연동 전에는 판정하지 않음
+    # ③ 3D 실행 — 시험 범위 밖(판정하지 않음)
     ok3 = None
     if not JUDGE_EXEC:
-        notes.append(EXEC_PENDING)
+        notes.append(EXEC_SCOPE)
     asked = bool(ext.get("asked"))
     if asked:
         q = (ext["asks"][0].get("question") if ext["asks"] and isinstance(ext["asks"][0], dict) else "") or ""
@@ -570,7 +570,7 @@ def score(sim_rows, testset_rows, dec=DEC, parse_rows=None):
     total = [OrderedDict([("전체 테스트 건수", n), ("정상 수행 건수", ok), ("오류 건수", n - ok),
                           ("자연어 기반 3D 시뮬레이션 명령 정확도(%)", value), ("목표", f"{TARGET:g} % 이상"),
                           ("달성 여부", None if value is None else ("달성" if value >= TARGET else "미달성")),
-                          ("비고", "" if JUDGE_EXEC else EXEC_PENDING + " — ①② 기준 예비 값")])]
+                          ("비고", "" if JUDGE_EXEC else EXEC_SCOPE)])]
     by_type = []
     for t in TYPES + sorted({c["명령유형"] for c in cases} - set(TYPES)):
         rows = [c for c in cases if c["명령유형"] == t]
@@ -610,7 +610,7 @@ def validate(testset_rows, answer_rows, rules=None):
         if re.search(r"(?<!\d)\d{19}(?!\d)", cmd):
             probs.append(f"{r.get('사례ID')}: 명령문에 19자리 숫자(PNU)가 있음 — 시스템에는 자연어 명령만 입력")
         if str(r.get("선행상태") or "").strip():
-            probs.append(f"{NOTE}{r.get('사례ID')}: 선행상태 '{r.get('선행상태')}' — 설정 방법 미연결(3D 화면 연동 때 적용)")
+            probs.append(f"{NOTE}{r.get('사례ID')}: 선행상태 '{r.get('선행상태')}' — 기록만 함(3D 화면 실행은 시험 범위 밖)")
     cnt = Counter(canon_type(r.get("명령유형")) for r in testset_rows)
     for t, want in TYPE_COUNTS.items():
         if cnt.get(t, 0) != want:
@@ -638,7 +638,7 @@ def validate(testset_rows, answer_rows, rules=None):
     for cid in sorted(set(ans) - set(ids)):
         probs.append(f"{cid}: 시험셋에 없는 정답")
     if not JUDGE_EXEC:
-        probs.append(f"{NOTE}{EXEC_PENDING} — 정답시나리오는 아직 판정에 쓰지 않음")
+        probs.append(f"{NOTE}{EXEC_SCOPE} — 정답시나리오 칸은 판정에 쓰지 않음(참고용)")
     return probs
 
 

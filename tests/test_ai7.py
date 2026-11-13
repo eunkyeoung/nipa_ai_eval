@@ -104,9 +104,9 @@ class Judge(unittest.TestCase):
     def test_sample_build_sun_ok(self):
         v = run("build_sun_date", BUILD_SUN)
         self.assertTrue(v["①"] and v["②"], v["불일치"])
-        self.assertIsNone(v["③"])                               # ③ 미연결
+        self.assertIsNone(v["③"])                               # ③ 시험 범위 밖 — ①② 로 정상 수행
         self.assertTrue(v["정상수행"])
-        self.assertIn(E.EXEC_PENDING, v["참고"])
+        self.assertIn(E.EXEC_SCOPE, v["참고"])
 
     def test_default_date_is_param_error(self):
         v = run("build_sun_default", BUILD_SUN)                  # 날짜를 안 쓴 명령 → 뷰어 기본값(오늘·4~20시)
@@ -300,8 +300,9 @@ class Runner(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join("run", E.PARSE_LOG)))
         with open(os.path.join("run", "meta.json"), encoding="utf-8") as f:
             meta = json.load(f)
-        self.assertFalse(meta["공식"])
-        self.assertIn(E.EXEC_PENDING, meta["예비사유"])
+        self.assertFalse(meta["공식"])                            # 일부 ID 실행·동결 전 → 예비 (③ 때문이 아님)
+        self.assertIn("일부 ID만 실행", meta["예비사유"])
+        self.assertFalse(any("③" in w for w in meta["예비사유"]))
         with open(os.path.join("run", "summary.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f)["value"], 75.0)
         new, s = R7.rescore("run", None, None, None)              # 원문으로 다시 판정 — 새 폴더, 같은 결과
