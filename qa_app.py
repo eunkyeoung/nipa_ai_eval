@@ -22,6 +22,8 @@ import streamlit as st
 
 import importlib
 
+import ai6_client
+import ai6_eval
 import qa_eval
 import qa_f1
 import qa_runner
@@ -32,7 +34,7 @@ import check_page
 
 # qa_eval / qa_runner / qa_f1 파일이 바뀌면 화면을 껐다 켜지 않아도 새로고침 때 다시 읽음
 # (qa_f1이 qa_eval 함수를 가져다 쓰므로 qa_eval → qa_runner → qa_f1 순서)
-for _m in (qa_eval, qa_runner, qa_f1, spec_eval, spec_page, verdict_check, check_page):
+for _m in (qa_eval, qa_runner, qa_f1, ai6_client, ai6_eval, spec_eval, spec_page, verdict_check, check_page):
     _mt = os.path.getmtime(_m.__file__)
     # 표시가 없으면(이 로직 이전에 불러온 모듈) 또는 파일이 바뀌었으면 다시 읽기
     if getattr(_m, "_loaded_mtime", None) != _mt:
@@ -280,7 +282,9 @@ def progress_panel():
                 b1, b2 = h2.columns(2)
                 if b1.button("↻ 이어서", width="stretch", help="이미 받은 결과는 그대로 두고 남은 질의만 실행"):
                     argv = [a for a in stt["argv"] if a != "--resume"] + ["--resume"]
-                    launch([sys.executable, "-u", stt.get("script", "qa_runner.py")] + argv, total, resume=True)
+                    k = st.session_state.get("ai6_llm_key")      # AI6: 화면에 넣은 LLM 키를 이어서 실행에도 넘김 — 다시 하는 사전 점검도 모델까지 확인
+                    launch([sys.executable, "-u", stt.get("script", "qa_runner.py")] + argv, total, resume=True,
+                           env={"AI6_LLM_KEY": k, "VLLM_API_KEY": ""} if k else None)
                 close = b2.button("닫기", width="stretch")
             else:
                 close = h2.button("닫기", width="stretch")
@@ -299,6 +303,9 @@ def progress_panel():
                 df = pd.read_excel(out)
                 if "질의" in df:
                     df = df[df["질의"].notna()]
+                if str(stt.get("mode", "")).endswith("AI6") and "판정" in df:   # AI6: 규격서 출력 항목·판정을 사례가 끝날 때마다
+                    spec_page.ai6_live(df, total)
+                    return
                 if "판단유형" in df:                              # 오류 칸: 종류 · 끊긴 위치 (통신 오류 + 응답 중단)
                     _ids = df["사례ID"] if "사례ID" in df else df.get("case_id", [""] * len(df))
                     _det = [spec_eval.error_detail({"오류": e if isinstance(e, str) else "", "판단유형": t,
@@ -306,11 +313,11 @@ def progress_panel():
                             for e, t, i, n in zip(df.get("오류", [""] * len(df)), df["판단유형"], _ids,
                                                   df.get("회차", [1] * len(df)))]
                     df["오류"] = [f"{k.split(' — ')[0]} · {w}" if k else "" for k, w in _det]
-                cols = [c for c in ["case_id", "사례ID", "회차", "질의", "AI판정", "판단유형", "AI근거", "근거법령",
-                                    "근거조문", "소요초"] if c in df]   # 적용룰셋은 결과 화면(사례별·상세)에서만 표시
+                cols = [c for c in ["case_id", "사례ID", "회차", "명령유형", "질의", "AI판정", "판단유형", "오류원인", "AI근거",
+                                    "근거법령", "근거조문", "소요초"] if c in df]   # 명령유형·오류원인 = AI6   # 적용룰셋은 결과 화면(사례별·상세)에서만 표시
                 if "오류" in df and (df["오류"] != "").any():
                     cols.insert(cols.index("판단유형") + 1, "오류")      # 오류가 있을 때만 판단유형 옆에 표시
-                _v = df[cols].tail(max(done, 1)).fillna("-")
+                _v = df[cols].tail(max(done, 1)).astype(object).fillna("-")   # 숫자 칸에 '-' 를 넣을 때 pandas 경고(향후 오류) 방지
                 spec_page.show_table(_v, height=180)
         except Exception:                                       # noqa: BLE001 (러너가 쓰는 중이면 다음 갱신 때 표시)
             pass
@@ -318,8 +325,8 @@ def progress_panel():
 
 
 # ---------------- 실행 (백그라운드 프로세스) ----------------
-def launch(cmd, total, resume=False):
-    """qa_runner.py를 별도 프로세스로 시작하고 화면을 새로 그림"""
+def launch(cmd, total, resume=False, env=None):
+    """qa_runner.py를 별도 프로세스로 시작하고 화면을 새로 그림 (env: 러너에만 넘길 환경변수 — 예: AI6 LLM 키)"""
     if os.path.exists(qa_runner.STOP_FILE):
         os.remove(qa_runner.STOP_FILE)
     qa_runner.write_status(STATUS, dict(state="running", done=0, total=total, current=None, started=time.time(),
@@ -327,7 +334,7 @@ def launch(cmd, total, resume=False):
     log = open("run.log", "a" if resume else "w", encoding="utf-8")
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)   # Windows: 터미널 Ctrl+C와 분리
     subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, creationflags=flags,
-                     env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+                     env=dict(os.environ, PYTHONIOENCODING="utf-8", **(env or {})))
     st.session_state["was_running"] = True
     st.session_state.pop("dismissed", None)
     time.sleep(1.5)
@@ -369,9 +376,10 @@ if CHECK_VIEW:
     check_page.render(area)
     st.stop()
 if SPEC_VIEW:
-    _sitem = spec_page.sidebar(side, launch, is_running(read_status()))
+    _stt = read_status()
+    _sitem = spec_page.sidebar(side, launch, is_running(_stt))
     progress_panel()
-    spec_page.render(_sitem, area)
+    spec_page.render(_sitem, area, live=_stt.get("run_dir") if is_running(_stt) else None)
     st.stop()
 
 with side.popover("📂 정답셋 변경", width="stretch"):

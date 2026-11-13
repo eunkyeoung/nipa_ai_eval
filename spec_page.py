@@ -18,9 +18,10 @@ from tools import da2_cq as _cq                                                 
 DATA = "spec_data"
 FILES = {"AI1": ["testset_ai1", "answer_ai1"], "AI2": ["testset_ai2", "answer_ai2"], "AI3": ["testset_ai3"],
          "AI4": ["testset_ai4", "answer_ai4"], "AI5": ["testset_ai5", "answer_ai5", "law_article_db"],
-         "AI6": ["testset_ai6", "answer_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"], "DA2": []}
+         "AI6": ["testset_ai6", "answer_ai6", "intent_map_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"], "DA2": []}
 LABEL = {"testset": "시험셋(질의)", "answer": "정답셋", "law_article_db": "법령·조례 조문 DB",
-         "result": "실행 결과(시스템 응답)"}
+         "result": "실행 결과(시스템 응답)", "intent": "의도 대응표"}
+OPTIONAL = ("law_", "result_", "intent_")   # 없어도 실행 가능 (조문 DB 없으면 ① 판정 보류 · 결과 파일은 수동 채점용 · 대응표 없으면 기본 대응표)
 RAW_VERDICT = {"possible": "승인 가능", "impossible": "부적합", "conditional": "조건부 가능",   # AIPS 원 판정값 → 수행계획서 4종
                "needs_review": "검토 필요", "unknown": "검토 필요"}
 HIDE_TABLES = {"AI1": ("보조 지표(적용 법령·근거 조문)별 일치·불일치 건수 및 일치율",)}   # 2026-11-11 의뢰기업 요청: 결과 화면에서 숨김 (result.xlsx에는 남음)
@@ -46,6 +47,35 @@ def rows_height(n, cap=420):
     return min(cap, 38 + 35 * max(n, 1))
 
 
+AI6_LIVE_COLS = ["사례ID", "명령유형", "질의", "해석 의도", "핵심 파라미터", "실행 대상 기능", "지도 상태",
+                 "①", "②", "③", "판정", "오류원인", "불일치", "소요초"]
+
+
+def ai6_live(df, total):
+    """AI6 실행 중 화면 — 사례가 끝날 때마다(2초마다 다시 읽음) 규격서 2-6 출력 항목(해석 의도·핵심 파라미터·실행 대상 기능·
+    지도 상태)과 판정(①②③ · 정상 수행/오류 · 오류 원인), 지금까지의 정상 수행·오류 건수를 보여 줌. df = progress.xlsx"""
+    import ai6_eval as E6
+    m = len(df)
+    ok = int((df["판정"] == "정상 수행").sum())
+    k = st.columns(4)
+    k[0].metric("끝난 명령", f"{m} / {total}건")
+    k[1].metric("정상 수행", f"{ok}건")
+    k[2].metric("오류", f"{m - ok}건")
+    k[3].metric("지금까지 정확도", "-" if not m else f"{E6.floor_pct(ok, m, S.SPEC['AI6'].get('dec', 2)):.2f} %",
+                help="끝난 명령만으로 낸 중간 값이에요. 최종 정확도는 다 끝난 뒤 아래 결과 화면에서 전체 건수 기준으로 나와요.")
+    by_type = []
+    for t in E6.TYPES:
+        sub = df[df["명령유형"] == t] if "명령유형" in df else df.iloc[0:0]
+        by_type.append(f"{t} 정상 {int((sub['판정'] == '정상 수행').sum())} / 끝남 {len(sub)}")
+    st.caption("명령 유형별 — " + " · ".join(by_type))
+    cols = [c for c in AI6_LIVE_COLS if c in df]
+    view = df[cols].iloc[::-1].rename(columns={"질의": "명령문"})            # 방금 끝난 명령이 맨 위
+    view = view.astype(object).where(view.notna(), "")                      # 엑셀에서 빈칸만 있던 칸(오류원인·불일치)은 숫자형 NaN으로 읽힘
+    show_table(view, height=rows_height(len(view), cap=420))
+    st.caption("① 의도 · ② 핵심 파라미터 · ③ 지도 제어 — 셋 다 O 여야 정상 수행, 오류 원인은 ①→②→③ 중 처음 틀린 기준. "
+               "명령별 응답 원문·규격 출력 JSON 은 끝난 뒤 아래 '질의별 상세 결과'에서 봅니다.")
+
+
 SHORT = {"AI1": "AI 1 정확도", "AI2": "AI 2 F1", "AI3": "AI 3 일관성", "AI4": "AI 4 조건부", "AI5": "AI 5 환각",
          "AI6": "AI 6 지도 제어", "AI7": "AI 7 3D 시뮬레이션", "DA2": "DA 2 온톨로지"}
 NOT_PROVIDED = [   # 시험의뢰서가 요구하지만 AIPS가 질의 응답(SSE)에 실어 보내지 않는 값 → 대신 쓰는 방법
@@ -69,6 +99,13 @@ NOT_PROVIDED_DA2 = [   # 규격서가 요구하지만 시스템(Fuseki 그래프
     "**OOPS! 버전** — OOPS! REST 응답에 버전 값이 없음 → 호출 주소(https://oops.linkeddata.es/rest)와 응답 원문(`da2-4/oops_response.xml`)을 "
     "결과 폴더에 보관. 외부 서비스라 **스키마 파일만** 전송(인스턴스 전송 없음)",
     "**추론 의존 CQ 수(○○건)** — 동결한 CQ 50건 모두 추론 미의존(inference_required = false) → 추론기 없이 SPARQL만 실행",
+]
+NOT_PROVIDED_AI6 = [   # [AI 6] 규격 시험방법 (2) '동결 버전 확인' 중 공간오케·에이전트가 알려 주지 않는 값 → 대신 쓰는 방법
+    "**AI 모델** — 공간오케 /ready 의 설정 모델, LLM 서버 /v1/models 목록(LLM 키를 넣었을 때), vLLM 버전은 LLM 서버 /version 으로 확인 "
+    "(위 'LLM 모델' 두 행과 'vLLM 버전' 행, 조회값)",
+    "**공간분석 API 버전** — 사전 점검 때 /v3/api-docs 의 info.version 을 읽어 시험 조건(v0.1)과 대조 — 다르면 사전 점검 실패로 실행하지 않음 (조회값)",
+    "**Sub 오케스트레이터·에이전트 버전, 지도 데이터 기준일** — 시스템이 알려 주지 않음(/health 는 상태만) → 위 '동결 버전 확인' 표에 "
+    "**의뢰기업 선언값**으로 적고, 실행마다 '연결 에이전트' 목록이 같은지로 바뀌었는지만 확인",
 ]
 CRITERIA = {
     "AI1": "AI 판단 결과(판단 유형)가 정답 판단 유형과 정확히 일치하는지 평가. 개별 테스트 사례에 대해 판단 유형이 정답과 "
@@ -97,10 +134,25 @@ CRITERIA = {
     "AI5": "응답별로 환각 유형 ①–④를 순서대로 자동 판정: ① 인용 조문이 법령·조례 조문 DB에 존재하는지 ② 근거 조문 항목이 존재하고 "
            "값이 비어 있지 않은지 ③ 인용 조문과 정답 조문셋의 교집합이 존재하는지 ④ 응답의 적용 법령이 정답 적용 법령과 일치하는지. "
            "하나의 응답에서 ①–④ 중 1개 이상 검출되면 환각 응답 1건으로 계수하며, 복수 유형이 동시에 검출되어도 중복 계수하지 않음.",
-    "AI6": "사례마다 ① 의도 추출(정답 의도 집합과 정확 일치) ② 핵심 파라미터(레이어·위치·분석 조건, 표기 차이 허용 '263번지' = '263') "
-           "③ GIS 지도 제어(실행 후 지도 상태·분석 결과 표출이 정답 시나리오와 일치)를 순서대로 판정. 셋 다 일치하면 정상 수행 1건, "
-           "부분 일치는 오류. 오류 원인은 최초 불일치 기준으로 분류.\n\n좌표·줌 레벨·면적·거리 등 수치는 기록용으로 판정에 쓰지 않음. "
-           "결과는 소수점 둘째자리 이하 버림.",
+    "AI6": "시험 데이터셋의 자연어 지도 제어 명령을 문장 그대로, 사례마다 새 대화(thread_id)로 지도제어·공간분석 Sub 오케스트레이터에 "
+           "1회 입력. 사례마다 아래 3개 검증 기준을 모두 만족해야 정상 수행 1건.\n\n"
+           "① 의도 추출: 시스템이 실제로 부른 기능과 지도 동작을 의도 대응표로 바꾼 의도가 정답 의도와 집합 완전 일치 — "
+           "빠지거나 남으면 오류(부분 일치 = 오류). 레이어 찾기·토지이용계획 조회 같은 보조 호출은 세지 않고, "
+           "공간오케가 보낸 의도 코드는 참고로만 기록\n\n"
+           "② 파라미터 추출: 위치는 대상 필지 PNU(필지 선택·분석 호출에 쓴 PNU, 검색 후보는 제외)로 대조, 분석대상(분석 종류·레이어)은 "
+           "집합 완전 일치 — 레이어는 공간오케가 실제로 고른 레이어로 대조하고, 그 레이어 ID가 그 레이어의 자료 테이블인지도 확인"
+           "(예: '지구단위계획구역'인데 도로 테이블을 고르면 오류), 명령에 든 반경은 단위만 맞춰 값이 같아야 함"
+           "('300m' = '0.3km', 300.4m ≠ 300m). 표기만 다른 경우는 일치('263번지' = '263', 가운뎃점·공백 무시). "
+           "정답에 없는 반경을 쓰면 오류\n\n"
+           "③ GIS 지도 제어: 응답의 지도 제어 명령(대상 필지 선택·이동, 확대/축소 — 이동+확대 한 번 명령 포함)과 표출 도형(대상 필지 도형·분석 결과 도형)이 "
+           "정답 시나리오와 일치 — 정답의 도형이 모두 와야 함(남는 도형은 기록만)\n\n"
+           "되묻기(후보 선택 요청)는 오류. 무응답·응답 대기 상한 초과·연결 실패·시스템 오류 이벤트, 그리고 위치 확정 호출이 "
+           "시스템 사유로 실패해(연결 실패 등 — '못 찾음'은 제외) 분석을 시작하지 못한 사례는 규격('시스템 오류로 응답하지 못한 사례')대로 "
+           "'응답 오류'로 따로 집계(그 밖의 도구 실패는 답변이 오면 응답한 것으로 보고 ①②③으로 판정). "
+           "오류 원인은 규격대로 ① → ② → ③ 중 처음 어긋난 기준 — 되묻기 사유·위치 미확정 같은 내용은 '세부 원인'으로 따로 남김. "
+           "\n\n"
+           "호출 순서·중심 좌표·줌 레벨·산출 면적·거리는 로그에만 기록하고 판정에 쓰지 않음(명령에 든 반경만 ②에서 판정). "
+           "결과는 소수점 셋째자리 이하 버림.",
     "AI7": "사례마다 ① 의도 추출 ② 핵심 파라미터(위치·층수·높이·용도·기준일·시간대·조망점 등) ③ 3D 시뮬레이션 실행(3D 지도 상태·생성 객체·"
            "실행 조건이 정답 시나리오와 일치, 실행 상태 '완료')을 순서대로 판정. 셋 다 일치하면 정상 수행 1건, 부분 일치는 오류. "
            "오류 원인은 최초 불일치 기준으로 분류. 실행 대기 상한 안에 '완료'가 아니면 미실행(실행 오류).\n\n결과는 소수점 둘째자리 이하 버림.",
@@ -166,10 +218,11 @@ def score_run(item, run_dir):
         law = None
     if item == "AI3":
         ans = None
-    lp = os.path.join(run_dir, S.SPEC[item]["log"])
+    lp = os.path.join(run_dir, S.log_name(run_dir, item))
     if not os.path.exists(lp):
         return None, meta, (ans, ts, law)
-    fm = tuple(os.path.getmtime(p) if p and os.path.exists(p) else 0 for p in (ans, ts, law, S.__file__))   # 채점 코드가 바뀌어도 다시 계산
+    code = [S.__file__] + ([os.path.join(os.path.dirname(S.__file__), "ai6_eval.py")] if item == "AI6" else [])
+    fm = tuple(os.path.getmtime(p) if p and os.path.exists(p) else 0 for p in (ans, ts, law, *code))   # 채점 코드가 바뀌어도 다시 계산
     try:
         r = _score(item, run_dir, os.path.getmtime(lp), ans, ts, law, fm)
     except Exception as e:                                            # noqa: BLE001
@@ -282,22 +335,35 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
 
     need = FILES[item]
     with side.popover("📂 시험 데이터", width="stretch"):
-        st.caption(f"폴더 `{DATA}/` 의 CSV(UTF-8) 또는 XLSX를 사용해요. 올리면 같은 이름으로 저장돼요.")
-        st.caption("작성 규칙 — 여러 값은 세미콜론(;)으로 구분 · 근거조문은 `법령명.조.항` (예: `건축법.2.1; 건축법.44`) "
-                   "또는 `건축법 제44조 제1항`처럼 '제'를 붙여 표기 (자세한 내용: README 9-2)")
+        if item == "AI6":                                         # 시험관 화면 — 확인만 (동결한 시험 데이터를 화면에서 바꾸지 않게)
+            st.caption("시험에 쓰는 파일과 SHA-256입니다. 규격서에 적힌 값과 같은지 확인하세요.")
+        else:
+            st.caption(f"폴더 `{DATA}/` 의 CSV(UTF-8) 또는 XLSX를 사용해요. 올리면 같은 이름으로 저장돼요.")
+            st.caption("작성 규칙 — 여러 값은 세미콜론(;)으로 구분 · 근거조문은 `법령명.조.항` (예: `건축법.2.1; 건축법.44`) "
+                       "또는 `건축법 제44조 제1항`처럼 '제'를 붙여 표기 (자세한 내용: README 9-2)")
         for stem in need:
+            if item == "AI6" and stem.startswith("result_"):         # AI6 는 자동 실행 — 결과 파일을 올리지 않음
+                continue
             p = data_path(stem)
             kind = LABEL.get(stem.split("_")[0], LABEL.get(stem, stem))
             n = len(S.read_table(p)) if p else 0
-            st.markdown(f"**{kind}** `{stem}` — " + (f"✅ {n}건" if p else "❌ 없음"))
+            st.markdown(f"**{kind}** `{stem}` — " + (f"✅ {n}건" if p else ("기본 대응표 사용" if stem.startswith("intent_") else "❌ 없음"))
+                        + (f" · SHA-256 `{S.sha256(p)}`" if p and item == "AI6" else ""))   # 규격서에 적힌 64자리와 그대로 대조
+            if item == "AI6":
+                if p:
+                    with open(p, "rb") as f_:
+                        st.download_button(f"⬇ {os.path.basename(p)}", f_.read(), file_name=os.path.basename(p),
+                                           width="stretch", key=f"dl_{stem}")
+                continue
             up = st.file_uploader(stem, type=["csv", "xlsx"], key=f"up_{stem}", label_visibility="collapsed")
-            if up is not None:
+            if up is not None and st.session_state.get(f"up_done_{stem}") != up.file_id:   # 올린 파일은 한 번만 저장 (다시 그릴 때 덮어쓰지 않게)
                 ext = os.path.splitext(up.name)[1].lower()
                 for e in (".csv", ".xlsx"):
                     if os.path.exists(os.path.join(DATA, stem + e)):
                         os.remove(os.path.join(DATA, stem + e))
                 with open(os.path.join(DATA, stem + ext), "wb") as f:
                     f.write(up.getvalue())
+                st.session_state[f"up_done_{stem}"] = up.file_id
                 st.cache_data.clear()
                 st.success(f"{stem}{ext} 저장")
         if item == "AI4":                       # 규격서 [AI 4] 시험방법 (2): 판정 결과별·예외 유형별 개수 확인
@@ -308,12 +374,13 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
             if a4 is not None and "판정결과" in a4:
                 vc = a4["판정결과"].map(S.type2).value_counts()
                 st.markdown("**판정 결과별 개수** — " + " / ".join(f"{k} {int(vc.get(k, 0))}건" for k in S.TYPE2))
-        st.divider()
-        st.markdown("**양식**")
-        for stem in need:
-            cols, rows = S.TEMPLATES[item][stem + ".csv"]
-            st.download_button(f"⬇ {stem}.csv 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
-                               file_name=f"{stem}.csv", mime="text/csv", width="stretch", key=f"tpl_{stem}")
+        if item != "AI6":                                         # AI6 시험관 화면에는 양식 없음
+            st.divider()
+            st.markdown("**양식**")
+            for stem in need:
+                cols, rows = S.TEMPLATES[item][stem + ".csv"]
+                st.download_button(f"⬇ {stem}.csv 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
+                                   file_name=f"{stem}.csv", mime="text/csv", width="stretch", key=f"tpl_{stem}")
         if item == "AI1" and os.path.exists("gold.xlsx"):
             if st.button("gold.xlsx → AI1 시험셋·정답셋 만들기", width="stretch",
                          help="기존 정답셋(주소·시설물·정답판정·근거)으로 testset_ai1.csv / answer_ai1.csv 생성 (기존 파일 덮어씀)"):
@@ -324,13 +391,18 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                 st.cache_data.clear()
                 st.success(f"{n}건 생성")
 
-    missing = [s for s in need if not data_path(s) and not s.startswith(("law_", "result_"))]
+    missing = [s for s in need if not data_path(s) and not s.startswith(OPTIONAL)]
     for s_ in need:
         p = data_path(s_)
-        opt = s_.startswith(("law_", "result_"))
+        opt = s_.startswith(OPTIONAL)
+        if item == "AI6" and s_.startswith("result_") and not p:
+            continue                                                  # AI6 결과 파일은 수동 채점용 — 없으면 표시하지 않음
         side.caption(("✅ " if p else ("⚠️ " if opt else "❌ ")) + f"{s_}" +
                      (f" · {len(S.read_table(p))}건" if p else (" 없음 (① 판정 보류)" if s_.startswith("law_")
+                                                              else " 없음 (기본 대응표로 판정)" if s_.startswith("intent_")
                                                               else (" 없음 (채점 전에 올려 주세요)" if opt else " 없음"))))
+    if item == "AI6":
+        return sidebar_ai6(side, launch, running, missing)
     if S.SPEC[item].get("cmd"):
         side.caption(CMD_NOTE)
         rp = data_path(f"result_{item.lower()}")
@@ -382,17 +454,145 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
     return item
 
 
+# ---------------------------------------------------------------- [AI 6] 지도 제어 — 자동 실행
+def sidebar_ai6(side, launch, running, missing):
+    """AI6 사이드바(시험관 화면): 시험 데이터 점검 → 사전 점검 → 동결 상태(보기만) → 실행.
+    주소·대기 상한·LLM 키는 서버 환경변수, 동결은 운영자 명령(python spec_runner_ai6.py --freeze) — README_QA 12-0"""
+    from collections import Counter
+
+    import ai6_client as C6
+    import ai6_eval as E6
+    ts_p, ans_p, map_p = data_path("testset_ai6"), data_path("answer_ai6"), data_path("intent_map_ai6")
+    ts_rows = E6.read_rows(ts_p) if ts_p else []
+    ans_rows = E6.read_rows(ans_p) if ans_p else []
+    try:
+        rules, rule_err = (E6.load_rules(map_p) if map_p else E6.load_rules()), ""
+    except ValueError as e:                                        # 대응표 형식 오류 → 실행 막음
+        rules, rule_err = E6.load_rules(), str(e)
+    probs = ([f"❌ {rule_err}"] if rule_err else []) + (E6.validate(ts_rows, ans_rows, rules) if ts_rows else [])
+    cnt = Counter(E6.canon_type(r.get("명령유형")) for r in ts_rows)
+    if ts_rows:
+        side.caption(f"시험 명령 {len(ts_rows)}건 — " + " · ".join(f"{t} {cnt.get(t, 0)}" for t in E6.TYPES))
+    if probs:
+        with side.expander(f"⚠️ 시험 데이터 점검 {len(probs)}건", expanded=bool(rule_err)):
+            st.markdown("\n".join(f"- {p}" for p in probs[:60]) + ("\n- …" if len(probs) > 60 else ""))
+    import spec_runner_ai6 as R6
+    base, deadline = C6.BASE, C6.DEADLINE                          # 시험 조건(동결 대상) — 화면에서 바꾸지 않음(운영자는 AI6_BASE·AI6_DEADLINE)
+    if side.button("사전 점검", width="stretch", disabled=running,
+                   help="공간오케·LLM·공간분석 API 상태와 버전을 확인해요. 실행할 때도 다시 점검하고, 실패하면 실행하지 않아요."):
+        with st.spinner("사전 점검 중…"):
+            st.session_state["ai6_precheck"] = dict(at=time.strftime("%H:%M:%S"),
+                                                    rows=C6.precheck(base, probe_message=C6.PROBE_MESSAGE),
+                                                    llm=C6.llm_info(base))      # LLM 키는 서버 환경변수(AI6_LLM_KEY)만 씀 — 화면·기록에 없음
+    pc = st.session_state.get("ai6_precheck")
+    if pc:
+        bad = [r for r in pc["rows"] if r["결과"] != "정상"]
+        side.caption(("✅ 사전 점검 정상" if not bad else f"❌ 사전 점검 실패 {len(bad)}건 — 실행하면 시작하지 않고 멈춰요") + f" · {pc['at']}")
+        with side.expander("사전 점검 결과", expanded=bool(bad)):
+            show_table(pd.DataFrame(pc["rows"]))
+            st.markdown("**동결 버전 확인**")
+            show_table(pd.DataFrame(C6.version_rows(pc["rows"], llm=pc.get("llm")))[["항목", "시험 조건", "확인값", "결과", "확인 방법"]])
+    fz_path = os.path.join(DATA, R6.FREEZE_FILE)
+    fz = read_json(fz_path) if os.path.exists(fz_path) else {}
+    cur = R6.freeze_record(ts_p, ans_p, map_p, deadline, base) if ts_p and ans_p else None
+    diff = R6.freeze_check(fz_path, cur) if cur else None
+    if fz:                                                         # 규격: 의도 대응표는 시험 전에 확정, 시험 기간 중 변경 안 함 — 화면은 상태만
+        side.caption(f"🔒 동결됨 · {fz.get('frozen_at', '')}" + (f" — ❌ 바뀐 항목: {', '.join(diff)} (실행할 수 없음)" if diff else
+                                                                 " — 시험셋·정답셋·의도 대응표·판정 기준 고정"))
+    elif ts_rows:
+        side.caption("⚠️ 동결 기록이 없어요 — 이대로 실행하면 '예비'로 기록돼요")
+    data_block = bool(E6.blocking(probs))
+    blocked = bool(missing) or not ts_rows or not ans_rows or bool(rule_err) or bool(diff) or data_block
+    run = side.button("⏳ 실행 중…" if running else "AI 6 지도 제어 시험 실행", type="primary", width="stretch",
+                      disabled=running or blocked, help="시험 명령을 차례로 보내 판정해요. 진행 상황과 결과는 오른쪽 화면에 나와요.")
+    if missing:
+        side.caption("❌ 시험 데이터 파일이 없어요 (📂 시험 데이터).")
+    if rule_err:
+        side.caption("❌ 의도 대응표 형식이 달라 실행할 수 없어요 — 위 '시험 데이터 점검'을 보세요.")
+    elif data_block:
+        side.caption("❌ 시험 데이터에 문제가 있어 실행할 수 없어요 — 위 '시험 데이터 점검'을 보세요.")
+    if run and not blocked and not running:                        # 비활성 버튼이 눌린 것처럼 와도 한 번 더 막음
+        import qa_runner
+        cmd = [sys.executable, "-u", S.SPEC["AI6"]["runner"], "--testset", ts_p, "--answer", ans_p,
+               "--status-file", qa_runner.STATUS_FILE, "--base", base, "--deadline", f"{deadline:g}", "--probe", C6.PROBE_MESSAGE]
+        if map_p:
+            cmd += ["--intent-map", map_p]
+        st.session_state["spec_run_dir"] = None
+        launch(cmd, len(ts_rows))
+    return "AI6"
+
+
+def ai6_detail(run_dir, cid):
+    """AI6 상세: 명령 해석 로그 + 실행 결과 로그 + 규격 출력 JSON + 응답 원문"""
+    import ai6_eval as E6
+
+    def row(name):                                                 # 같은 ID가 여러 줄이면(재시도) 마지막 줄
+        p, found = os.path.join(run_dir, name), {}
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                for ln in f:
+                    try:
+                        d = json.loads(ln)
+                    except json.JSONDecodeError:
+                        continue
+                    if str(d.get("사례ID")) == str(cid):
+                        found = d
+        return found
+    pr, gr = row(E6.PARSE_LOG), row(E6.GIS_LOG)
+    if not gr:
+        st.info("이 사례의 실행 결과 로그가 없어요.")
+        return
+    j = lambda v: json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else ("-" if v in (None, "") else str(v))
+    calls = "; ".join(f"{c.get('callee')}:{c.get('operation')} ({c.get('status')}/{c.get('resolve_status') or '-'})"
+                      for c in gr.get("호출결과") or [])
+    acts = ", ".join(f"{a.get('type')}" + (f"[{a.get('pnu')}]" if a.get("pnu") else "") for a in gr.get("지도제어명령") or []
+                     if not str(a.get("type", "")).startswith("UI."))
+    geoms = "; ".join(f"{g.get('operation')}: " + ", ".join(f"{k}×{v}" for k, v in (g.get("도형") or {}).items())
+                      for g in gr.get("표출도형") or [])
+    out = [("명령 유형", gr.get("명령유형")), ("명령문", gr.get("명령문")),
+           ("판정", str(gr.get("판정") or "-") + (f" — {gr.get('오류원인')}" if gr.get("오류원인") else "")),
+           ("① 의도 / ② 파라미터 / ③ 지도 제어", " / ".join("O" if gr.get(k) else ("-" if gr.get(k) is None else "X")
+                                                    for k in ("①의도", "②파라미터", "③지도제어"))),
+           ("불일치 내용", " | ".join(gr.get("불일치내용") or []) or "-"),
+           ("세부 원인", gr.get("세부원인") or "-"),
+           ("참고 (판정 제외)", " | ".join(gr.get("참고") or []) or "-"),
+           ("정답 의도", (gr.get("정답") or {}).get("정답의도")), ("해석 의도(대응표 적용)", "; ".join(pr.get("해석의도") or [])),
+           ("의도 근거", "; ".join(f"{e.get('의도')} ← {e.get('근거')} {e.get('값')}" for e in pr.get("의도근거") or [])),
+           ("정답 파라미터", (gr.get("정답") or {}).get("정답파라미터")), ("핵심 파라미터(시스템)", j(pr.get("핵심파라미터"))),
+           ("정답 시나리오", (gr.get("정답") or {}).get("정답시나리오")),
+           ("실행 대상 기능(호출)", calls or "-"), ("지도 제어 명령", acts or "-"), ("표출 도형", geoms or "-"),
+           ("고른 레이어", ", ".join(f"{c.get('name') or '이름 모름'} ({c.get('lyr_id')})" for c in pr.get("고른레이어") or []) or "-"),
+           ("되묻기", "예 — " + j(pr.get("되묻기내용")) if gr.get("되묻기") else "아니오"),
+           ("응답 오류", gr.get("응답오류") or "-"), ("소요(초)", gr.get("소요초")), ("thread_id", gr.get("thread_id")),
+           ("최종 응답", (gr.get("최종응답") or "-")[:500])]
+    show_table(pd.DataFrame(out, columns=["항목", "값"]).astype(str))
+    with st.expander("규격 출력 JSON (의도 · 핵심파라미터 · 실행대상기능 · 지도상태)"):
+        st.json(pr.get("규격출력") or {})
+    raw = os.path.join(run_dir, "raw", f"{cid}.json")
+    if os.path.exists(raw):
+        with st.expander("응답 원문 (공간오케 SSE 이벤트)"):
+            d = read_json(raw)
+            evs = (d.get("response") or {}).get("events") or []
+            st.caption(f"요청 {j((d.get('response') or {}).get('request'))} · 종료 {(d.get('response') or {}).get('ended_by')} · "
+                       f"이벤트 {len(evs)}개")
+            st.json(evs, expanded=False)
+
+
 # ---------------------------------------------------------------- 본문
 def overview():
     rows = []
     for it in S.SPEC:
         rs = runs(it)
+        if it == "AI6":                                            # 공식 실행이 있으면 그 결과 — ID 선택·다시 판정(예비) 폴더가 덮지 않게
+            rs = [d for d in rs if read_json(os.path.join(d, "meta.json")).get("공식", True)] or rs
+        pre = bool(rs) and read_json(os.path.join(rs[0], "meta.json")).get("공식", True) is False
         sm = read_json(os.path.join(rs[0], "summary.json")) if rs else {}
         rows.append({"시험항목": f"{S.SPEC[it]['no']} {SHORT[it]}", "지표": S.SPEC[it]["metric"],
                      "진단 결과": fmt_pct(sm.get("value"), it) if sm else "미실행",
                      "목표": target_txt(it),
                      "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
-                     "대상": str(sm["n"]) if sm.get("n") is not None else "-", "실행": os.path.basename(rs[0]) if rs else "-"})
+                     "대상": str(sm["n"]) if sm.get("n") is not None else "-",
+                     "실행": (os.path.basename(rs[0]) + (" (예비)" if pre else "")) if rs else "-"})
     return pd.DataFrame(rows)
 
 
@@ -826,7 +1026,7 @@ def render_da2(item, sp, area):
                    "위 표는 이 실행에 쓴 검증 자산 파일과 SHA-256(동결본 확인용), 검증 도구 버전")
 
 
-def render(item, area, help_fn=None):
+def render(item, area, help_fn=None, live=None):                  # live = 지금 실행 중인 결과 폴더
     sp = S.SPEC[item]
     with area("box_spec_overview"):
         st.markdown("#### 성과지표 현황 (AI 1 ~ AI 7, DA 2)")
@@ -856,13 +1056,16 @@ def render(item, area, help_fn=None):
             st.session_state[sk] = hit
     if st.session_state.get(sk) not in rs:
         st.session_state[sk] = rs[0]
-    c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+    hc = st.columns([3, 1], vertical_alignment="bottom")
+    c1, c2 = hc[0], hc[1]
     run_dir = c1.selectbox("결과 폴더", rs, format_func=lambda d: d.replace("\\", "/"), key=sk)
     r, meta, (ans, ts, law) = score_run(item, run_dir)
+    auto6 = item == "AI6" and S.log_name(run_dir, item) == sp["log"]       # AI6 자동 실행 폴더 (결과 파일 가져오기가 아님)
+    busy = bool(live) and os.path.abspath(str(live)) == os.path.abspath(run_dir)   # 이 폴더가 아직 실행 중 → 다시 저장·다시 판정 막음
     if r is None:
         st.warning("이 폴더에는 아직 로그가 없어요 (실행 중이거나 중단됨).")
         return
-    if c2.button("💾 결과 파일 다시 저장", width="stretch", help="현재 정답셋으로 다시 채점해 result.xlsx / summary.json 저장"):
+    if not auto6 and c2.button("💾 결과 파일 다시 저장", width="stretch", disabled=busy, help="현재 정답셋으로 다시 채점해 result.xlsx / summary.json 저장"):
         import spec_runner
         spec_runner.run_score(item, run_dir, ans, ts, law)
         st.toast("저장했어요")
@@ -881,6 +1084,8 @@ def render(item, area, help_fn=None):
     errs = len(err_rows)
     with area("kpi_spec_main"):
         st.markdown(f"#### {sp['no']} {sp['name']}")
+        if busy:
+            st.info("실행 중이에요 — 아래 값은 지금까지 끝난 명령 기준이고, 다 끝나면 다시 계산돼요.")
         k = st.columns([1.3, 1, 1, 1, 1])
         k[0].metric(sp["metric"], fmt_pct(r["value"], item), help=f"**{sp['formula']}**\n\n{trunc_txt(item)}")
         k[1].metric("목표", target_txt(item))
@@ -913,17 +1118,69 @@ def render(item, area, help_fn=None):
             env.append(("조문 DB SHA-256", f"{meta.get('lawdb_sha256') or '미제공'}  ({meta.get('lawdb') or '-'})"))
         if item == "AI3":
             env.append(("반복 횟수", meta.get("repeat", "-")))
-        if sp.get("cmd"):
+        if auto6:
+            import ai6_eval as E6
+            rd, rsc = meta.get("ready") or {}, meta.get("rescored")
+            rsc = rsc[-1] if isinstance(rsc, list) and rsc else rsc
+            env = [env[0],
+                   ("대상 시스템 (공간오케)", meta.get("endpoint") or meta.get("base") or "-"),
+                   ("LLM 모델 (공간오케 /ready)", rd.get("LLM 모델") or "-"),
+                   ("LLM 모델 (LLM 서버 확인)", (meta.get("llm") or {}).get("내용") or "기록 없음 (사전 점검 생략 또는 이전 실행)"),
+                   ("vLLM 버전 (LLM 서버 /version)", (meta.get("llm") or {}).get("vLLM") or "기록 없음 (사전 점검 생략 또는 이전 실행)"),
+                   ("연결 에이전트", rd.get("연결 에이전트") or "-"),
+                   ("사례당 응답 대기 상한", f"{meta.get('deadline_s', '-')}초 (넘기면 연결을 끊고 응답 오류)"),
+                   ("실행 사례", f"선택 {len(meta['cases'])}건" if meta.get("cases") else "시험셋 전체"),
+                   ("로그 파일", " · ".join(os.path.join(run_dir, n).replace("\\", "/") for n in (E6.PARSE_LOG, E6.GIS_LOG))),
+                   env[-2], env[-1],
+                   ("의도 대응표 SHA-256", f"{meta.get('intent_map_sha256') or '-'}  ({meta.get('intent_map') or '기본 대응표 (ai6_eval.DEFAULT_RULES)'})")]
+            if meta.get("완료전") and busy:
+                kind = "공식 조건으로 실행 중 — 모두 마치면 공식으로 기록 (지금 값은 중간 값)"
+            elif meta.get("공식", True):
+                kind = "공식"
+            else:
+                kind = "예비 — " + ", ".join(meta.get("예비사유") or []) + " (공식 결과로 쓰지 않음)"
+                if meta.get("완료전"):                                 # 멈춘 공식 조건 실행 — 이어서 끝까지 돌리면 공식이 되나
+                    import spec_runner_ai6 as R6
+                    lost = R6.resume_outlook(run_dir)
+                    kind += (f" · 이어서 돌려도 공식 아님 — 응답을 기록 못 한 사례 {len(lost)}건({', '.join(lost[:3])})은 다시 보내지 않으므로 전체 재수행"
+                             if lost else " · 이어서 끝까지 돌리면 공식 (진행 창의 '↻ 이어서')")
+            env.insert(1, ("실행 구분", kind))
+            env.append(("판정 기준 지문", f"{str(meta.get('criteria_sha256') or '-')[:16]}… (ai6_eval 판정 규칙·옵션)"))
+            env.append(("동결", ("예 — 동결된 시험셋·정답셋·대응표·판정 기준·대기 상한으로 실행" if meta.get("frozen")
+                                else "아니오 (동결 전 실행)")
+                        + (" · 이 폴더는 다시 판정 — 그때의 정답셋·대응표·판정 기준으로 매김(아래 '다시 판정' 행)" if rsc else "")))
+            if rsc:
+                env.append(("다시 판정", f"{rsc.get('at')} — 정답셋 {str(rsc.get('answer_sha256') or '-')[:16]}… · "
+                                       f"대응표 {str(rsc.get('intent_map_sha256') or '기본')[:16]}…"
+                                       + (f" (원본 실행 폴더 {meta['원본']})" if meta.get("원본") else "")))
+        elif sp.get("cmd"):
             env = [x for x in env if x[0] not in ("대상 시스템", "시스템 빌드 / 계약 버전")]
             env.insert(1, ("실행 결과 파일 SHA-256", f"{meta.get('result_sha256') or '-'}  ({meta.get('result_file') or '-'})"))
         _env = pd.DataFrame(env, columns=["항목", "값"])
         show_table(_env)
+        if auto6 and meta.get("precheck"):
+            rp = (meta.get("resume_precheck") or [{}])[-1]                  # 이어서 실행했으면 그때 다시 한 점검이 기준
+            pre = rp.get("rows") or meta["precheck"]
+            import ai6_client as C6
+            st.markdown("**동결 버전 확인** (규격 시험방법 (2) — 실행 때 사전 점검 · 조회값 기준, 선언값 = 시스템이 알려 주지 않아 의뢰기업 선언값으로 기록)")
+            show_table(pd.DataFrame(C6.version_rows(pre, rp.get("ready"), rp.get("llm")) if rp.get("rows")
+                                    else C6.version_rows(pre, meta.get("ready"), meta.get("llm"))))
+            bad = [p for p in pre if p.get("결과") != "정상"]
+            with st.expander("실행 전 사전 점검 결과" + (f" (이어서 실행 {rp.get('at')})" if rp.get("rows") else "")
+                             + (f" — ❌ 실패 {len(bad)}건" if bad else " — 정상"), expanded=bool(bad)):
+                show_table(pd.DataFrame(pre))
+        if auto6 and meta.get("data_check"):
+            with st.expander(f"⚠️ 실행 당시 시험 데이터 점검 {len(meta['data_check'])}건"):
+                st.markdown("\n".join(f"- {p}" for p in meta["data_check"][:60]))
         changed = [p for p, h, h0 in cur if h and h0 and h != h0]
         if changed:
             st.warning("실행 이후 바뀐 파일로 채점 중이에요: " + ", ".join(changed) + " → 해시가 실행 당시와 달라요.")
         if not sp.get("cmd"):
             with st.expander("시스템 미제공 항목 처리"):
                 st.markdown("\n".join(f"- {x}" for x in NOT_PROVIDED))
+        elif auto6:
+            with st.expander("시스템 미제공 항목 처리 (동결 버전 확인)"):
+                st.markdown("\n".join(f"- {x}" for x in NOT_PROVIDED_AI6))
 
     # ---- 결과 표
     def pct_view(df):                          # 화면 표시용: '(%)' 컬럼 → '60.00 %' (헤더의 '(%)'는 뺌, 값 없음은 '-')
@@ -1021,20 +1278,38 @@ def render(item, area, help_fn=None):
             view = view.copy()
             pos = list(view.columns).index("판단유형") + 1 if "판단유형" in view else len(view.columns)
             view.insert(pos, "응답 오류", view[key_col].astype(str).map(emap).fillna(""))
+        if auto6:                                                   # ①②③ → O / X / -(미실행), 되묻기 → 예
+            view = view.drop(columns=["정상수행"], errors="ignore").copy()
+            for c in ("①의도", "②파라미터", "③지도제어"):
+                if c in view:
+                    view[c] = view[c].map(lambda v: "O" if v is True else "X" if v is False else "-")
+            if "되묻기" in view:
+                view["되묻기"] = view["되묻기"].map(lambda v: "예" if v is True else "")
+            st.caption("① 의도 · ② 핵심 파라미터 · ③ 지도 제어 — 셋 다 O 여야 정상 수행. 오류 원인은 ①→②→③ 순으로 처음 틀린 단계 "
+                       "(응답이 없거나 대기 상한을 넘기면 응답 오류, 되묻기는 오류).")
         show_table(view, height=rows_height(len(view), cap=560))
-        d1, d2 = st.columns(2)
+        logs = [S.log_name(run_dir, item)]
+        if auto6:
+            import ai6_eval as E6
+            logs = [E6.PARSE_LOG, E6.GIS_LOG]
+        dl = st.columns(1 + len(logs))
         rx = os.path.join(run_dir, "result.xlsx")
         if os.path.exists(rx):
             with open(rx, "rb") as f:
-                d1.download_button("⬇ 결과 엑셀 (result.xlsx)", f.read(), file_name=f"{item}_result.xlsx", width="stretch")
-        lp = os.path.join(run_dir, sp["log"])
-        with open(lp, "rb") as f:
-            d2.download_button(f"⬇ 로그 ({sp['log']})", f.read(), file_name=sp["log"], width="stretch")
+                dl[0].download_button("⬇ 결과 엑셀 (result.xlsx)", f.read(), file_name=f"{item}_result.xlsx", width="stretch")
+        for i, name in enumerate(logs, 1):
+            lp = os.path.join(run_dir, name)
+            if os.path.exists(lp):
+                with open(lp, "rb") as f:
+                    dl[i].download_button(f"⬇ 로그 ({name})", f.read(), file_name=name, width="stretch", key=f"dl_{item}_{name}")
 
     # ---- 상세
     with area("box_spec_detail"):
         st.markdown("#### 질의별 상세 결과 · 판단 프로세스 로그" if item == "AI3" else "#### 질의별 상세 결과")
         key = "질의ID" if item == "AI2" else "사례ID"
+        if log.empty or key not in log.columns:                    # 로그 파일은 있는데 읽을 줄이 없음(빈 로그 · 깨진 줄만)
+            st.info("판정 로그에 읽을 수 있는 줄이 없어 상세 결과를 보여 줄 수 없어요.")
+            return
         ids = list(dict.fromkeys(log[key].astype(str)))
         qcol = next((c for c in ("질의문", "명령문") if c in log.columns), None)
         qtext = dict(zip(log[key].astype(str), log[qcol].astype(str))) if qcol else {}
@@ -1043,6 +1318,9 @@ def render(item, area, help_fn=None):
                            help="목록을 펼쳐 질의를 고르면 아래에 시스템 출력 항목(판단 유형·근거 법령·근거 조문 등)이 나옵니다.")
         recs = log[log[key].astype(str) == cid].sort_values("회차")
         rec = recs.iloc[0]
+        if auto6:
+            ai6_detail(run_dir, cid)
+            return
         if sp.get("cmd"):
             c = r["cases"].set_index("사례ID").loc[cid] if cid in set(r["cases"]["사례ID"]) else {}
             out = [("명령 유형", rec.get("명령유형")), ("명령문", rec.get("명령문")),

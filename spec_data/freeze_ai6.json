@@ -1,0 +1,14 @@
+{
+ "testset_sha256": "fc15113a1f53dde5eebd1645e479f7d6a55bac154a266be7774a69b530085e70",
+ "answer_sha256": "b0e6e688032843ca730786b2bd750491b1cd764994e3c8cc67b0aef2f6746a12",
+ "intent_map_sha256": "d245a29d4439a3b4d92e332f18abd1a44eeb8c22f93d4f2e92f7116294b176e6",
+ "criteria_sha256": "04bcd458026377ecfac1c910f271e2733f10c9f9105eee599d764be3767971f7",
+ "deadline_s": 180.0,
+ "base": "http://192.168.200.115:17006",
+ "frozen_at": "2026-11-13 10:20:40",
+ "files": {
+  "testset": "spec_data/testset_ai6.csv",
+  "answer": "spec_data/answer_ai6.csv",
+  "intent_map": "spec_data/intent_map_ai6.csv"
+ }
+}
