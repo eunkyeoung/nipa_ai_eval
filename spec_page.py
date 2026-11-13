@@ -46,7 +46,8 @@ def rows_height(n, cap=420):
 
 
 AI6_LIVE_COLS = ["사례ID", "명령유형", "질의", "해석 의도", "핵심 파라미터", "실행 대상 기능", "지도 상태",
-                 "①", "②", "③", "판정", "오류원인", "불일치", "소요초"]
+                 "①", "②", "③", "판정", "오류원인", "사유", "불일치", "소요초"]
+AI6_MISMATCH = "대조 내역 (정답 ↔ AIPS)"   # 화면에서 '불일치내용' 칸 이름 — 정답과 AIPS 응답을 대조한 내역임을 분명히 (result.xlsx 는 그대로)
 
 
 def ai6_live(df, total):
@@ -67,10 +68,11 @@ def ai6_live(df, total):
         by_type.append(f"{t} 정상 {int((sub['판정'] == '정상 수행').sum())} / 끝남 {len(sub)}")
     st.caption("명령 유형별 — " + " · ".join(by_type))
     cols = [c for c in AI6_LIVE_COLS if c in df]
-    view = df[cols].iloc[::-1].rename(columns={"질의": "명령문"})            # 방금 끝난 명령이 맨 위
+    view = df[cols].iloc[::-1].rename(columns={"질의": "명령문", "불일치": AI6_MISMATCH})   # 방금 끝난 명령이 맨 위
     view = view.astype(object).where(view.notna(), "")                      # 엑셀에서 빈칸만 있던 칸(오류원인·불일치)은 숫자형 NaN으로 읽힘
     show_table(view, height=rows_height(len(view), cap=420))
     st.caption("① 의도 · ② 핵심 파라미터 · ③ 지도 제어 — 셋 다 O 여야 정상 수행, 오류 원인은 ①→②→③ 중 처음 틀린 기준. "
+               "사유는 실행 기록에 남은 실제 결과예요 — AIPS의 해석·실행 결과이고, 시험 도구가 멈춰 기록하지 못한 경우는 사유에 따로 적어요. "
                "명령별 응답 원문·규격 출력 JSON 은 끝난 뒤 아래 '질의별 상세 결과'에서 봅니다.")
 
 
@@ -510,6 +512,67 @@ def sidebar_ai6(side, launch, running, missing):
     return "AI6"
 
 
+def ai6_errors(cases, area, busy=False):
+    """AI6 결과 화면 '오류 사례' — 정답과 다르게 수행한 사례를 모아 오류 원인·사유(실제로 일어난 일)를 평문으로.
+    AIPS 탓인 사례와 그 밖(시험 데이터·시험 도구 중단·미실행)을 나눠 보여 줌. 실행 중이면 아직 끝나지 않은 명령은 오류로 보이지 않게 뺌.
+    오류가 없어도(100 %) 칸을 남겨 '오류 없음'을 보여 줌 — 오류가 시험 도구 고장이 아니라 시험 대상 결과임을 화면에서 바로 알 수 있게"""
+    import ai6_eval as E6
+    ok = cases["정상수행"].astype(bool) if "정상수행" in cases else pd.Series(True, index=cases.index)
+    who = cases["오류 주체"] if "오류 주체" in cases else pd.Series(E6.WHO_AIPS, index=cases.index)
+    pending = ~ok & (who == E6.WHO_NOT_RUN) if busy else pd.Series(False, index=cases.index)   # 실행 중: 아직 끝나지 않은 명령
+    aips = cases[~ok & (who == E6.WHO_AIPS)]
+    other = cases[~ok & (who != E6.WHO_AIPS) & ~pending]
+    cols = ["사례ID", "명령유형", "명령문", "오류원인", "사유", "오류 주체"]
+    ren = {"명령유형": "명령 유형", "오류원인": "오류 원인"}
+
+    def table(d):
+        v = d[[c for c in cols if c in d]].rename(columns=ren)
+        show_table(v.astype(object).where(v.notna(), ""), height=rows_height(len(v), cap=420))
+    with area("box_spec_err6"):
+        st.markdown(f"#### 오류 사례 ({len(aips)}건) — 시험 대상(AIPS)이 정답과 다르게 수행한 명령")
+        done = len(cases) - int(pending.sum())
+        if busy and pending.any():
+            st.caption(f"실행 중 — 끝난 명령 {done}건 기준이에요. 아직 끝나지 않은 명령 {int(pending.sum())}건은 끝나면 반영돼요.")
+        if not done:
+            st.info("아직 끝난 명령이 없어요. 명령이 끝날 때마다 오류가 있으면 이 자리에 오류 원인·사유가 나와요.")
+            return
+        if aips.empty:
+            lead, n_ok = ("AIPS 오류 없음", f"끝난 {done - len(other)}건") if len(other) else ("오류 없음", f"끝난 {done}건" if busy else f"{done}건")
+            st.success(f"{lead} — {n_ok} 모두 정상 수행" + (f" (그 밖에 오류로 센 {len(other)}건은 아래)" if len(other) else "")
+                       + ". 오류가 생기면 이 자리에 사례마다 오류 원인·사유가 나와요.")
+        else:
+            table(aips)
+            st.caption("시험 도구는 시험셋 명령문을 그대로 AIPS(지도제어·공간분석 Sub 오케스트레이터)에 보내고, AIPS가 돌려준 "
+                       "해석 의도·호출 기능·지도 명령을 정답과 대조해요. 위 사유는 그 응답 기록에서 AIPS가 실제로 한 일이에요 — "
+                       "시험 도구의 오류가 아니에요. 오류 원인은 규격대로 ① 의도 → ② 핵심 파라미터 → ③ 지도 제어 중 처음 어긋난 기준이고, "
+                       "정답·AIPS 응답 원문은 아래 '질의별 상세 결과'에서 사례를 고르면 보여요.")
+        if len(other):
+            st.markdown(f"**그 밖에 오류로 센 사례 ({len(other)}건)** — AIPS 응답 결과가 아님")
+            table(other)
+            kinds = {E6.WHO_DATA: "시험 데이터: 정답셋·시나리오 문제(사전 점검에서 막으므로 공식 실행에는 없음)",
+                     E6.WHO_TOOL: "시험 도구(QA 중단): 시험 도구가 AIPS 응답을 기록하기 전에 멈춤 — 공식 결과로 쓰지 않고 전체 재수행",
+                     E6.WHO_CONN: "연결 실패(응답 없음): AIPS 응답을 받지 못함 — 서버·네트워크 중 어느 쪽인지 시험 도구로는 알 수 없어 "
+                                  "받은 연결 오류 원문을 그대로 적음(규격대로 응답 오류로 셈)",
+                     E6.WHO_NOT_RUN: "미실행: 실행이 멈춰 보내지 않았거나 기록하지 못한 명령"}
+            st.caption(" · ".join(t for k, t in kinds.items() if (other["오류 주체"] == k).any()))
+
+
+AI6_STOP = {"system": ("⚠️ 시험 대상(AIPS) 장애로 멈춤", "시험 도구 고장이 아니에요 — AIPS가 연달아 응답하지 못해 멈췄어요. AIPS를 고친 뒤 전체를 다시 실행하세요."),
+            "environment": ("⚠️ 연결 실패로 멈춤 (시험 환경)", "시험 도구 고장이 아니에요 — AIPS 연결이 연달아 실패해 멈췄어요. 네트워크·서버 상태를 고친 뒤 전체를 다시 실행하세요."),
+            "precheck": ("⚠️ 사전 점검 실패 (시험 환경)", "시험 도구 고장이 아니에요 — 시험 환경이 시험 조건과 달라 시작하지 않았어요. 위 항목을 확인하세요.")}
+
+
+def ai6_stop_kind(stt):
+    """AI6 실행 상태 → 멈춘 까닭 'system'·'environment'·'precheck' (도구 오류·정상이면 '') — 진행 창에서 시험 도구 고장과 나눠 보이게"""
+    if stt.get("state") != "error":
+        return ""
+    if stt.get("stop_kind") in AI6_STOP:
+        return stt["stop_kind"]
+    msg = str(stt.get("message") or "")                            # 예전 상태 파일(stop_kind 없음)
+    return ("system" if msg.startswith("응답 오류") and "연속" in msg else "environment" if msg.startswith("연결 실패") and "연속" in msg
+            else "precheck" if msg.startswith("사전 점검 실패") else "")
+
+
 def ai6_detail(run_dir, cid):
     """AI6 상세: 명령 해석 로그 + 실행 결과 로그 + 규격 출력 JSON + 응답 원문"""
     import ai6_eval as E6
@@ -537,11 +600,13 @@ def ai6_detail(run_dir, cid):
                      if not str(a.get("type", "")).startswith("UI."))
     geoms = "; ".join(f"{g.get('operation')}: " + ", ".join(f"{k}×{v}" for k, v in (g.get("도형") or {}).items())
                       for g in gr.get("표출도형") or [])
+    who, why = E6.explain_logged(gr, pr)
     out = [("명령 유형", gr.get("명령유형")), ("명령문", gr.get("명령문")),
            ("판정", str(gr.get("판정") or "-") + (f" — {gr.get('오류원인')}" if gr.get("오류원인") else "")),
+           ("오류 주체", who or "-"), ("사유", why or "-"),
            ("① 의도 / ② 파라미터 / ③ 지도 제어", " / ".join("O" if gr.get(k) else ("-" if gr.get(k) is None else "X")
                                                     for k in ("①의도", "②파라미터", "③지도제어"))),
-           ("불일치 내용", " | ".join(gr.get("불일치내용") or []) or "-"),
+           (AI6_MISMATCH, " | ".join(gr.get("불일치내용") or []) or "-"),
            ("세부 원인", gr.get("세부원인") or "-"),
            ("참고 (판정 제외)", " | ".join(gr.get("참고") or []) or "-"),
            ("정답 의도", (gr.get("정답") or {}).get("정답의도")), ("해석 의도(대응표 적용)", "; ".join(pr.get("해석의도") or [])),
@@ -931,7 +996,17 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
     if r is None:
         st.warning("이 폴더에는 아직 로그가 없어요 (실행 중이거나 중단됨).")
         return
-    if not auto6 and c2.button("💾 결과 파일 다시 저장", width="stretch", disabled=busy, help="현재 정답셋으로 다시 채점해 result.xlsx / summary.json 저장"):
+    if auto6:                                       # AI6 자동 실행 — 실행 때 기록한 판정으로 결과 파일만 다시 만듦(다른 항목용 채점으로 덮어쓰지 않음)
+        if c2.button("💾 결과 파일 다시 저장", width="stretch", disabled=busy, key="resave_ai6",
+                     help="실행 때 기록한 판정(실행 결과 로그) 그대로 result.xlsx / summary.json 을 다시 만들어요. "
+                          "판정·정확도는 바뀌지 않고, '오류 사례' 시트와 사유 칸이 들어가요."):
+            import spec_runner_ai6
+            try:
+                spec_runner_ai6.score_run(run_dir, ts, quiet=True)
+                st.toast("저장했어요 — result.xlsx · summary.json (판정은 그대로)")
+            except OSError as e:                                       # 엑셀에서 result.xlsx 를 열어 둔 PC 등
+                st.error(f"결과 파일을 저장하지 못했어요 ({type(e).__name__}: {e}). result.xlsx 를 연 프로그램을 닫고 다시 누르세요.")
+    elif c2.button("💾 결과 파일 다시 저장", width="stretch", disabled=busy, help="현재 정답셋으로 다시 채점해 result.xlsx / summary.json 저장"):
         import spec_runner
         spec_runner.run_score(item, run_dir, ans, ts, law)
         st.toast("저장했어요")
@@ -958,7 +1033,10 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
         k[2].metric("달성 여부", "달성" if r["passed"] else "미달성")
         k[3].metric("수행 건수", r["n"], help="AI3은 질의 수 × 반복 횟수")
         if sp.get("cmd"):
-            k[4].metric("오류 건수", int((~r["cases"]["정상수행"]).sum()) if r["n"] else 0, help="의도·파라미터·실행 중 하나라도 불일치")
+            k[4].metric("오류 건수", int((~r["cases"]["정상수행"]).sum()) if r["n"] else 0,
+                        help=("정답과 다르게 수행했거나 응답을 받지 못한 명령 수 — 의도·파라미터·지도 제어 중 하나라도 불일치, 응답 오류 포함. "
+                              "사례마다 오류 주체(AIPS·연결 실패·시험 데이터·시험 도구)와 사유는 아래 '오류 사례'" if auto6
+                              else "의도·파라미터·실행 중 하나라도 불일치"))
         elif errs:                                                    # 응답 오류는 발생했을 때만 표시
             k[4].metric("응답 오류", errs, help="통신 오류·시간 초과·응답 중단(판정 없이 끝난 응답) — 모두 판단불가로 집계, "
                                                 "'이어서 실행'을 누르면 이 건만 다시 질의")
@@ -968,6 +1046,9 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             for i, (kk, vv) in enumerate(aux.items()):
                 a[i].metric(kk + " (보조)", fmt_pct(vv) if "%" in kk else vv)
         st.caption(f"산정식: {sp['formula']}  ·  결과는 {trunc_txt(item)}")
+
+    if auto6:                                                       # 오류 사례 — 오류 원인·사유, 0건이어도 자리 유지
+        ai6_errors(r["cases"], area, busy)
 
     # ---- 시험 환경 (재현성)
     with area("box_spec_env"):
@@ -1148,8 +1229,9 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                     view[c] = view[c].map(lambda v: "O" if v is True else "X" if v is False else "-")
             if "되묻기" in view:
                 view["되묻기"] = view["되묻기"].map(lambda v: "예" if v is True else "")
+            view = view.rename(columns={"불일치내용": AI6_MISMATCH})
             st.caption("① 의도 · ② 핵심 파라미터 · ③ 지도 제어 — 셋 다 O 여야 정상 수행. 오류 원인은 ①→②→③ 순으로 처음 틀린 단계 "
-                       "(응답이 없거나 대기 상한을 넘기면 응답 오류, 되묻기는 오류).")
+                       "(응답이 없거나 대기 상한을 넘기면 응답 오류, 되묻기는 오류). 사유는 시험 대상(AIPS)이 실제로 한 일이에요.")
         show_table(view, height=rows_height(len(view), cap=560))
         logs = [S.log_name(run_dir, item)]
         if auto6:

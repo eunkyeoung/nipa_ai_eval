@@ -1537,5 +1537,257 @@ class Client(unittest.TestCase):
         self.assertEqual(r["ended_by"], "exception")
 
 
+ASK = [("ask", {"key": "user:1", "kind": "user", "question": "'신천동 31'에 해당하는 곳이 3곳입니다. 어느 곳인가요?",
+                "options": ["a", "b", "c"], "reason": "ambiguous_candidates"})]
+# 2026-11-13 14:09 서버 공식 실행(47/50)의 오류 3건 — 실행 결과 로그 행 그대로 + 명령 해석 로그 '해석의도'
+REAL_3 = [
+    ({"사례ID": "AI6-0002", "판정": "오류", "오류원인": "의도 해석 오류", "응답오류": "", "세부원인": "",
+      "불일치내용": ["① 의도 누락 규제 저촉 분석, 분석 결과 표출", "② 분석대상 '용도지역·지구' 호출 없음 (시스템 HIGHLIGHT, ATTR)",
+                "③ '용도지역·지구 중첩 도형' 도형 없음 (호출 없음)"]},
+     ["지도 이동"], "AIPS가 '규제 저촉 분석' 의도를 잡지 못하고 대상 필지 표시(지도 이동)만 함"),
+    ({"사례ID": "AI6-0021", "판정": "오류", "오류원인": "의도 해석 오류", "응답오류": "", "세부원인": "",
+      "불일치내용": ["① 의도 누락 도로 접근성 분석", "② 분석대상 '접도' 호출 없음 (시스템 REGULATION)", "③ '접도선' 도형 없음 (호출 없음)"]},
+     ["지도 이동", "규제도로 분석", "분석 결과 표출"], "AIPS가 '도로 접근성 분석' 의도를 잡지 못하고 '규제도로 분석'만 수행함"),
+    ({"사례ID": "AI6-0036", "판정": "오류", "오류원인": "의도 해석 오류", "응답오류": "", "세부원인": "",
+      "불일치내용": ["① 의도 누락 산지전용 검토 / 초과 규제 저촉 분석",
+                "② 분석대상 '산지전용 규제 면적' 호출 없음 (시스템 LAYER_FIND, INTERSECTIONLAYER); 분석대상 초과 대기환경규제지역 (정답 산지전용 규제 면적)",
+                "③ '대상 필지 도형(산지전용 규제 면적 결과)' 도형 없음 (호출 없음)"]},
+     ["지도 이동", "규제 저촉 분석", "분석 결과 표출"],
+     "AIPS가 '산지전용 검토'가 아니라 '규제 저촉 분석'으로 해석해 다른 레이어(대기환경규제지역)를 조회함"),
+]
+
+
+class ErrorReason(unittest.TestCase):                              # 오류 사례 '오류 주체 · 사유' — 시험 대상(AIPS)이 실제로 한 일을 평문으로 (판정은 그대로)
+    def _why(self, events, gold, res=OK_RES):
+        v, ext = run(events, gold, res)
+        row = E.gis_log_row(gold, gold, dict(res, thread_id="t1", elapsed=1.0), ext, v)   # 실제 로그 행 모양으로
+        return v, E.explain(row, ext["intents"])
+
+    def test_real_three_cases(self):                               # 의뢰기업이 말한 3건 — 화면 사유가 이 문장으로 나와야 함
+        for row, intents, want in REAL_3:
+            self.assertEqual(E.explain(row, intents), (E.WHO_AIPS, want), row["사례ID"])
+
+    def test_case_table_row_gives_same_reason(self):              # 사례별 표(불일치내용을 ' | ' 로 이은 글)에서도 같은 사유
+        ts = [{"사례ID": r["사례ID"], "명령유형": "공간규제 분석", "명령문": "x"} for r, _, _ in REAL_3]
+        parse = [{"사례ID": r["사례ID"], "해석의도": i} for r, i, _ in REAL_3]
+        s = E.score([r for r, _, _ in REAL_3], ts, parse_rows=parse)
+        self.assertEqual([c["사유"] for c in s["사례별"]], [w for _, _, w in REAL_3])
+        self.assertEqual([E.explain(c, i)[1] for c, (_, i, _) in zip(s["사례별"], REAL_3)], [w for _, _, w in REAL_3])
+
+    def test_intent_move_only(self):
+        v, why = self._why(locate_events() + finish(), GOLD_OVERLAP)
+        self.assertEqual(v["오류원인"], "의도 해석 오류")
+        self.assertEqual(why, (E.WHO_AIPS, "AIPS가 '규제 저촉 분석' 의도를 잡지 못하고 대상 필지 표시(지도 이동)만 함"))
+
+    def test_intent_other_analysis(self):                          # 다른 분석으로 해석 + 정답에 없는 분석대상 → 덧붙임(한글 기능 이름)
+        gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 산지전용 검토; 분석 결과 표출", 정답파라미터=f"PNU={PNU}; 분석대상=산지전용 규제 면적",
+                    정답시나리오="표출대상=대상 필지 도형; 분석결과표출=대상 필지 도형(산지전용 규제 면적 결과)")
+        _, why = self._why(locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish(), gold)
+        self.assertEqual(why[1], "AIPS가 '산지전용 검토'가 아니라 '규제 저촉 분석'으로 해석해 정답에 없는 분석(용도지역·지구 중첩 조회)을 실행함")
+
+    def test_intent_extra_only_and_unmapped(self):
+        _, why = self._why(locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + finish(),
+                           dict(GOLD_OVERLAP, 정답의도="지도 이동; 규제 저촉 분석"))
+        self.assertEqual(why[1], "AIPS가 명령에 없는 '분석 결과 표출'까지 수행함")
+        ev = (locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY")
+              + analysis_events("spatial_regulation", "tool.spatial.analysis", "operation", "NEARBY_PARCELS", call_id="c4", distance="300") + finish())
+        _, why = self._why(ev, GOLD_OVERLAP)
+        self.assertEqual(why[1], "AIPS가 명령에 없는 기능(반경 내 필지 검색)도 호출함 — 의도 대응표에 없는 호출(spatial_regulation:NEARBY_PARCELS)")
+
+    def test_param_wrong_parcel(self):
+        other = "4729012300100310002"
+        v, why = self._why(locate_events(pnu=other) + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY", pnu=other)
+                           + finish(), GOLD_OVERLAP)
+        self.assertEqual(v["오류원인"], "핵심 파라미터 추출 오류")
+        self.assertEqual(why, (E.WHO_AIPS, f"AIPS가 다른 필지(PNU {other})를 대상으로 잡음 — 정답 필지 PNU {PNU}"))
+
+    def test_param_texts(self):                                    # ② 문구마다 (판정기 문구 → 평문)
+        cases = {"② 반경 불일치 (정답 500m / 시스템 300m)": "AIPS가 반경을 300m로 잡음 — 정답 500m",
+                 "② 반경 불일치 (정답 500m / 시스템 없음)": "AIPS가 반경 조건을 쓰지 않음 — 정답 반경 500m",
+                 "② 레이어 '개발제한구역' 불일치 (시스템 도시자연공원구역)": "AIPS가 '개발제한구역' 대신 다른 레이어(도시자연공원구역)를 고름",
+                 "② 레이어 '지구단위계획구역' 자료 불일치 — 고른 레이어 ID lsmd_cont_uq161는 이 레이어 자료가 아님 (허용 klip_c_uq161)":
+                     "AIPS가 '지구단위계획구역' 레이어로 다른 자료(레이어 ID lsmd_cont_uq161)를 고름",
+                 "② 분석대상 초과 BUFFER (정답 개발제한구역)": "AIPS가 정답에 없는 분석대상(버퍼 분석)까지 분석함",
+                 "② 정답에 없는 반경 300m": "AIPS가 명령에 없는 반경(300m) 조건을 붙임",
+                 "② 시스템 PNU 없음(위치 확정 실패)": "AIPS가 명령의 대상 필지를 확정하지 못함"}
+        for item, want in cases.items():
+            row = {"판정": "오류", "오류원인": "핵심 파라미터 추출 오류", "불일치내용": [item]}
+            self.assertEqual(E.explain(row), (E.WHO_AIPS, want), item)
+        self.assertEqual(E.explain({"판정": "오류", "오류원인": "핵심 파라미터 추출 오류", "불일치내용": ["② 정답 PNU 없음(참조PNU 칸 확인)"]})[0],
+                         E.WHO_DATA)                                # 정답셋 문제는 AIPS 탓으로 적지 않음
+
+    def test_map_no_data_and_failed_call(self):
+        gold = dict(GOLD_OVERLAP, 정답의도="지도 이동; 개발가능지 추출; 분석 결과 표출", 정답파라미터=f"PNU={PNU}; 분석대상=개발가능지",
+                    정답시나리오="표출대상=대상 필지 도형; 분석결과표출=개발가능 영역 도형")
+        mk = lambda **kw: locate_events() + analysis_events("land_regulation", "tool.land.regulation", "operation", "DEVELOPABLE_AREA",
+                                                            geom=None, **kw) + finish()
+        v, why = self._why(mk(resolve_status="no_data"), gold)
+        self.assertEqual(v["오류원인"], "GIS 지도 제어 실행 오류")
+        self.assertTrue(why[1].startswith("AIPS의 분석 결과에 도형이 없어 '개발가능 영역 도형'이 지도에 나오지 않음"), why)
+        _, why = self._why(mk(status="error", resolve_status="failed"), gold)
+        self.assertTrue(why[1].startswith("AIPS의 분석 호출이 실패해 '개발가능 영역 도형'이 지도에 나오지 않음"), why)
+        row = {"판정": "오류", "오류원인": "GIS 지도 제어 실행 오류", "불일치내용": ["③ 대상 필지 이동·선택 명령 없음 (지도 명령 없음)"]}
+        self.assertEqual(E.explain(row)[1], "AIPS가 지도를 대상 필지로 이동·선택하지 않음")
+        row["불일치내용"] = ["③ 대상 필지 이동·선택 명령 없음 (지도 명령 MOVE_TO, SELECT)"]      # 선택은 했으나 정답 필지 도형이 없음
+        self.assertTrue(E.explain(row)[1].startswith("AIPS의 필지 선택 명령에 정답 필지 도형이 없음"))
+        row["불일치내용"] = ["③ '접도선' 도형 없음 (CONTACT_SUMMARY 상태 None/None 도형 없음)"]
+        self.assertTrue(E.explain(row)[1].startswith("AIPS의 분석 호출이 끝나지 않아 '접도선'이 지도에 나오지 않음 (접도 분석"), E.explain(row))
+        row["불일치내용"] = ["③ '접도선' 도형 없음 (CONTACT_SUMMARY 상태 ok/ok 도형 ['contact_lines_geojson'])"]
+        self.assertIn("정답 시나리오의 도형이 없어", E.explain(row)[1])
+        row["불일치내용"] = ["③ 지도 제어 '확대' 명령 없음"]
+        self.assertEqual(E.explain(row)[1], "AIPS가 지도 '확대' 동작을 하지 않음")
+        row["불일치내용"] = ["③ 시나리오 규칙 없음: 엉뚱한 도형"]
+        self.assertEqual(E.explain(row)[0], E.WHO_DATA)
+
+    def test_ask(self):                                            # 되묻기 — 질문을 그대로 보여 줌(줄바꿈은 한 줄로)
+        _, why = self._why(locate_events(select_ok=False) + ASK + finish(status="asking", answer=""), GOLD_OVERLAP)
+        self.assertEqual(why[1], "AIPS가 대상 필지를 정하지 못해 분석을 시작하지 않음 — '규제 저촉 분석' 의도가 응답에 없음 · "
+                                 "AIPS가 되물음: “'신천동 31'에 해당하는 곳이 3곳입니다. 어느 곳인가요?”")   # '필지 표시'라고 적지 않음
+        v, why = self._why(locate_events() + analysis_events("land_attr_b", "parcelInfo", "action", "OVERLAP_GEOMETRY") + ASK
+                           + finish(status="asking"), GOLD_OVERLAP)
+        self.assertEqual((v["①"], v["②"], v["③"]), (True, True, True))
+        self.assertEqual(why[1], "AIPS가 명령을 끝까지 실행하지 않고 되물음: “'신천동 31'에 해당하는 곳이 3곳입니다. 어느 곳인가요?”")
+        row = {"판정": "오류", "오류원인": "핵심 파라미터 추출 오류", "불일치내용": ["되묻기 = 오류 · 되묻기: 첫 줄\n둘째 줄"]}
+        self.assertEqual(E.explain(row)[1], "AIPS가 명령을 끝까지 실행하지 않고 되물음: “첫 줄 둘째 줄”")
+
+    def test_response_errors(self):                                # 응답 오류 — AIPS 가 어떻게 응답하지 못했나
+        for res, want in [({"ended_by": "deadline", "error": "응답 대기 상한 180초 초과"}, "AIPS가 응답 대기 상한(180초) 안에 답하지 않음"),
+
+                          ({"ended_by": "http", "error": "HTTP 502: Bad Gateway"}, "AIPS 서버가 오류 응답을 보냄 (HTTP 502: Bad Gateway)"),
+]:
+            v, why = self._why(locate_events(), GOLD_OVERLAP, res)
+            self.assertEqual(v["오류원인"], "응답 오류")
+            self.assertEqual(why, (E.WHO_AIPS, want), res)
+        for res, want in [({"ended_by": "exception", "error": "ConnectionError: refused"},          # 응답을 못 받음 — AIPS 탓으로 단정하지 않고 원문 그대로
+                            "AIPS와 연결되지 않아 응답을 받지 못함 — 받은 연결 오류 원문: ConnectionError: refused"),
+                          ({"ended_by": "eof"}, "AIPS 응답 도중 연결이 끊겨 끝까지 받지 못함 (turn.finished 없이 종료) — 서버·네트워크 중 어느 쪽인지는 알 수 없음")]:
+            v, why = self._why(locate_events(), GOLD_OVERLAP, res)
+            self.assertEqual(v["오류원인"], "응답 오류")                       # 점수는 규격대로 응답 오류
+            self.assertEqual(why, (E.WHO_CONN, want), res)
+        ev = locate_events(select_ok=False)
+        ev = [(e, {**d, "status": "error", "reason_code": "not_connected"}) if e == "call.finished" else (e, d) for e, d in ev]
+        v, why = self._why(ev + finish(), GOLD_OVERLAP)
+        self.assertEqual(v["오류원인"], "응답 오류")
+        self.assertEqual(why[0], E.WHO_AIPS)                                  # AIPS 가 돌려준 내부 호출 실패 — 원문을 붙임
+        self.assertTrue(why[1].startswith("AIPS의 위치 확정(주소 검색·필지 선택) 호출이 시스템 오류로 실패해 분석을 시작하지 못함 ("), why)
+        row = {"판정": "오류", "오류원인": "응답 오류", "불일치내용": ['시스템 오류 이벤트: {"code": "E1"}']}
+        self.assertEqual(E.explain(row)[1], 'AIPS가 처리 중 시스템 오류를 알림 ({"code": "E1"})')
+
+    def test_not_run_no_gold_and_ok(self):
+        ts = [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "x"}, {"사례ID": "AI6-0002", "명령유형": "공간규제 분석", "명령문": "y"}]
+        s = E.score([{"사례ID": "AI6-0001", "판정": "정상 수행", "오류원인": "", "불일치내용": []}], ts)
+        ok, miss = s["사례별"]
+        self.assertEqual((ok["오류 주체"], ok["사유"]), ("", ""))
+        self.assertEqual(miss["오류 주체"], E.WHO_NOT_RUN)
+        self.assertTrue(miss["사유"].startswith("결과 없음"))
+        v, why = self._why(locate_events(), {"사례ID": "AI6-0001"})
+        self.assertEqual((v["오류원인"], why[0]), ("정답 없음", E.WHO_DATA))
+
+    def test_score_error_rows(self):                               # 오류 사례 표 = 오류만, 칸 고정 · 사례별 표는 오류원인 바로 뒤에 오류 주체·사유
+        ts = [{"사례ID": r["사례ID"], "명령유형": "공간규제 분석", "명령문": "x"} for r, _, _ in REAL_3] + \
+             [{"사례ID": "AI6-0001", "명령유형": "공간규제 분석", "명령문": "ok"}]
+        logs = [r for r, _, _ in REAL_3] + [{"사례ID": "AI6-0001", "판정": "정상 수행", "오류원인": "", "불일치내용": []}]
+        s = E.score(logs, ts)
+        self.assertEqual([e["사례ID"] for e in s["오류사례"]], ["AI6-0002", "AI6-0021", "AI6-0036"])
+        self.assertEqual(list(s["오류사례"][0]), ["사례ID", "명령 유형", "명령문", "오류 원인", "오류 주체", "사유", "불일치내용"])
+        cols = list(s["사례별"][0])
+        self.assertEqual(cols[cols.index("오류원인") + 1: cols.index("오류원인") + 3], list(E.REASON_COLS))
+        self.assertEqual((s["n"], s["ok"], s["value"]), (4, 1, 25.0))       # 판정·집계는 그대로
+        self.assertEqual(E.score(logs[3:], ts[3:])["오류사례"], [])
+
+    def test_josa(self):
+        for word, want in [("분석", ("이", "으로", "을")), ("검토", ("가", "로", "를")), ("300m", ("가", "로", "를")),
+                           ("17", ("이", "로", "을")), ("지역", ("이", "으로", "을")), ("BUFFER", ("이(가)", "(으)로", "을(를)")),
+                           ("대상 필지 도형(산지전용 규제 면적 결과)", ("이", "으로", "을")), ("'규제 저촉 분석'", ("이", "으로", "을"))]:
+            self.assertEqual((E.josa(word, "이"), E.josa(word, "으로"), E.josa(word, "을")), want, word)
+        row = {"판정": "오류", "오류원인": "GIS 지도 제어 실행 오류",
+               "불일치내용": ["③ '대상 필지 도형(산지전용 규제 면적 결과)' 도형 없음 (FOREST_CONVERSION 상태 ok/no_data 도형 없음)"]}
+        self.assertTrue(E.explain(row)[1].startswith("AIPS의 분석 결과에 도형이 없어 '대상 필지 도형(산지전용 규제 면적 결과)'이 지도에"))
+
+    def test_unlocated_failed_search_and_aux_call(self):           # 위치 검색 실패 → '필지를 정하지 못함' · 보조 호출(토지 정보 조회)은 AIPS 가 한 일로
+        row = {"판정": "오류", "오류원인": "의도 해석 오류",
+               "불일치내용": ["① 의도 누락 규제 저촉 분석, 분석 결과 표출", "② 시스템 PNU 없음(위치 확정 실패)",
+                         "③ 대상 필지 이동·선택 명령 없음 (지도 명령 없음)",
+                         "위치 미확정 — 위치 확정 호출 실패: INTEGRATED_LOCATION_SEARCH error/failed · 분석 호출이 시작되지 않음"]}
+        self.assertEqual(E.explain(row, ["지도 이동"])[1], "AIPS가 대상 필지를 정하지 못해 분석을 시작하지 않음 "
+                         "(위치 확정 호출 실패: 주소 검색(지오코딩) error/failed) — '규제 저촉 분석' 의도가 응답에 없음")
+        row0, intents, _ = REAL_3[0]
+        self.assertEqual(E.explain(row0, intents, ["INTEGRATED_LOCATION_SEARCH", "SELECT", "HIGHLIGHT", "ATTR"])[1],
+                         "AIPS가 '규제 저촉 분석' 의도를 잡지 못하고 대상 필지 표시(지도 이동)와 토지 정보 조회만 함")
+        moved = {"판정": "오류", "오류원인": "의도 해석 오류", "불일치내용": ["① 의도 누락 규제 저촉 분석", "③ 대상 필지 이동·선택 명령 없음 (지도 명령 MOVE_TO)"]}
+        self.assertEqual(E.explain(moved, ["지도 이동"])[1], "AIPS가 '규제 저촉 분석' 의도를 잡지 못하고 지도 이동(대상 필지 선택 없음)만 함")
+        only = {"판정": "오류", "오류원인": "의도 해석 오류", "불일치내용": ["① 의도 누락 지도 이동, 규제 저촉 분석"]}
+        self.assertEqual(E.explain(only, ["분석 결과 표출"])[1], "AIPS가 '지도 이동'·'규제 저촉 분석' 의도를 잡지 못하고 '분석 결과 표출'만 수행함")
+
+    def test_tool_stop_and_owner_rules(self):                       # 시험 도구 중단은 AIPS 탓이 아님 · 정답셋 문제가 섞이면 시험 데이터
+        lost = {"판정": "오류", "오류원인": "응답 오류", "응답오류": E.LOST_NOTE, "불일치내용": [E.LOST_NOTE]}
+        self.assertEqual(E.explain(lost)[0], E.WHO_TOOL)
+        self.assertEqual(E.explain(dict(lost, 응답오류=""))[0], E.WHO_TOOL)          # 사례별 표(응답오류 칸 없음)
+        import spec_runner_ai6 as R
+        with open(R.__file__, encoding="utf-8") as f:
+            self.assertIn("error=E.LOST_NOTE", f.read())                          # 러너가 같은 문구를 씀
+        mixed = {"판정": "오류", "오류원인": "핵심 파라미터 추출 오류",
+                 "불일치내용": ["② 정답 PNU 없음(참조PNU 칸 확인); 반경 불일치 (정답 500m / 시스템 300m)"]}
+        self.assertEqual(E.explain(mixed)[0], E.WHO_DATA)
+        bad_r = {"판정": "오류", "오류원인": "핵심 파라미터 추출 오류", "불일치내용": ["② 반경 불일치 (정답 오백미터 / 시스템 300m)"]}
+        self.assertEqual(E.explain(bad_r), (E.WHO_DATA, "정답셋의 반경 값(오백미터)을 읽을 수 없음 — 시험 데이터 확인 필요"))
+        both = {"판정": "오류", "오류원인": "핵심 파라미터 추출 오류",
+                "불일치내용": [f"② 위치 PNU 불일치 (정답 {PNU} / 시스템 {PNU}, 4729012300100310002)"]}
+        self.assertEqual(E.explain(both)[1], "AIPS가 정답 필지 외에 다른 필지(PNU 4729012300100310002)도 대상으로 잡음")
+        noq = {"판정": "오류", "오류원인": "핵심 파라미터 추출 오류", "되묻기": True, "불일치내용": ["되묻기 = 오류 · 되묻기: "]}
+        self.assertEqual(E.explain(noq)[1], "AIPS가 명령을 끝까지 실행하지 않고 되물음(질문 내용 없음)")
+        long_q = {"판정": "오류", "오류원인": "핵심 파라미터 추출 오류", "되묻기": True, "불일치내용": ["되묻기 = 오류 · 되묻기: " + "가" * 80]}
+        self.assertTrue(E.explain(long_q)[1].endswith("가…”"))
+        self.assertEqual(E.explain({"판정": "오류", "오류원인": "응답 오류", "불일치내용": ["턴 상태 cancelled ()"]})[1],
+                         "AIPS가 처리를 끝내지 못함 (턴 상태 cancelled)")
+
+    def test_old_function_names_shown_in_korean(self):              # 예전 기록의 'map_navigation_b:HIGHLIGHT' → '필지 강조'
+        spec = {"실행대상기능": {"명령유형": "공간규제 분석", "Function": ["주소 검색(지오코딩)", "지도 이동(대상 필지 선택)",
+                                                                  "map_navigation_b:HIGHLIGHT", "x_agent:UNKNOWN_OP", "map_navigation_b:HIGHLIGHT (실패)"]}}
+        self.assertEqual(E.spec_cells(spec)["실행 대상 기능"],
+                         "[공간규제 분석] 주소 검색(지오코딩) → 지도 이동(대상 필지 선택) → 필지 강조 → x_agent:UNKNOWN_OP → 필지 강조 (실패)")
+
+    def test_unlabeled_unmapped_call_not_repeated(self):         # 한글 이름이 없는 대응표 밖 호출은 이름을 두 번 쓰지 않음
+        row = {"판정": "오류", "오류원인": "의도 해석 오류", "불일치내용": ["① 의도 초과 ?spatial_regulation:AREA"]}
+        self.assertEqual(E.explain(row, ["지도 이동", "?spatial_regulation:AREA"])[1],
+                         "AIPS가 명령에 없는 기능(spatial_regulation:AREA)도 호출함 — 의도 대응표에 없는 호출")
+
+    def test_progress_row_has_reason(self):                        # 실행 중 화면 표에도 사유
+        import spec_runner_ai6 as R
+        row, intents, want = REAL_3[2]
+        self.assertEqual(R.progress_row(row, {"해석의도": intents})["사유"], want)
+        self.assertEqual(R.progress_row({"사례ID": "AI6-0001", "판정": "정상 수행", "불일치내용": []})["사유"], "")
+
+    def test_score_run_writes_error_sheet(self):                   # result.xlsx 에 '오류 사례' 시트 — 오류가 없어도 '오류 없음' 한 줄
+        import tempfile
+        import spec_runner_ai6 as R
+        got = {}
+        orig = R.save_tables
+        R.save_tables = lambda path, tables: got.update(tables) or [path]
+        self.addCleanup(setattr, R, "save_tables", orig)
+        d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, d, True)
+        ts = os.path.join(d, "testset_ai6.csv")
+        with open(ts, "w", encoding="utf-8-sig") as f:
+            f.write("사례ID,명령유형,명령문\n" + "".join(f"{r['사례ID']},공간규제 분석,x\n" for r, _, _ in REAL_3))
+        with open(os.path.join(d, E.GIS_LOG), "w", encoding="utf-8") as f:
+            f.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r, _, _ in REAL_3))
+        with open(os.path.join(d, E.PARSE_LOG), "w", encoding="utf-8") as f:
+            f.write("".join(json.dumps({"사례ID": r["사례ID"], "해석의도": i}, ensure_ascii=False) + "\n" for r, i, _ in REAL_3))
+        R.score_run(d, ts, quiet=True)
+        self.assertEqual(list(got), ["총괄 결과", "명령 유형 3종별 세부 결과", "오류 원인 유형별 건수", "오류 사례", "사례별 판정"])
+        self.assertEqual([e["사유"] for e in got["오류 사례"]], [w for _, _, w in REAL_3])
+        ok = [dict(r, 판정="정상 수행", 오류원인="", 불일치내용=[]) for r, _, _ in REAL_3]
+        with open(os.path.join(d, E.GIS_LOG), "w", encoding="utf-8") as f:
+            f.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in ok))
+        R.score_run(d, ts, quiet=True)
+        self.assertEqual([e["사유"] for e in got["오류 사례"]], ["오류 없음 — 3건 모두 정상 수행"])
+        with open(os.path.join(d, "summary.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["value"], 100.0)
+        s = R.score_run(d, os.path.join(d, "없는_시험셋.csv"), quiet=True)     # 시험셋을 못 찾아도(다시 저장) 실행한 사례로 채점
+        self.assertEqual((s["n"], s["ok"]), (3, 3))
+        self.assertEqual(R.score_run(d, None, quiet=True)["n"], 3)
+
+
 if __name__ == "__main__":
     unittest.main()

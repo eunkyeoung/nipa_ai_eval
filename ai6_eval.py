@@ -123,6 +123,7 @@ FUNCTION_LABEL = {                               # 실행 대상 기능 표기 (
     "INTERSECTIONLAYER": "레이어 저촉(교차) 분석", "LAYER_NEARBY": "반경 내 레이어 분석", "BUFFER": "버퍼 분석",
     "CONTACT_SUMMARY": "접도 분석", "REGULATION": "규제도로 분석", "FOREST_CONVERSION": "산지전용 규제 분석",
     "DEVELOPABLE_AREA": "개발가능지 추출", "ATTR": "토지 정보 조회", "NEARBY_PARCELS": "반경 내 필지 검색",
+    "HIGHLIGHT": "필지 강조",
 }
 TYPE_OF_CALLEE = {"land_attr_b": "공간규제 분석", "spatial_regulation": "공간규제 분석", "road_access": "도로 접근성 분석",
                   "land_regulation": "산지·농지 규제 분석"}
@@ -964,6 +965,12 @@ def _join(v, sep=", "):
     return "" if v is None else str(v)
 
 
+def _fn_label(f):
+    """예전 기록의 'callee:OPERATION'(그때 한글 이름이 없던 호출) → 지금 한글 이름 — 예: map_navigation_b:HIGHLIGHT → 필지 강조"""
+    m = re.match(r"^[a-z0-9_]+:([A-Z_]+)( \(실패\))?$", str(f))
+    return FUNCTION_LABEL[m.group(1)] + (m.group(2) or "") if m and m.group(1) in FUNCTION_LABEL else f
+
+
 def spec_cells(spec):
     """규격 출력 JSON(의도·핵심파라미터·실행대상기능·지도상태) → 표 한 줄에 넣을 글 4칸.
     실행 중 화면 표 · 사례별 판정 표(result.xlsx) 에 같이 씀. 판정에는 쓰지 않음(판정은 judge)"""
@@ -984,9 +991,322 @@ def spec_cells(spec):
     return OrderedDict([
         ("해석 의도", _join(spec.get("의도"))),
         ("핵심 파라미터", "; ".join(params)),
-        ("실행 대상 기능", (f"[{fn['명령유형']}] " if fn.get("명령유형") else "") + _join(fn.get("Function"), " → ")),
+        ("실행 대상 기능", (f"[{fn['명령유형']}] " if fn.get("명령유형") else "")
+         + _join([_fn_label(f) for f in fn.get("Function") or []] if isinstance(fn.get("Function"), list) else fn.get("Function"), " → ")),
         ("지도 상태", " / ".join(state)),
     ])
+
+
+# ---------------------------------------------------------------- 오류 사례 — 오류 주체 · 사유 (화면·결과표용 글, 판정에는 쓰지 않음)
+WHO_AIPS = "AIPS (시험 대상)"        # AIPS 가 정답과 다르게 해석·실행했거나 응답하지 못함
+WHO_DATA = "시험 데이터"             # 정답셋·시나리오 문제 (사전 점검에서 막으므로 공식 실행에는 없음)
+WHO_TOOL = "시험 도구 (QA 중단)"     # 시험 도구가 AIPS 응답을 기록하기 전에 멈춤 — 예비 실행에만 생김(전체 재수행 대상)
+WHO_CONN = "연결 실패 (응답 없음)"   # AIPS 응답을 못 받음(연결 안 됨·도중에 끊김) — 서버·네트워크 중 어느 쪽인지 알 수 없어 받은 연결 오류 원문만 적음
+AIPS_ANSWERED = ("시스템 오류로 위치를 확정하지 못함", "응답 대기 상한", "HTTP ", "시스템 오류 이벤트", "턴 상태")   # AIPS 가 실제로 돌려준(또는 시간 안에 못 끝낸) 응답 오류
+WHO_NOT_RUN = "미실행"               # 결과가 없는 사례 (실행이 멈춰 보내지 않음·기록 못 함)
+REASON_COLS = ("오류 주체", "사유")
+LOST_PREFIX = "QA 실행이 응답을 기록하기 전에 멈춤"
+LOST_NOTE = LOST_PREFIX + " — 명령 1회 입력 원칙에 따라 다시 보내지 않음"   # '↻ 이어서' 때 러너가 남기는 응답 오류(spec_runner_ai6)
+AUX_OPS = ("ATTR",)                  # 의도 대응표 '(무시)' 보조 호출 — 의도에는 안 세지만 AIPS 가 한 일로는 적음(토지 정보 조회)
+ASK_CUT = 80                         # judge() 가 되묻기 질문을 자르는 길이 — 잘렸으면 '…'
+
+
+def _batchim(word):
+    """마지막 글자의 받침 번호 — 0 = 받침 없음, 8 = ㄹ, None = 한글·숫자가 아님(조사를 '이(가)' 꼴로)"""
+    s = str(word or "").strip().strip("'\"“”‘’「」『』 ")
+    while re.search(r"\([^()]*\)$", s):                         # '대상 필지 도형(…결과)' → 조사는 괄호 앞 낱말('도형')에 맞춤
+        s = re.sub(r"\s*\([^()]*\)$", "", s).rstrip()
+    if not s:
+        return None
+    if s.lower().endswith(("km", "m")):                         # 300m(미터)·0.3km(킬로미터)
+        return 0
+    ch = s[-1]
+    if "가" <= ch <= "힣":
+        return (ord(ch) - 0xAC00) % 28
+    if ch.isdigit():                                            # 영 일 이 삼 사 오 육 칠 팔 구
+        return {"0": 21, "1": 8, "3": 16, "6": 1, "7": 8, "8": 8}.get(ch, 0)
+    return None
+
+
+def josa(word, kind):
+    """받침에 맞는 조사 — kind: '이'(이/가) · '을'(을/를) · '은'(은/는) · '과'(과/와) · '으로'(으로/로)"""
+    b = _batchim(word)
+    if kind == "으로":
+        return "(으)로" if b is None else ("로" if b in (0, 8) else "으로")
+    yes, no = {"이": ("이", "가"), "을": ("을", "를"), "은": ("은", "는"), "과": ("과", "와")}[kind]
+    return f"{yes}({no})" if b is None else (yes if b else no)
+
+
+def _q(names):
+    return "·".join(f"'{x}'" for x in names)
+
+
+def _names(s):
+    return [x.strip() for x in str(s or "").split(", ") if x.strip()]
+
+
+def _is_layer(name):
+    return any("가" <= ch <= "힣" for ch in str(name))            # 한글 = 레이어 이름, 그 밖 = 분석 호출 이름(BUFFER 등)
+
+
+def _op_label(op):
+    """분석 호출 이름 → 한글 기능 이름 (실행 대상 기능 표기와 같게). '?callee:OP'(대응표 밖 호출)도"""
+    o = str(op).lstrip("?")
+    return FUNCTION_LABEL.get(o.split(":")[-1], o)
+
+
+def _labels(text):
+    """글 안의 호출 이름(INTEGRATED_LOCATION_SEARCH 등)을 한글 기능 이름으로 — 모르는 이름은 그대로"""
+    return re.sub(r"\b[A-Z][A-Z_]{2,}\b", lambda m: FUNCTION_LABEL.get(m.group(0), m.group(0)), str(text))
+
+
+def _state_text(state):
+    """판정기 호출 상태 'OP 상태 s/r 도형 [...]' → '접도 분석 ok/no_data' (한글 기능 이름 + 상태, 첫 호출)"""
+    m = re.match(r"(\S+) 상태 (\S*)/(\S*) 도형 ", state)
+    return f"{_op_label(m.group(1))} {m.group(2)}/{m.group(3)}" if m else _labels(state)
+
+
+def _intent_parts(item):
+    """'① 의도 누락 A, B / 초과 C' → ([A, B], [C])"""
+    m = re.match(r"① 의도 (?:누락 (.+?))?(?:(?: / )?초과 (.+))?$", item)
+    return (_names(m.group(1)), _names(m.group(2))) if m else ([], [])
+
+
+def _intent_text(item, sys_intents, ops=None, shown=True):
+    """① 불일치 → AIPS 가 실제로 한 일. shown = 대상 필지를 지도에 실제로 선택·표시했나(③에 '대상 필지 이동·선택 명령 없음'이 없음)"""
+    lack, extra = _intent_parts(item)
+    named = [x for x in extra if not x.startswith("?")]
+    odd = [x[1:] for x in extra if x.startswith("?")]             # 의도 대응표에 없는 호출(? 붙은 이름)
+    say = [x for x in lack if norm(x) != norm("분석 결과 표출")] or lack   # 분석을 안 했으면 결과 표출이 빠지는 건 당연 — 문장에서는 생략
+    did = [x for x in (sys_intents or []) if x and not str(x).startswith("?")]
+    moved = any(norm(x) == norm("지도 이동") for x in did)
+    core = [x for x in did if norm(x) not in (norm("지도 이동"), norm("분석 결과 표출"))]   # 이동·결과 표출은 어느 분석에나 붙음 — 한 분석만 말함
+    aux = [FUNCTION_LABEL.get(o, o) for o in dict.fromkeys(ops or []) if o in AUX_OPS]
+    if say and named:
+        out = f"AIPS가 {_q(say)}{josa(say[-1], '이')} 아니라 {_q(named)}{josa(named[-1], '으로')} 해석함"
+    elif say and sys_intents is not None:
+        if core:
+            out = f"AIPS가 {_q(say)} 의도를 잡지 못하고 {_q(core)}만 수행함"
+        elif moved:
+            what = "대상 필지 표시(지도 이동)" if shown else "지도 이동(대상 필지 선택 없음)"
+            out = f"AIPS가 {_q(say)} 의도를 잡지 못하고 {what}" + (f"{josa(what, '과')} {'·'.join(aux)}" if aux else "") + "만 함"
+        elif did:
+            out = f"AIPS가 {_q(say)} 의도를 잡지 못하고 {_q(did)}만 수행함"
+        else:
+            out = f"AIPS가 {_q(say)} 의도를 잡지 못해 실행한 기능이 없음"
+    elif say:
+        out = f"AIPS가 {_q(say)} 의도를 잡지 못함"
+    elif named:
+        out = f"AIPS가 명령에 없는 {_q(named)}까지 수행함"
+    elif odd:
+        labels = [_op_label(x) for x in odd]
+        return (f"AIPS가 명령에 없는 기능({', '.join(labels)})도 호출함 — 의도 대응표에 없는 호출"
+                + ("" if labels == odd else f"({', '.join(odd)})"))
+    else:
+        out = "AIPS가 해석한 의도가 정답과 다름"
+    if odd:
+        out += f" · 그 밖에 의도 대응표에 없는 기능({', '.join(_op_label(x) for x in odd)})을 호출함"
+    return out
+
+
+def _pnu_text(gold, sys_pnus):
+    other = [p for p in sys_pnus if p != gold]
+    if gold in sys_pnus:                                        # 정답 필지에 다른 필지가 섞임
+        return f"AIPS가 정답 필지 외에 다른 필지(PNU {', '.join(other)})도 대상으로 잡음"
+    return f"AIPS가 다른 필지(PNU {', '.join(sys_pnus)})를 대상으로 잡음 — 정답 필지 PNU {gold}"
+
+
+def _param_text(item):
+    """② 불일치 한 항목 → (AIPS 가 한 일, 시험 데이터 문제인지)"""
+    if item.startswith("정답 PNU 없음"):
+        return "정답셋에 대상 필지 PNU가 없음 — 시험 데이터 확인 필요", True
+    if item.startswith("시스템 PNU 없음"):
+        return "AIPS가 명령의 대상 필지를 확정하지 못함", False
+    m = re.match(r"위치 PNU 불일치 \(정답 (\S+) / 시스템 (.+)\)$", item)
+    if m:
+        return _pnu_text(m.group(1), _names(m.group(2))), False
+    m = re.match(r"분석대상 '(.+?)' 호출 없음", item)
+    if m:
+        return f"AIPS가 '{m.group(1)}' 분석을 하지 않음", False
+    m = re.match(r"레이어 '(.+?)' 자료 불일치 — 고른 레이어 ID (.+?)는", item)
+    if m:
+        return f"AIPS가 '{m.group(1)}' 레이어로 다른 자료(레이어 ID {m.group(2)})를 고름", False
+    m = re.match(r"레이어 '(.+?)' 불일치 \(시스템 (.+)\)$", item)
+    if m:
+        return ((f"AIPS가 '{m.group(1)}' 레이어를 고르지 않음" if m.group(2) == "없음"
+                 else f"AIPS가 '{m.group(1)}' 대신 다른 레이어({m.group(2)})를 고름"), False)
+    m = re.match(r"반경 불일치 \(정답 (.+?) / 시스템 (.+)\)$", item)
+    if m:
+        gold, got = m.group(1), m.group(2)
+        if meters(gold) is None:                                    # 정답 반경을 읽을 수 없음(예: '오백미터') — AIPS 가 무엇을 써도 어긋남
+            return f"정답셋의 반경 값({gold})을 읽을 수 없음 — 시험 데이터 확인 필요", True
+        return ((f"AIPS가 반경 조건을 쓰지 않음 — 정답 반경 {gold}" if got == "없음"
+                 else f"AIPS가 반경을 {got}{josa(got, '으로')} 잡음 — 정답 {gold}"), False)
+    m = re.match(r"확대 레벨 불일치 \(정답 (.+?) / 시스템 (.+)\)$", item)
+    if m:
+        return f"AIPS의 확대 레벨이 정답과 다름 (정답 {m.group(1)} / AIPS {m.group(2)})", False
+    m = re.match(r"분석대상 초과 (.+) \(정답 (.+)\)$", item)
+    if m:
+        names = ", ".join(x if _is_layer(x) else _op_label(x) for x in _names(m.group(1)))
+        return f"AIPS가 정답에 없는 분석대상({names})까지 분석함", False
+    m = re.match(r"정답에 없는 반경 (.+)$", item)
+    if m:
+        return f"AIPS가 명령에 없는 반경({m.group(1)}) 조건을 붙임", False
+    m = re.match(r"(.+?) 불일치 \(정답 (.+?) / 시스템 (.+)\)$", item)
+    if m:
+        return f"AIPS가 넘긴 {m.group(1)} 값이 정답과 다름 (정답 {m.group(2)} / AIPS {m.group(3)})", False
+    return f"AIPS 응답의 핵심 파라미터가 정답과 다름 ({item})", False
+
+
+def _map_text(item):
+    """③ 불일치 한 항목 → (AIPS 가 한 일, 시험 데이터 문제인지)"""
+    if item.startswith("대상 필지 이동·선택 명령 없음"):
+        m = re.search(r"\(지도 명령 (.*)\)$", item)
+        if m and re.search(r"\bSELECT\b", m.group(1)):          # 필지 선택은 했으나 정답 필지가 아니거나 필지 도형이 없음
+            return "AIPS의 필지 선택 명령에 정답 필지 도형이 없음(다른 필지를 골랐거나 도형 없이 선택함)", False
+        return "AIPS가 지도를 대상 필지로 이동·선택하지 않음", False
+    m = re.match(r"지도 제어 '(.+?)' (명령|대조 규칙) 없음$", item)
+    if m:
+        return ((f"AIPS가 지도 '{m.group(1)}' 동작을 하지 않음", False) if m.group(2) == "명령" else
+                (f"정답 시나리오의 지도 제어 '{m.group(1)}'에 맞는 대조 규칙이 없음 — 시험 데이터 확인 필요", True))
+    m = re.match(r"시나리오 규칙 없음: (.+)$", item) or re.match(r"시나리오 키 '(.+?)' 대조 규칙 없음$", item)
+    if m:
+        return f"정답 시나리오 '{m.group(1)}'에 맞는 대조 규칙이 없음 — 시험 데이터 확인 필요", True
+    m = re.match(r"'(.+?)' 도형 없음 \((.+)\)$", item)
+    if m:
+        tok, state = m.group(1), m.group(2)
+        what = f"'{tok}'{josa(tok, '이')} 지도에 나오지 않음"
+        if state == "호출 없음":
+            return f"AIPS가 분석을 호출하지 않아 {what}", False
+        brief = _state_text(state)
+        if re.search(r"상태 (error|unknown|failed)\b|/(failed|error)\b", state):
+            return f"AIPS의 분석 호출이 실패해 {what} ({brief})", False
+        if re.search(r"상태 (None|in_flight|running|pending)\b", state):
+            return f"AIPS의 분석 호출이 끝나지 않아 {what} ({brief})", False
+        got = re.search(r"도형 (\[[^\]]+\])", state)
+        if got:                                                 # 도형은 왔지만 정답 시나리오가 보는 종류가 아님
+            return f"AIPS의 분석 결과에 정답 시나리오의 도형이 없어 {what} ({brief} · 받은 도형 {got.group(1)})", False
+        return f"AIPS의 분석 결과에 도형이 없어 {what} ({brief})", False
+    return f"AIPS의 지도 표출이 정답과 다름 ({item})", False
+
+
+def _response_text(err):
+    """응답 오류 사유 → AIPS 가 어떻게 응답하지 못했나"""
+    e = str(err or "").strip()
+    if e.startswith("시스템 오류로 위치를 확정하지 못함"):
+        rest = _labels(e.split(" — ", 1)[1]) if " — " in e else ""
+        return "AIPS의 위치 확정(주소 검색·필지 선택) 호출이 시스템 오류로 실패해 분석을 시작하지 못함" + (f" ({rest[:160]})" if rest else "")
+    if e.startswith("응답 대기 상한"):
+        sec = re.search(r"(\d+(?:\.\d+)?)\s*초", e)
+        return f"AIPS가 응답 대기 상한({sec.group(1)}초) 안에 답하지 않음" if sec else "AIPS가 응답 대기 상한 안에 답하지 않음"
+    if e.startswith("HTTP "):
+        return f"AIPS 서버가 오류 응답을 보냄 ({e[:160]})"
+    if e.startswith("시스템 오류 이벤트"):
+        return f"AIPS가 처리 중 시스템 오류를 알림 ({e[len('시스템 오류 이벤트: '):][:160]})"
+    if e.startswith("턴 상태"):
+        return f"AIPS가 처리를 끝내지 못함 ({re.sub(r' [(][)]$', '', e)})"
+    return f"AIPS 응답 오류 ({e[:160] or '사유 없음'})"
+
+
+def _conn_text(err):
+    """AIPS 응답을 못 받은 경우 — 탓을 정하지 않고 받은 연결 오류 원문 그대로"""
+    e = str(err or "").strip()
+    if e.startswith("응답 중단"):
+        return "AIPS 응답 도중 연결이 끊겨 끝까지 받지 못함 (turn.finished 없이 종료) — 서버·네트워크 중 어느 쪽인지는 알 수 없음"
+    if e in ("", "exception", "http"):
+        return "AIPS와 연결되지 않아 응답을 받지 못함 (연결 오류 내용 없음)"
+    return f"AIPS와 연결되지 않아 응답을 받지 못함 — 받은 연결 오류 원문: {e[:200]}"
+
+
+def _loc_text(unlocated):
+    """'위치 미확정 — 위치 확정 호출 실패: OP s/r · …' → ' (위치 확정 호출 실패: 주소 검색(지오코딩) s/r)'"""
+    m = re.search(r"위치 확정 호출 실패: (.+?)(?: · |$)", unlocated)
+    return f" (위치 확정 호출 실패: {_labels(m.group(1))})" if m else ""
+
+
+def _items(v):
+    """불일치내용 — 로그는 목록, 사례별 표는 ' | ' 로 이은 글"""
+    if isinstance(v, (list, tuple)):
+        return [str(x) for x in v if str(x).strip()]
+    return [x for x in str(v or "").split(" | ") if x.strip()]
+
+
+def explain(row, sys_intents=None, ops=None):
+    """오류 사례 한 건 → (오류 주체, 사유). row = 실행 결과 로그 행 또는 사례별 판정 행 — 판정·오류원인·불일치내용·응답오류·세부원인·되묻기를
+    씀(실행 때 기록한 값만 쓰므로 예전 실행 폴더도 다시 판정하지 않고 사유가 나옴). sys_intents = 명령 해석 로그의 '해석의도'(목록),
+    ops = 같은 로그 '실행대상기능'의 operation 목록(보조 호출을 적는 데만 씀). 오류 원인은 판정 그대로(①→②→③ 처음 어긋난 기준),
+    사유는 그 기준에서 AIPS 가 실제로 한 일. 시험 데이터·시험 도구·미실행 탓은 AIPS 로 적지 않음. 정상 수행이면 ('', '')"""
+    row = row or {}
+    if row.get("판정") == "정상 수행":
+        return "", ""
+    cause = str(row.get("오류원인") or "")
+    items = _items(row.get("불일치내용", row.get("불일치")))
+    detail = str(row.get("세부원인") or "")
+    if cause == "응답 오류" and (detail == "미실행" or items == ["미실행"]):
+        return WHO_NOT_RUN, "결과 없음 — 실행이 멈춰 이 사례를 보내지 않았거나 응답을 기록하지 못함(AIPS 응답 결과 아님) · 판정하지 못해 오류로 셈"
+    if cause == "정답 없음":
+        return WHO_DATA, "정답셋에 이 사례의 정답이 없어 판정하지 않음 — 시험 데이터 확인 필요"
+    if cause == "응답 오류":
+        err = str(row.get("응답오류") or (items[0] if items else ""))
+        if err.startswith(LOST_PREFIX):                          # 시험 도구 쪽 중단 — AIPS 무응답이 아님
+            return WHO_TOOL, ("시험 도구(QA)가 AIPS 응답을 기록하기 전에 멈춤 — AIPS 응답 결과 아님 · "
+                              "명령 1회 입력 원칙으로 다시 보내지 않아 오류로 셈(전체 재수행 대상)")
+        if err.startswith(AIPS_ANSWERED):                        # AIPS 가 돌려준 오류(원문 그대로)·대기 상한 초과
+            return WHO_AIPS, _response_text(err)
+        return WHO_CONN, _conn_text(err)
+    first = {k: next((x for x in items if x.startswith(k)), "") for k in ("①", "②", "③")}
+    ask, cut = "", False
+    for x in items:                                              # '③ …; 되묻기: 질문' · '되묻기 = 오류 · 되묻기: 질문'
+        if "되묻기: " in x:
+            raw = x.split("되묻기: ", 1)[1]
+            ask, cut = " ".join(raw.split()), len(raw) >= ASK_CUT   # 질문의 줄바꿈은 한 줄로, 판정기가 자른 질문은 '…'
+            break
+    asked = bool(row.get("되묻기") is True or detail.startswith("되묻기") or ask
+                 or any(x.startswith("되묻기 = 오류") for x in items))
+    unlocated = next((x for x in items if x.startswith("위치 미확정")), "")
+    data = False
+    say = ""
+    if cause == "의도 해석 오류" and first["①"]:
+        if unlocated:                                            # 대상 필지를 못 정해 분석이 시작되지 않음 — '필지 표시'라고 적지 않음
+            lack = [x for x in _intent_parts(first["①"])[0] if norm(x) != norm("분석 결과 표출")] or _intent_parts(first["①"])[0]
+            say = (f"AIPS가 대상 필지를 정하지 못해 분석을 시작하지 않음{_loc_text(unlocated)}"
+                   + (f" — {_q(lack)} 의도가 응답에 없음" if lack else ""))
+        else:
+            say = _intent_text(first["①"], sys_intents, ops, shown="대상 필지 이동·선택 명령 없음" not in first["③"])
+            extra = re.search(r"분석대상 초과 (.+?) \(정답 ", first["②"])     # 다른 분석대상을 조회했으면 덧붙임(예: 다른 레이어)
+            if extra:
+                named = {norm(x) for x in _intent_parts(first["①"])[1]}
+                names = _names(extra.group(1))
+                layers = [x for x in names if _is_layer(x)]
+                more = [_op_label(x) for x in names if not _is_layer(x)]
+                more = [x for x in more if norm(x) not in named]           # 의도 이름과 같은 분석은 되풀이하지 않음
+                tail = " · ".join(filter(None, [f"다른 레이어({', '.join(layers)})를 조회함" if layers else "",
+                                                f"정답에 없는 분석({', '.join(more)})을 실행함" if more else ""]))
+                if tail:
+                    say = (say[:-1] + "해 " + tail) if say.endswith("해석함") else f"{say} · {tail}"
+    elif cause == "핵심 파라미터 추출 오류" and first["②"]:
+        parts = [_param_text(x.strip()) for x in first["②"][2:].split("; ") if x.strip()]
+        say, data = " · ".join(p[0] for p in parts), any(p[1] for p in parts)
+    elif cause == "GIS 지도 제어 실행 오류" and first["③"]:
+        body = first["③"][2:].split("; 되묻기: ")[0]
+        parts = [_map_text(x.strip()) for x in body.split("; ") if x.strip() and not x.startswith("되묻기: ")]
+        say, data = " · ".join(p[0] for p in parts), any(p[1] for p in parts)
+    elif unlocated:
+        say = f"AIPS가 대상 필지를 정하지 못해 분석을 시작하지 않음{_loc_text(unlocated)}"
+    if asked:
+        q = f": “{ask}{'…' if cut else ''}”" if ask else "(질문 내용 없음)"
+        say = f"{say} · AIPS가 되물음{q}" if say else f"AIPS가 명령을 끝까지 실행하지 않고 되물음{q}"
+    if not say:
+        say = f"AIPS 응답이 정답과 다름 ({' | '.join(items)[:200] or cause or '사유 없음'})"
+    return (WHO_DATA if data else WHO_AIPS), say
+
+
+def explain_logged(gis_row, parse_row=None):
+    """실행 결과 로그 행 + 명령 해석 로그 행(해석의도·실행대상기능) → (오류 주체, 사유)"""
+    p = parse_row or {}
+    intents = p.get("해석의도") if isinstance(p.get("해석의도"), list) else None
+    ops = [c.get("operation") for c in p.get("실행대상기능") or [] if isinstance(c, dict)]
+    return explain(gis_row, intents, ops)
 
 
 # ---------------------------------------------------------------- 집계
@@ -995,6 +1315,7 @@ def score(gis_rows, testset_rows, dec=DEC, parse_rows=None):
     parse_rows(명령 해석 로그)를 주면 사례별 표에 규격 출력 4칸(해석 의도·핵심 파라미터·실행 대상 기능·지도 상태)을 채움"""
     by_id = {str(r.get("사례ID")): r for r in gis_rows}
     spec_by = {str(p.get("사례ID")): spec_cells(p.get("규격출력")) for p in (parse_rows or [])}
+    parse_by = {str(p.get("사례ID")): p for p in (parse_rows or [])}
     blank = OrderedDict((k, "") for k in SPEC_CELLS)
     cases = []
     for t in testset_rows:
@@ -1003,16 +1324,19 @@ def score(gis_rows, testset_rows, dec=DEC, parse_rows=None):
             continue
         r = by_id.get(cid)
         if r is None:
+            miss = {"판정": "오류", "오류원인": "응답 오류", "세부원인": "미실행", "불일치내용": "미실행"}
             cases.append(OrderedDict([("사례ID", cid), ("명령유형", canon_type(t.get("명령유형"))), ("명령문", t.get("명령문")),
                                       *blank.items(),
                                       ("①의도", None), ("②파라미터", None), ("③지도제어", None), ("판정", "오류"),
-                                      ("오류원인", "응답 오류"), ("되묻기", False), ("세부원인", "미실행"), ("불일치내용", "미실행"),
+                                      ("오류원인", "응답 오류"), *zip(REASON_COLS, explain(miss)),
+                                      ("되묻기", False), ("세부원인", "미실행"), ("불일치내용", "미실행"),
                                       ("소요초", None)]))
             continue
         cases.append(OrderedDict([("사례ID", cid), ("명령유형", canon_type(t.get("명령유형") or r.get("명령유형"))),
                                   ("명령문", t.get("명령문")), *spec_by.get(cid, blank).items(),
                                   ("①의도", r.get("①의도")), ("②파라미터", r.get("②파라미터")),
                                   ("③지도제어", r.get("③지도제어")), ("판정", r.get("판정")), ("오류원인", r.get("오류원인")),
+                                  *zip(REASON_COLS, explain_logged(r, parse_by.get(cid))),
                                   ("되묻기", r.get("되묻기")), ("세부원인", r.get("세부원인") or ""),
                                   ("불일치내용", " | ".join(r.get("불일치내용") or [])), ("소요초", r.get("소요초"))]))
     n = len(cases)
@@ -1032,9 +1356,12 @@ def score(gis_rows, testset_rows, dec=DEC, parse_rows=None):
     cnt = Counter(c["오류원인"] for c in cases if c["판정"] != "정상 수행")
     by_cause = [OrderedDict([("오류 원인", k), ("건수", cnt.get(k, 0))]) for k in CAUSES]
     asked = sum(1 for c in cases if c["되묻기"])
+    errors = [OrderedDict([("사례ID", c["사례ID"]), ("명령 유형", c["명령유형"]), ("명령문", c["명령문"]),
+                           ("오류 원인", c["오류원인"]), *((k, c[k]) for k in REASON_COLS), ("불일치내용", c["불일치내용"])])
+              for c in cases if c["판정"] != "정상 수행"]
     return OrderedDict([("value", value), ("passed", None if value is None else value >= TARGET), ("n", n), ("ok", ok),
                         ("되묻기", asked), ("응답오류", cnt.get("응답 오류", 0)),
-                        ("총괄", total), ("유형별", by_type), ("오류원인별", by_cause), ("사례별", cases)])
+                        ("총괄", total), ("유형별", by_type), ("오류원인별", by_cause), ("오류사례", errors), ("사례별", cases)])
 
 
 # ---------------------------------------------------------------- 시험 데이터 점검

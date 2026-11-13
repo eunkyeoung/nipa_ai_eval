@@ -275,7 +275,8 @@ def progress_panel():
                 st.caption(f"질의 중: [{cur.get('case_id')}#{cur.get('회차')}] {cur.get('질의')}")
             st.caption("백그라운드에서 실행 중이에요. 새로고침하거나 브라우저를 닫아도 계속 진행돼요.")
         else:
-            icon = {"done": "✅ 완료", "stopped": "⏹ 중지됨", "error": "⚠️ 오류"}.get(state, "⚠️ 비정상 종료")
+            kind6 = spec_page.ai6_stop_kind(stt) if str(stt.get("mode", "")).endswith("AI6") else ""   # AI6: 시험 대상 장애·시험 환경으로 멈춤은 도구 오류와 나눔
+            icon = spec_page.AI6_STOP[kind6][0] if kind6 else {"done": "✅ 완료", "stopped": "⏹ 중지됨", "error": "⚠️ 오류"}.get(state, "⚠️ 비정상 종료")
             h1.markdown(f"**{icon}** · {str(stt.get('mode', '')).replace('규격서', '성과지표')} · {done}/{total}건 · {stt.get('message', '')}")
             can_resume = (state in ("error", "stopped") or stale) and stt.get("argv") and done < total
             if can_resume:
@@ -291,7 +292,9 @@ def progress_panel():
             if close:
                 st.session_state["dismissed"] = fin
                 st.rerun(scope="app")
-            if state in ("error",) or stale:
+            if kind6:
+                st.caption(spec_page.AI6_STOP[kind6][1])
+            elif state in ("error",) or stale:
                 try:
                     with open("run.log", encoding="utf-8", errors="replace") as f:
                         st.code("".join(f.readlines()[-15:]) or "(로그 없음)")
