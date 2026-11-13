@@ -747,7 +747,16 @@ python verdict_check.py --rescore check/20261022_183000     # 재질의 없이 �
 - **화면 캡처는 하지 않습니다.** 규격서 수정안에서 삭제를 제안했고(③은 응답의 지도 제어 명령 · 표출 도형으로 판정), 시험기관 수용 여부는 확인이 필요합니다.
 - 아래 '결과 파일 채점'과 12-1은 AI7(그리고 자동 실행 전 AI6) 기준 기록입니다.
 
-**AI7**: 3D 명령은 실행 후 화면 상태 확인과 프론트 화면 캡처가 필요해서, **자동 실행은 아직 연결하지 않았습니다.** 시스템 실행 결과를 결과 파일로 올리면 규격서 기준으로 채점합니다. 응답 구조(같은 채팅 API로 처리되는지, 지도·3D 상태가 응답에 담기는지)를 확인하면 실행기를 연결합니다.
+### 12-0b. AI7 자동 실행 (2026-11-13~, ①② 판정 · ③ 연동 전)
+
+- **실행**: 사이드바 시험 항목 AI7 → (실행할 ID, 비우면 전체) → 사전 점검 → **[AI 7 3D 시뮬레이션 시험 실행]**. 명령어로는 `python spec_runner_ai7.py --testset spec_data/testset_ai7.csv --answer spec_data/answer_ai7.csv [--cases AI7-0001,…]`. 다시 판정은 `--rescore spec/AI7/<시각>`(새 폴더, 예비), 운영자 동결은 `--freeze`(`spec_data/freeze_ai7.json`).
+- **보내는 곳**: 3D 명령도 공간오케(`AI7_BASE`, 기본 = AI6 와 같은 `http://192.168.200.115:17006`) `/api/chat` → `map_3d` 에이전트(3D 건물 생성·분석, 17247) · `map-3d-mcp`(경사도·토공량·지형·건물·일조·조망, 17257). 사례마다 새 thread_id(`qa-ai7-…`), 표지 `X-Request-Origin: qa-ai7`. 대기 상한 `AI7_DEADLINE` 기본 300초(규격서 '○분' 미정 — 임시).
+- **판정**(`ai7_eval.py`): ① 3D 명령 type(slope·terrain·ground·build·sunvolume·landscape·buildingVisible·weather·resetCamera)·지도 명령 → 의도 대응표 → 정답 의도와 집합 완전 일치(3D 의도가 있으면 위치 이동·필지 강조는 세지 않음, 3D 에이전트가 거절·되물어 명령이 없으면 대응표 밖 = 오류). ② 정답파라미터 키(위치·PNU·층수·높이·용도·건축면적·건폐율·기준일·시간대·계획고·지형유형·기상·줌레벨·조망점높이·조망방향)마다 3D 호출 인자·명령 parameters 와 대조. ③ **판정 안 함(`JUDGE_EXEC=False`)** — 그동안의 실행은 동결 여부와 관계없이 모두 '예비'.
+- **결과 폴더** `spec/AI7/<시각>/`: `raw/` · `command_parse_log_ai7.jsonl` · `sim_execution_log_ai7.jsonl` · `data/` · `meta.json` · `progress.xlsx` · `result.xlsx` · `summary.json`.
+- **③을 위해 확인한 것**(11-13): 3D 실행은 AIPS 화면 `http://192.168.200.115:17010`(로그인 없음)의 3D 엔진(브이월드 WS3D/Cesium)이 함. 화면 채팅도 같은 공간오케를 거치고(`orc.response` parcel → envelopes[].payload.actions), 프론트에 `window.vd3dReady`, 전역 `ws3d.viewer`, `vd3d.fn.waitForSceneReady`, `vd3d.tools.call`, `vd3d.<분석>Func.getResult()`, 턴별 3D 캡처(`captureTurnImage`)가 있음. 다만 에이전트 명령 `buildingVisible`·`weather`·`resetCamera`·`sunvolume`·`reset`을 받는 프론트 코드를 찾지 못해 개발팀 확인 중. → 크롬 자동화로 17010 을 열어 명령 입력·상태 읽기·지도 영역 캡처를 붙일 예정(이미지에 브라우저 추가 = 재빌드, 사전 협의).
+- **시험 코드**: `python -m unittest tests.test_ai7` — 11-13 실측 응답 20건(`tests/fixtures/ai7/`)으로 ①② 판정, 실측 원문을 돌려주는 가짜 공간오케로 실행기 끝까지.
+
+시스템 실행 결과를 결과 파일(`result_ai7`)로 올려 채점하는 예전 방식(아래)도 남아 있습니다.
 
 ### 데이터 (spec_data/)
 
