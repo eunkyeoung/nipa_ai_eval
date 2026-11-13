@@ -61,6 +61,17 @@ NOT_PROVIDED = [   # 시험의뢰서가 요구하지만 AIPS가 질의 응답(SS
     "위 값은 모두 **시스템 응답 값이 아니라 개발·운영 사이트 조회값**이므로, 시험의뢰서의 '동결 버전 확인'을 확실히 하려면 "
     "AIPS 응답(orc.start)에 모델명·룰셋 버전·법령 DB 기준일을 넣어 달라고 개발팀에 요청 필요",
 ]
+NOT_PROVIDED_DA2 = [   # 규격서가 요구하지만 시스템(Fuseki 그래프 DB)이 그대로 내주지 않는 값 → QA가 대신 쓰는 방법 (11-13)
+    "**온톨로지 모델 파일(○○○.ttl·_instance.ttl·_shapes.ttl)** — 시스템은 Fuseki 그래프 DB(192.168.200.116:3030, nipa)로만 운영하고 "
+    "파일을 따로 내지 않음 → QA가 `tools/export_ontology.py`로 그래프를 스키마·인스턴스·SHACL 3개 파일로 내보내 SHA-256을 고정 "
+    "(동결: `spec_data/da2/export_info.txt`). Fuseki 내용이 바뀌면 다시 내보내고 해시를 새로 고정해야 함",
+    "**모델명·버전(LandCheck 온톨로지 모델 v1.0)** — 온톨로지 안의 이름은 '통합인허가 사전진단 온톨로지 v4', owl:versionInfo '4.2.0-grounding' "
+    "→ 파일 이름만 규격서 표기(landcheck_*_v1.0.ttl)로 하고, 이름·버전 표기 차이는 판정에 쓰지 않음",
+    "**OWL Reasoner 버전(HermiT 또는 Pellet ○○)** — 시스템에 추론기가 없음 → QA 이미지의 owlready2 내장 **Pellet 2.3.1**(Java 25)로 실행",
+    "**OOPS! 버전** — OOPS! REST 응답에 버전 값이 없음 → 호출 주소(https://oops.linkeddata.es/rest)와 응답 원문(`da2-4/oops_response.xml`)을 "
+    "결과 폴더에 보관. 외부 서비스라 **스키마 파일만** 전송(인스턴스 전송 없음)",
+    "**추론 의존 CQ 수(○○건)** — 동결한 CQ 50건 모두 추론 미의존(inference_required = false) → 추론기 없이 SPARQL만 실행",
+]
 CRITERIA = {
     "AI1": "AI 판단 결과(판단 유형)가 정답 판단 유형과 정확히 일치하는지 평가. 개별 테스트 사례에 대해 판단 유형이 정답과 "
            "일치한 경우 일치 건수로 계수(판단 유형 2종: 허가 가능 / 허가 불가능, 조작적 정의서에 따라 조건부 가능 = 허가 가능).\n\n"
@@ -629,6 +640,8 @@ def render_da2(item, sp, area):
         show_table(pd.DataFrame(env, columns=["항목", "값"]), height=rows_height(len(env), cap=800))
         if changed:
             st.warning("실행 이후 바뀐 검증 자산이 있어요: " + ", ".join(changed) + " → 해시가 실행 당시와 달라요.")
+        with st.expander("시스템 미제공 항목 처리"):                    # AI1~AI5와 같은 자리 (11-13 사용자)
+            st.markdown("\n".join(f"- {x}" for x in NOT_PROVIDED_DA2))
 
     # ---- 결과 표 + 성과지표 시험 기준 (AI1~AI5와 같은 순서: 핵심 지표 → 시험 환경 → 결과 → 상세, 11-13 사용자)
     with area("box_spec_tables"):
