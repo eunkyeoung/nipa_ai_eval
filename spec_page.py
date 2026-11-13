@@ -65,8 +65,6 @@ NOT_PROVIDED_DA2 = [   # 규격서가 요구하지만 시스템(Fuseki 그래프
     "**온톨로지 모델 파일(○○○.ttl·_instance.ttl·_shapes.ttl)** — 시스템은 Fuseki 그래프 DB(192.168.200.116:3030, nipa)로만 운영하고 "
     "파일을 따로 내지 않음 → QA가 `tools/export_ontology.py`로 그래프를 스키마·인스턴스·SHACL 3개 파일로 내보내 SHA-256을 고정 "
     "(동결: `spec_data/da2/export_info.txt`). Fuseki 내용이 바뀌면 다시 내보내고 해시를 새로 고정해야 함",
-    "**모델명·버전(LandCheck 온톨로지 모델 v1.0)** — 온톨로지 안의 이름은 '통합인허가 사전진단 온톨로지 v4', owl:versionInfo '4.2.0-grounding' "
-    "→ 파일 이름만 규격서 표기(landcheck_*_v1.0.ttl)로 하고, 이름·버전 표기 차이는 판정에 쓰지 않음",
     "**OWL Reasoner 버전(HermiT 또는 Pellet ○○)** — 시스템에 추론기가 없음 → QA 이미지의 owlready2 내장 **Pellet 2.3.1**(Java 25)로 실행",
     "**OOPS! 버전** — OOPS! REST 응답에 버전 값이 없음 → 호출 주소(https://oops.linkeddata.es/rest)와 응답 원문(`da2-4/oops_response.xml`)을 "
     "결과 폴더에 보관. 외부 서비스라 **스키마 파일만** 전송(인스턴스 전송 없음)",
@@ -546,6 +544,18 @@ def _da2_xlsx(run_dir, sp, sm, rows):
     return buf.getvalue()
 
 
+def _onto_version(run_dir):
+    """실행 당시 스키마 사본(run_dir/data)의 owl:Ontology rdfs:label · owl:versionInfo (11-13 사용자: 실제 버전으로 표시)"""
+    p = next((x for x in (os.path.join(run_dir, "data", "landcheck_schema_v1.0.ttl"),
+                          os.path.join("spec_data", "da2", "landcheck_schema_v1.0.ttl")) if os.path.exists(x)), None)
+    if not p:
+        return "-"
+    head = open(p, encoding="utf-8").read(4000)
+    lab = re.search(r'rdf-schema#label>\s*"([^"]+)"', head)
+    ver = re.search(r'owl#versionInfo>\s*"([^"]+)"', head)
+    return f"{lab.group(1) if lab else '-'} (owl:versionInfo {ver.group(1) if ver else '-'})"
+
+
 def _da2_criteria(item, sp):
     """AI1~AI5와 같은 '성과지표 시험 기준' 펼침 상자 (11-13 사용자: 작은 캡션 대신)"""
     with st.expander("성과지표 시험 기준", expanded=True):
@@ -617,7 +627,8 @@ def render_da2(item, sp, area):
         m = re.search(r"내보내기 (\S+ \S+)\s+그래프 (\d+)", open(exp, encoding="utf-8").readline()) if os.path.exists(exp) else None
         frozen = f"Fuseki nipa {m.group(1)} 내보냄, 그래프 {m.group(2)}개" if m else "-"
         env = [("시험 일시", meta.get("started", "-") + (f" (이어서 {meta['resumed']})" if meta.get("resumed") else "")),
-               ("시험 대상", "LandCheck 온톨로지 모델 v1.0 (동결본: " + frozen + ")"),
+               ("온톨로지 모델 버전", _onto_version(run_dir)),
+               ("시험 대상 (동결본)", frozen + " — 규격서 표기 'LandCheck 온톨로지 모델 v1.0'"),
                ("실행 범위", ("전체 (DA 2-1 ~ 2-4)" if meta.get("scope") == "full"
                           else "부분 — 구성지표 " + ", ".join(f"2-{p}" for p in meta.get("parts", []))
                           + (f" · CQ {', '.join(meta['ids'])}" if meta.get("ids") else ""))),
