@@ -31,4 +31,6 @@ systemctl --user restart nipa-qa
 sleep 10
 code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:16850/ || true)
 echo "화면 응답: $code (200 이면 정상)"
+# 배포 기록 (시각 \t 이전 \t 이후 \t 화면 응답) — 담당자가 tools/check_merge.py 로 다른 항목과 섞였는지 확인할 때 씀
+printf "%s\t%s\t%s\t%s\n" "$(date '+%F %T')" "$before" "$after" "$code" >> deploy/deploy_history.log
 echo "되돌리기: cd /opt/bi/nipa_ai_eval && git reset --hard $before && systemctl --user restart nipa-qa"
