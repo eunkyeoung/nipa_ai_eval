@@ -5,6 +5,7 @@ import glob
 import io
 import json
 import os
+import re
 import sys
 import time
 
@@ -534,6 +535,13 @@ def _da2_xlsx(run_dir, sp, sm, rows):
     return buf.getvalue()
 
 
+def _da2_criteria(item, sp):
+    """AI1~AI5와 같은 '성과지표 시험 기준' 펼침 상자 (11-13 사용자: 작은 캡션 대신)"""
+    with st.expander("성과지표 시험 기준", expanded=True):
+        st.markdown(f"- 지표: {sp['metric']} (목표 {target_txt(item)}, 구성지표별 목표 2-1 ~ 2-4 각 96 % 이상)\n"
+                    f"- 산정식: {sp['formula']}\n- 시험 데이터: {sp['data']}\n\n{CRITERIA[item]}")
+
+
 def render_da2(item, sp, area):
     """[DA 2] 온톨로지(ODP) 설계 완성도 — 구성지표 2-1 ~ 2-4 결과 (tools/da2_run.py 산출물)"""
     rs = runs(item)
@@ -543,7 +551,7 @@ def render_da2(item, sp, area):
             show_table(pd.DataFrame([{"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %",
                                       "목표": (f"{sp['part_target'][k]:.0f} % 이상" if sp["part_target"].get(k) else "미정(○○)"),
                                       "판정 방식": how, "산출식": f, "결과": "미실행"} for k, n, w, how, f in sp["parts"]]))
-            st.markdown(f"- 산정식: {sp['formula']}\n- 목표: 온톨로지(ODP) 설계 완성도 {target_txt(item)}\n- 시험 데이터: {sp['data']}")
+            _da2_criteria(item, sp)
             st.info("왼쪽 '📂 시험 데이터 (검증 자산)'에서 준비 상태를 확인하고 실행하세요.")
         return
     pick = st.session_state.pop("spec_run_dir", None)
@@ -554,7 +562,13 @@ def render_da2(item, sp, area):
             st.session_state[sk] = hit
     if st.session_state.get(sk) not in rs:
         st.session_state[sk] = rs[0]
-    run_dir = st.selectbox("결과 폴더", rs, format_func=lambda d: d.replace("\\", "/"), key=sk)
+    c1, c2 = st.columns([3, 1], vertical_alignment="bottom")          # AI1~AI5와 같은 배치 (11-13 사용자)
+    run_dir = c1.selectbox("결과 폴더", rs, format_func=lambda d: d.replace("\\", "/"), key=sk)
+    resave = c2.button("💾 결과 파일 다시 저장", width="stretch", key="da2_resave",
+                       help="다시 실행하지 않고, 저장된 검증 로그(csv)로 다시 집계해 summary.json / result_da2.xlsx 저장")
+    if resave and os.path.exists(os.path.join(run_dir, "meta.json")):
+        from tools import da2_run
+        da2_run.rescore(run_dir)
     sm = read_json(os.path.join(run_dir, "summary.json"))
     meta = read_json(os.path.join(run_dir, "meta.json"))
     if not sm:
@@ -581,10 +595,52 @@ def render_da2(item, sp, area):
                                     else ("✅ 달성" if p["value"] >= sp["part_target"][k] else "❌ 미달성")),
                          "일치(적합)/전체": f"{ok} / {tot}" if tot else "-", "오류": str(p.get("error", "-")) if p else "-",
                          "산출식": f})
+        st.caption(f"산정식: {sp['formula']}  ·  결과는 {trunc_txt(item)}")
+
+    # ---- 시험 환경 (재현성) — AI1~AI5와 같은 표 (11-13 사용자)
+    with area("box_spec_env"):
+        st.markdown("#### 시험 환경 · 데이터 무결성")
+        ast = meta.get("assets") or {}
+        tl = meta.get("tools") or {}
+        exp = os.path.join("spec_data", "da2", "export_info.txt")
+        m = re.search(r"내보내기 (\S+ \S+)\s+그래프 (\d+)", open(exp, encoding="utf-8").readline()) if os.path.exists(exp) else None
+        frozen = f"Fuseki nipa {m.group(1)} 내보냄, 그래프 {m.group(2)}개" if m else "-"
+        env = [("시험 일시", meta.get("started", "-") + (f" (이어서 {meta['resumed']})" if meta.get("resumed") else "")),
+               ("시험 대상", "LandCheck 온톨로지 모델 v1.0 (동결본: " + frozen + ")"),
+               ("실행 범위", ("전체 (DA 2-1 ~ 2-4)" if meta.get("scope") == "full"
+                          else "부분 — 구성지표 " + ", ".join(f"2-{p}" for p in meta.get("parts", []))
+                          + (f" · CQ {', '.join(meta['ids'])}" if meta.get("ids") else ""))),
+               ("결과 폴더", run_dir.replace("\\", "/"))]
+        names = {"cq": "CQ 목록·SPARQL 질의·정답셋", "schema_check": "스키마 평가항목·검증 질의", "mapping": "매핑 검증 표본·정답",
+                 "schema": "온톨로지 스키마", "instance": "인스턴스 데이터", "shapes": "SHACL 제약규칙"}
+        changed = []
+        for k, label in names.items():
+            a = ast.get(k)
+            if not a:
+                continue
+            env.append((f"{label} SHA-256", f"{a.get('sha256') or '-'}  ({a.get('path') or '-'})"))
+            if k != "instance" and a.get("path") and a.get("sha256"):          # 인스턴스(155MB)는 매번 해시하지 않음
+                h = S.sha256(a["path"])
+                if h and h != a["sha256"]:
+                    changed.append(a["path"])
+        if tl:
+            env.append(("검증 도구", f"OWL Reasoner {tl.get('reasoner', '-')} · OOPS! {tl.get('oops', '-')} · "
+                                    f"pyoxigraph {tl.get('pyoxigraph', '-')} · pySHACL {tl.get('pyshacl', '-')} · rdflib {tl.get('rdflib', '-')}"))
+        show_table(pd.DataFrame(env, columns=["항목", "값"]), height=rows_height(len(env), cap=800))
+        if changed:
+            st.warning("실행 이후 바뀐 검증 자산이 있어요: " + ", ".join(changed) + " → 해시가 실행 당시와 달라요.")
+
+    # ---- 결과 표 + 성과지표 시험 기준 (AI1~AI5와 같은 순서: 핵심 지표 → 시험 환경 → 결과 → 상세, 11-13 사용자)
+    with area("box_spec_tables"):
+        st.markdown("#### 결과")
         show_table(pd.DataFrame(rows))
-        st.caption(f"산정식: {sp['formula']} · 종합 96 % 이상, 구성지표별 목표는 2-1 ~ 2-4 각 96 % 이상 · 결과는 소수점 셋째자리 이하 버림")
+        _da2_criteria(item, sp)
 
     xbytes, zbytes = _da2_xlsx(run_dir, sp, sm, rows), _da2_logzip(run_dir)
+    if resave and sm:
+        with open(os.path.join(run_dir, "result_da2.xlsx"), "wb") as f:
+            f.write(xbytes)
+        st.toast("저장했어요")
 
     def dl(i):
         """상세 표 바로 아래: 결과 엑셀(전체) · 로그 묶음(전체) · 이 구성지표 검증 로그(csv). 보조 자료(펼침)는 그 아래"""

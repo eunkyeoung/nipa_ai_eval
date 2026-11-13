@@ -39,6 +39,42 @@ def count(path, col):
     return len(rows), ok, err
 
 
+def rescore(run_dir):
+    """화면 '결과 파일 다시 저장': 다시 실행하지 않고 저장된 검증 로그(csv·summary_da2_4.json)로 summary.json을 다시 계산"""
+    meta = json.load(open(os.path.join(run_dir, "meta.json"), encoding="utf-8"))
+    old = {}
+    if os.path.exists(os.path.join(run_dir, "summary.json")):
+        old = json.load(open(os.path.join(run_dir, "summary.json"), encoding="utf-8")).get("parts", {})
+    col = {1: "match", 2: "conforms", 3: "exact_match"}
+    res = {}
+    for p in (1, 2, 3, 4):
+        out = os.path.join(run_dir, f"da2-{p}")
+        if p == 4:
+            f = os.path.join(out, "summary_da2_4.json")
+            if not os.path.exists(f):
+                continue
+            sm = json.load(open(f, encoding="utf-8"))
+            res[p] = dict(value=trunc2(sm["value"]) if sm.get("value") is not None else None, n=None, detail=sm,
+                          error=0 if sm.get("value") is not None else 1)
+        else:
+            f = os.path.join(out, "validation_result_da2.csv")
+            if not os.path.exists(f):
+                continue
+            n, ok, err = count(f, col[p])
+            res[p] = dict(value=trunc2(ok / n * 100) if n else None, n=n, ok=ok, error=err)
+        res[p]["elapsed_s"] = old.get(PARTS[p][0], {}).get("elapsed_s")
+    full = meta.get("scope") == "full" and all(res.get(p, {}).get("value") is not None for p in (1, 2, 3, 4))
+    total = trunc2(sum(res[p]["value"] * PARTS[p][2] for p in (1, 2, 3, 4))) if full else None
+    summ = dict(item="DA2", value=total, target=TARGET, cmp=">=", passed=(total is not None and total >= TARGET),
+                n=res.get(1, {}).get("n"), scope=meta.get("scope"), scored=time.time(),
+                parts={PARTS[p][0]: dict(name=PARTS[p][1], weight=PARTS[p][2], target=PART_TARGET[p],
+                                         passed=(None if PART_TARGET[p] is None or res[p].get("value") is None
+                                                 else res[p]["value"] >= PART_TARGET[p]), **res[p]) for p in res})
+    with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as f:
+        json.dump(summ, f, ensure_ascii=False, indent=1, default=str)
+    return summ
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--parts", default="1,2,3,4")
