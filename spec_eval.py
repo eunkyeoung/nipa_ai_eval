@@ -27,7 +27,7 @@ SPEC = {
                 data="표준 질의문 50건 (허가 가능 25 / 허가 불가능 25)"),
     "AI2": dict(no="2-2", name="[AI 2] 유의어·유사 표현 질의에 대한 동일 사전 진단 결과 재현 기능", metric="사전 진단 판단 F1 스코어",
                 target=95.0, cmp=">=", log="diagnose_log_ai2.jsonl",
-                formula="[AI 2] 종합 F1 Score(%) = 판단 유형별 F1 Score의 가중평균  (가중치 = 판단 유형별 정답 질의 수, F1 = 2 × Precision × Recall / (Precision + Recall))",
+                formula="[AI 2] 종합 F1 Score(조화평균, %) = 판단 유형별 F1 Score(조화평균)의 가중평균  (가중치 = 판단 유형별 정답 질의 수, F1(조화평균) = 2 × Precision(정밀도) × Recall(재현율) / (Precision(정밀도) + Recall(재현율)))",
                 data="시나리오 10건 × 질의 5건(원문 1 + 변형 4) = 50 질의"),
     "AI3": dict(no="2-3", name="[AI 3] 사전 진단 추론·데이터 조회 과정의 동일 프로세스 수행 및 로그 기록 기능", metric="사전 진단 판단 일관성",
                 target=98.0, cmp=">=", log="diagnose_log_ai3.jsonl",
@@ -947,7 +947,7 @@ def score_ai2(log, answer, testset=None):
         sup = tp + fn
         wsum += (f1 or 0) * sup
         rows.append({"판단유형": t, "정답 질의 수": sup, "TP (정탐)": tp, "FP (오탐)": fp, "FN (미탐)": fn,   # 11-13 사용자: 우리말 병기
-                     "Precision(%)": trunc2(p), "Recall(%)": trunc2(r), "F1(%)": trunc2(f1)})
+                     "Precision (정밀도)(%)": trunc2(p), "Recall (재현율)(%)": trunc2(r), "F1 (조화평균)(%)": trunc2(f1)})
     total = int(cm.values.sum())
     wf1 = trunc2(wsum / total) if total else None
     # 보조: 표현 변형 재현 일치율 — 원문 질의 결과와 같은 판단을 낸 변형 질의 비율
@@ -967,7 +967,7 @@ def score_ai2(log, answer, testset=None):
                      "원문과 동일": var_ok, "재현 일치율(%)": pct(var_ok, var_n), "정답 일치 질의": int(log["일치"].sum())})
     log["TP·FP·FN 구분"] = [ai2_tpfn(g, p) for g, p in zip(log["정답_판단유형"], log["예측_판단유형"])]   # 질의마다 어느 칸에 세었는지
     return dict(value=wf1, n=n, confusion=cm,
-                tables={"판단 유형 2종별 Precision·Recall·F1 스코어": pd.DataFrame(rows),
+                tables={"판단 유형 2종별 Precision(정밀도)·Recall(재현율)·F1(조화평균) 스코어": pd.DataFrame(rows),
                         "보조 지표: 표현 변형 재현 일치율 (시나리오별·전체)": pd.DataFrame(rep_rows)},
                 aux={"표현 변형 재현 일치율(%)": pct(var_ok, var_n)},
                 cases=log[["질의ID", "시나리오ID", "구분", "질의문", "정답_판단유형", "예측_판단유형", "일치", "TP·FP·FN 구분", "불일치사유"]])
