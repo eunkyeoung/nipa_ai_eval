@@ -753,7 +753,7 @@ python verdict_check.py --rescore check/20261022_183000     # 재질의 없이 �
 - **보내는 곳**: 3D 명령도 공간오케(`AI7_BASE`, 기본 = AI6 와 같은 `http://192.168.200.115:17006`) `/api/chat` → `map_3d` 에이전트(3D 건물 생성·분석, 17247) · `map-3d-mcp`(경사도·토공량·지형·건물·일조·조망, 17257). 사례마다 새 thread_id(`qa-ai7-…`), 표지 `X-Request-Origin: qa-ai7`. 대기 상한 `AI7_DEADLINE` 기본 300초(규격서 '○분' 미정 — 임시).
 - **판정**(`ai7_eval.py`): ① 3D 명령 type(slope·terrain·ground·build·sunvolume·landscape·buildingVisible·weather·resetCamera)·지도 명령 → 의도 대응표 → 정답 의도와 집합 완전 일치(3D 의도가 있으면 위치 이동·필지 강조는 세지 않음, 3D 에이전트가 거절·되물어 명령이 없으면 대응표 밖 = 오류). ② 정답파라미터 키(위치·PNU·층수·높이·용도·건축면적·건폐율·기준일·시간대·계획고·지형유형·기상·줌레벨·조망점높이·조망방향)마다 3D 호출 인자·명령 parameters 와 대조. ③ **판정 안 함(`JUDGE_EXEC=False`, 시험 범위 밖)** — AIPS 사전진단 성능테스트는 3D 분석 파라미터가 응답에 제대로 들어오는지만 봄(사용자 결정 11-13). ①②가 맞으면 정상 수행.
 - **결과 폴더** `spec/AI7/<시각>/`: `raw/` · `command_parse_log_ai7.jsonl` · `sim_execution_log_ai7.jsonl` · `data/` · `meta.json` · `progress.xlsx` · `result.xlsx` · `summary.json`.
-- **3D 화면(③)을 붙이지 않는 이유**(11-13): 시험 목적이 파라미터 확인이라 화면 실행·캡처는 범위 밖. 참고로 3D 명령을 실제로 실행하는 프론트 코드(public-user-web develop `agentStore`)는 스테이징 `115:27000`에 있고, `115:17010` 배포본에는 아직 없음(변경내역 100절).
+- **3D 화면(③)을 붙이지 않는 이유**(11-13): 시험 목적이 파라미터 확인이라 화면 실행·캡처는 범위 밖. 참고로 3D 명령을 실제로 실행하는 프론트 코드(public-user-web develop `agentStore`)는 스테이징 `115:27000`에 있고, `115:17010` 배포본에는 아직 없음(변경내역 106절).
 - **시험 코드**: `python -m unittest tests.test_ai7` — 11-13 실측 응답 20건(`tests/fixtures/ai7/`)으로 ①② 판정, 실측 원문을 돌려주는 가짜 공간오케로 실행기 끝까지.
 
 시스템 실행 결과를 결과 파일(`result_ai7`)로 올려 채점하는 예전 방식(아래)도 남아 있습니다.

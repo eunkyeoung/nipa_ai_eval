@@ -90,6 +90,8 @@ st.markdown("""
 /* 스타일 코드가 만드는 빈 줄 숨김 */
 [data-testid="stElementContainer"]:has(style) { display: none; }
 [data-testid="stElementContainer"]:has(iframe[height="0"]) { display: none; }
+/* 본문 빈 곳을 클릭하면 본문 영역(stMain) 포커스 표시로 회색 테두리(거꾸로 된 ㄱ자·양옆 세로선)가 생김 → 그 표시만 끔 (11-13 사용자) */
+[data-testid="stMain"]::before { box-shadow: none !important; }
 /* 본문 제목 상단 고정 — 제목을 감싼 영역 자체를 sticky로 */
 [data-testid="stLayoutWrapper"]:has(> div.st-key-page_header),
 div.st-key-page_header:not([data-testid="stLayoutWrapper"] > *) {
@@ -223,7 +225,7 @@ def area(key):
 SPEC_VIEW = VIEW == "성과지표"
 CHECK_VIEW = VIEW == "판단 여부 점검"
 with st.container(key="page_header"):
-    st.markdown('<div class="aips-title">' + {"성과지표": "성과지표 (AI 1 ~ AI 7)",
+    st.markdown('<div class="aips-title">' + {"성과지표": "AIPS 사전진단 성과지표별 성능테스트",
                                               "판단 여부 점검": "판단 여부 점검"}.get(VIEW, "AIPS 사전진단 성능테스트")
                 + '</div>', unsafe_allow_html=True)
     if SPEC_VIEW:                                   # 왼쪽에서 고른 시험항목의 전체 이름 (예: 2-4 [AI 4] 예외·단서 규정 …)

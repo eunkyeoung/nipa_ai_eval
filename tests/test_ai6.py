@@ -1432,7 +1432,10 @@ class GisVersion(unittest.TestCase):
                {"항목": "공간분석 API (GIS API Server)", "결과": "정상", "내용": "공간 분석 API 버전 v0.1"}]
         got = {r["항목"]: r["결과"] for r in C.version_rows(pre)}
         self.assertEqual(got, {"AI 모델": "일치", "추론 서버 (vLLM)": "일치", "지도제어·공간분석 Sub 오케스트레이터": "선언값",
-                               "지도제어·공간분석 에이전트": "선언값", "공간분석 API": "일치", "지도 데이터 기준일": "선언값"})
+                               "지도제어·공간분석 에이전트": "선언값", "공간분석 API": "일치", "지도 데이터 기준일": "선언값",
+                               "AI 엔진 결정성 옵션": "선언값"})
+        temp = {r["항목"]: r for r in C.version_rows(pre)}["AI 엔진 결정성 옵션"]   # 규격 시험환경 temperature = 0 — 시스템이 알려 주지 않아 선언값
+        self.assertEqual((temp["시험 조건"], temp["확인값"]), ("temperature = 0", "시스템 미제공"))
         self.assertEqual([r["항목"] for r in C.version_rows([])], [k for k, _ in C.SPEC_VERSIONS])
         rows = {r["항목"]: r for r in C.version_rows([], {"LLM 모델": "other-model"}, {"vLLM": "0.25.0", "모델": []})}
         self.assertEqual((rows["AI 모델"]["결과"], rows["추론 서버 (vLLM)"]["결과"], rows["공간분석 API"]["결과"]),
