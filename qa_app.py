@@ -222,7 +222,7 @@ def area(key):
 SPEC_VIEW = VIEW == "성과지표"
 CHECK_VIEW = VIEW == "판단 여부 점검"
 with st.container(key="page_header"):
-    st.markdown('<div class="aips-title">' + {"성과지표": "성과지표 (AI 1 ~ AI 7)",
+    st.markdown('<div class="aips-title">' + {"성과지표": "AIPS 사전진단 성과지표별 성능테스트",
                                               "판단 여부 점검": "판단 여부 점검"}.get(VIEW, "AIPS 사전진단 성능테스트")
                 + '</div>', unsafe_allow_html=True)
     if SPEC_VIEW:                                   # 왼쪽에서 고른 시험항목의 전체 이름 (예: 2-4 [AI 4] 예외·단서 규정 …)
