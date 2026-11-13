@@ -172,7 +172,8 @@ def save_tables(path, tables):
 def score_run(run_dir, testset_path, quiet=False):
     """실행 폴더 채점 → summary.json · result.xlsx. 시험셋에 있는데 결과가 없는 사례는 '미실행'(응답 오류)"""
     gis = read_jsonl(os.path.join(run_dir, E.GIS_LOG))
-    ts = E.read_rows(testset_path)
+    ts = (E.read_rows(testset_path) if testset_path and os.path.exists(testset_path) else    # 시험셋을 못 찾으면 실행한 사례만으로(화면 채점과 같게)
+          [{"사례ID": r.get("사례ID"), "명령유형": r.get("명령유형"), "명령문": r.get("명령문")} for r in gis])
     meta = {}
     mp = os.path.join(run_dir, "meta.json")
     if os.path.exists(mp):
@@ -182,8 +183,10 @@ def score_run(run_dir, testset_path, quiet=False):
     if planned:                                            # 일부 ID만 실행한 경우 그 ID만 분모
         ts = [t for t in ts if str(t.get("사례ID")) in planned]
     s = E.score(gis, ts, parse_rows=read_jsonl(os.path.join(run_dir, E.PARSE_LOG)))   # 사례별 표에 규격 출력 4칸
+    none = [{"사례ID": "-", "명령 유형": "-", "명령문": "-", "오류 원인": "-", "오류 주체": "-",   # 오류가 없어도 시트는 남김
+             "사유": f"오류 없음 — {s['n']}건 모두 정상 수행" if s["n"] else "실행한 사례 없음", "불일치내용": "-"}]
     tables = {"총괄 결과": s["총괄"], "명령 유형 3종별 세부 결과": s["유형별"], "오류 원인 유형별 건수": s["오류원인별"],
-              "사례별 판정": s["사례별"]}
+              "오류 사례": s["오류사례"] or none, "사례별 판정": s["사례별"]}
     files = save_tables(os.path.join(run_dir, "result.xlsx"), tables)
     summ = dict(item="AI6", value=s["value"], target=E.TARGET, cmp=">=", passed=s["passed"], n=s["n"], ok=s["ok"],
                 aux={"응답 오류": s["응답오류"], "되묻기": s["되묻기"],
@@ -213,6 +216,7 @@ def progress_row(gr, pr=None):
     row.update(E.spec_cells((pr or {}).get("규격출력")))
     row.update({"①": ox(gr.get("①의도")), "②": ox(gr.get("②파라미터")), "③": ox(gr.get("③지도제어")),
                 "판정": gr.get("판정"), "오류원인": gr.get("오류원인") or "",
+                "사유": E.explain_logged(gr, pr)[1],                       # 오류면 실제로 일어난 일(평문), 정상 수행이면 빈칸
                 "불일치": " | ".join(gr.get("불일치내용") or []), "소요초": gr.get("소요초")})
     return row
 
@@ -378,7 +382,7 @@ def main():
             res = dict(url=f"{base}/api/chat", request={"message": r["명령문"], "thread_id": at.get("thread_id")},
                        thread_id=at.get("thread_id"), http_status=None, events=[], ended_by="exception", t_first_event=None,
                        elapsed=None, deadline=deadline, 요청시각=at.get("at"),
-                       error="QA 실행이 응답을 기록하기 전에 멈춤 — 명령 1회 입력 원칙에 따라 다시 보내지 않음")
+                       error=E.LOST_NOTE)
             try:                                           # 응답 원문은 저장했는데 기록 전에 멈춘 경우 → 저장된 원문으로 판정
                 with open(os.path.join(raw_dir, f"{r['사례ID']}.json"), encoding="utf-8") as f:
                     saved = dict(json.load(f)["response"])
@@ -470,7 +474,7 @@ def main():
     bad = [r for r in fresh or [] if r.get("결과") != "정상"]   # 이번 실행에서 한 점검만
     if bad:                               # 사전 점검 실패 → 실행하지 않음(규격 시험환경 미충족)
         alive.set()
-        status.update(state="error", message="사전 점검 실패: " + ", ".join(f"{r['항목']}({r['내용'][:40]})" for r in bad),
+        status.update(state="error", stop_kind="precheck", message="사전 점검 실패: " + ", ".join(f"{r['항목']}({r['내용'][:40]})" for r in bad),
                       finished=time.time())
         if new_dir:                                        # 시작도 못 한 폴더는 남기지 않음(최신 결과 '미실행'으로 잡히지 않게) · '↻ 이어서'도 안 냄
             shutil.rmtree(run_dir, ignore_errors=True)
@@ -520,7 +524,7 @@ def main():
             fails = fails + 1 if conn_fail else 0
             errs = errs + 1 if gr.get("오류원인") == "응답 오류" else 0
             if errs >= MAX_RESP_ERRORS and fails < MAX_CONN_FAILS:   # 시스템 장애 — 남은 사례도 같은 오류가 날 것이라 멈춤(이어서 실행 없음)
-                status.update(state="error", message=f"응답 오류 {errs}건 연속 ({status['done']}/{total}건) — 시스템 장애로 보고 멈췄어요. "
+                status.update(state="error", stop_kind="system", message=f"응답 오류 {errs}건 연속 ({status['done']}/{total}건) — 시스템 장애로 보고 멈췄어요. "
                                                      f"원인을 고친 뒤 전체를 다시 실행하세요. 마지막 오류: {str(gr.get('응답오류') or '')[:120]}")
                 status.pop("argv", None)
                 meta.pop("완료전", None)
@@ -529,7 +533,7 @@ def main():
                 save_meta(mp, meta)
                 break
             if fails >= MAX_CONN_FAILS:
-                status.update(state="error", message=f"연결 실패 {fails}회 연속 ({status['done']}/{total}건) — 시험 환경 문제로 보고 멈췄어요. "
+                status.update(state="error", stop_kind="environment", message=f"연결 실패 {fails}회 연속 ({status['done']}/{total}건) — 시험 환경 문제로 보고 멈췄어요. "
                                                      "원인을 고친 뒤 전체를 다시 실행하세요(규격: 환경이 바뀌면 전체 재수행).")
                 status.pop("argv", None)                   # 화면에 '↻ 이어서'를 내지 않음 — 이 폴더를 이어 돌려도 공식이 아님
                 meta.pop("완료전", None)
