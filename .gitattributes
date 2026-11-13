@@ -14,3 +14,6 @@ spec_data/testset_ai6.csv -text
 spec_data/answer_ai6.csv -text
 spec_data/intent_map_ai6.csv -text
 spec_data/freeze_ai6.json -text
+
+# [AI 3] 시험셋 — PC·서버 해시가 같도록 줄바꿈 변환 금지 (11-13 교체본, LF)
+spec_data/testset_ai3.csv -text
