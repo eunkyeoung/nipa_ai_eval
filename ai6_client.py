@@ -49,7 +49,8 @@ GIS_API_VERSION = os.environ.get("AI6_GIS_API_VERSION", "v0.1")   # 규격서 2-
 SPEC_VERSIONS = [("AI 모델", "GPT-OSS 120B (gpt-oss-120b)"), ("추론 서버 (vLLM)", "0.24.0"),
                  ("지도제어·공간분석 Sub 오케스트레이터", "v1.0"), ("지도제어·공간분석 에이전트", "v1.0"),
                  ("공간분석 API", "v0.1"),
-                 ("지도 데이터 기준일", "연속지적도 2026-10-14 · 토지이용계획 2026-05-06·05-07 · LX맵 2026-08-31·09-01")]
+                 ("지도 데이터 기준일", "연속지적도 2026-10-14 · 토지이용계획 2026-05-06·05-07 · LX맵 2026-08-31·09-01"),
+                 ("AI 엔진 결정성 옵션", "temperature = 0")]   # 규격 시험환경 '결정성 옵션(temperature = 0) 적용'
 
 
 def llm_key_env():
@@ -511,6 +512,8 @@ def version_rows(pre=None, ready=None, llm=None):
     add("공간분석 API", g, "GIS API /v3/api-docs info.version",
         (g.lstrip("vV") == want["공간분석 API"].lstrip("vV")) if g else None)
     add("지도 데이터 기준일", "시스템 미제공", "기준일을 알려 주는 API 없음 — 의뢰기업 선언값으로 기록", "선언값")
+    add("AI 엔진 결정성 옵션", "시스템 미제공",
+        "temperature 를 알려 주는 API 없음(공간오케 /ready·응답에 없음) — 의뢰기업 선언값으로 기록", "선언값")
     return rows
 
 
