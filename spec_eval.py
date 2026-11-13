@@ -51,12 +51,15 @@ SPEC = {
                 types=["공간규제 분석", "도로 접근성 분석", "산지·농지 규제 분석"],
                 causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "GIS 지도 제어 실행 오류", "응답 오류"]),
     "AI7": dict(no="2-7", name="[AI 7] 자연어 기반 3D 시뮬레이션 명령 처리 기능", metric="자연어 기반 3D 시뮬레이션 명령 정확도",
-                target=90.0, cmp=">=", log="command_log_ai7.jsonl", dec=1, cmd=True,
+                target=90.0, cmp=">=", log="sim_execution_log_ai7.jsonl", dec=1, cmd=True, auto=True,
+                logs=["command_parse_log_ai7.jsonl", "sim_execution_log_ai7.jsonl"],   # 명령 해석 로그 · 3D 실행 결과 로그 (규격서 6.2.7 시험방법 (4))
+                legacy_log="command_log_ai7.jsonl",                                    # 결과 파일 가져오기(수동) 경로
+                runner="spec_runner_ai7.py",
                 formula="[AI 7] 3D 생성 및 분석 정확도(%) = 기준 충족 건수 / 전체 평가 건수 × 100  (기준 충족 = ① 의도 ② 파라미터 ③ 3D 생성·실행 모두 일치)",
                 data="자연어 3D 시뮬레이션 명령 50건 (기본 제어 15 / 경사도 5 / 토공량 5 / 지형 생성 5 / 가상건물 5 / 일조 7 / 조망 8)",
                 types=["3D 지도 기본 제어", "필지 경사도 분석", "필지 토공량 산출", "지형 생성", "가상건물 생성",
                        "일조 시뮬레이션 실행", "조망 시뮬레이션 실행"],
-                causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "3D 시뮬레이션 명령 실행 오류"]),
+                causes=["의도 해석 오류", "핵심 파라미터 추출 오류", "3D 시뮬레이션 명령 실행 오류", "응답 오류"]),
     # 시험항목 1 [DA 2] — 규격서 v1.51 6.1 (10~21쪽). 온톨로지 파일을 직접 검증 (AIPS 질의 아님). 시험 데이터 준비 중
     "DA2": dict(no="1", name="[DA 2] 인허가 규제 판단을 위한 온톨로지(ODP) 설계 및 검증 기능", metric="온톨로지(ODP) 설계 완성도",
                 target=96.0, cmp=">=", log="validation_result_da2.csv", da2=True,
@@ -1251,7 +1254,49 @@ def score_ai6(run_dir, testset_path=None):
                 aux={"응답 오류": s["응답오류"], "되묻기": s["되묻기"]})
 
 
+def score_ai7(run_dir, testset_path=None):
+    """[AI 7] 자동 실행 폴더 채점 — 판정은 실행 때 sim_execution_log 에 적혀 있고(ai7_eval.judge), 여기서는 집계만 (score_ai6 와 같은 방식)"""
+    import ai7_eval as A7
+
+    def jl(p):
+        out = []
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                for ln in f:
+                    try:
+                        out.append(json.loads(ln))
+                    except json.JSONDecodeError:
+                        pass
+        return out
+    rows = jl(os.path.join(run_dir, SPEC["AI7"]["log"]))
+    meta = {}
+    if os.path.exists(os.path.join(run_dir, "meta.json")):
+        with open(os.path.join(run_dir, "meta.json"), encoding="utf-8") as f:
+            meta = json.load(f)
+    ts = A7.read_rows(testset_path) if testset_path else []
+    planned = set(meta.get("cases") or [])
+    if planned:
+        ts = [t for t in ts if str(t.get("사례ID")) in planned]
+    if not ts:
+        ts = [{"사례ID": r.get("사례ID"), "명령유형": r.get("명령유형"), "명령문": r.get("명령문")} for r in rows]
+    s = A7.score(rows, ts, dec=SPEC["AI7"].get("dec", 1), parse_rows=jl(os.path.join(run_dir, A7.PARSE_LOG)))
+    cases = pd.DataFrame(s["사례별"])
+    if not cases.empty:
+        cases.insert(cases.columns.get_loc("판정") + 1, "정상수행", cases["판정"] == "정상 수행")
+    total = pd.DataFrame(s["총괄"]).rename(columns={"자연어 기반 3D 시뮬레이션 명령 정확도(%)": "정확도(%)"})
+    return dict(value=s["value"], n=s["n"], cases=cases,
+                tables={"총괄 결과 (전체 테스트 건수·정상 수행 건수·오류 건수·정확도)": total,
+                        "명령 유형 7종별 세부 결과": pd.DataFrame(s["유형별"]),
+                        "오류 원인 유형별 건수 (의도 해석 / 핵심 파라미터 추출 / 3D 시뮬레이션 명령 실행 / 응답 오류)": pd.DataFrame(s["오류원인별"])},
+                aux={"응답 오류": s["응답오류"], "되묻기": s["되묻기"]})
+
+
 def score(item, run_dir, answer_path=None, testset_path=None, lawdb_path=None):
+    if item == "AI7" and os.path.exists(os.path.join(run_dir, SPEC[item]["log"])):    # [AI 7] 자동 실행 결과
+        r = score_ai7(run_dir, testset_path)
+        r["passed"] = passed(item, r["value"])
+        r["item"] = item
+        return r
     if item == "AI6" and os.path.exists(os.path.join(run_dir, SPEC[item]["log"])):    # 자동 실행 결과
         r = score_ai6(run_dir, testset_path)
         r["passed"] = passed(item, r["value"])
@@ -1616,11 +1661,14 @@ except ImportError:                                                # noqa: PERF2
     pass
 TEMPLATES["AI7"] = {
     "testset_ai7.csv": (["사례ID", "명령유형", "명령문", "선행상태"],
-                        [["AI7-0001", "일조 시뮬레이션 실행", "경산시 ○○읍 ○○리 263번지에 3층 단독주택을 가상 건물로 세우고 일조 시뮬레이션 실행해줘", ""]]),
-    "answer_ai7.csv": (["사례ID", "명령유형", "정답의도", "정답파라미터", "정답시나리오"],
+                        [["AI7-0001", "일조 시뮬레이션 실행", "경산시 ○○읍 ○○리 263번지에 건축면적 100㎡, 건폐율 50%로 3층 단독주택을 "
+                          "가상 건물로 세우고 12월 22일 9시부터 15시까지 일조 시뮬레이션 실행해줘", ""]]),
+    "answer_ai7.csv": (["사례ID", "명령유형", "정답의도", "정답파라미터", "정답시나리오", "참조PNU", "검증자", "검증일"],
                        [["AI7-0001", "일조 시뮬레이션 실행", "가상건물 생성; 일조 시뮬레이션 실행",
-                         "위치=경산시 ○○읍 ○○리 263번지; 층수=3; 용도=단독주택; 기준일=12-22",
-                         "생성건물층수=3; 생성건물용도=단독주택; 시뮬레이션종류=일조; 대상=생성건물; 기준일=12-22; 시간대=09:00~15:00"]]),
+                         "위치=경산시 ○○읍 ○○리 263번지; PNU=○○○○○○○○○○○○○○○○○○○; 건축면적=100; 건폐율=50; 층수=3; "
+                         "용도=단독주택; 기준일=12-22; 시간대=09:00~15:00",
+                         "생성건물층수=3; 생성건물용도=단독주택; 시뮬레이션종류=일조; 대상=생성건물; 기준일=12-22; 시간대=09:00~15:00; 실행상태=완료",
+                         "", "", ""]]),
     "result_ai7.csv": (RESULT_COLS,
                        [["AI7-0001", "가상건물 생성; 일조 시뮬레이션 실행",
                          "위치=경산시 ○○읍 ○○리 263번지; 층수=3; 용도=단독주택; 기준일=12-22",
