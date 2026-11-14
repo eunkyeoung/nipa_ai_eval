@@ -42,3 +42,4 @@ spec_data/da2/_law_cache/
 # DA2 인스턴스 백업(155MB) — git 제외
 backup/**/landcheck_instance_*.ttl
 deploy/deploy_history.log
+spec_data/da2/_unitlink/

@@ -1056,13 +1056,15 @@ def render_da2(item, sp, area):
         frozen = f"Fuseki nipa {m.group(1)} 내보냄, 그래프 {m.group(2)}개" if m else "-"
         env = [("시험 일시", meta.get("started", "-") + (f" (이어서 {meta['resumed']})" if meta.get("resumed") else "")),
                ("온톨로지 모델 버전", _onto_version(run_dir)),
-               ("시험 대상 (동결본)", frozen + " — 규격서 표기 'LandCheck 온톨로지 모델 v1.0'"),
+               ("시험 대상 (동결본)", frozen + " — 규격서 표기 'LandCheck 온톨로지 모델 v1.0'"
+                + (" + QA 보완 패치 v1.1(위임 항 단위 관계, Fuseki 원본에는 미반영 — 변경내역 110절)" if ast.get("instance_patch") else "")),
                ("실행 범위", ("전체 (DA 2-1 ~ 2-4)" if meta.get("scope") == "full"
                           else "부분 — 구성지표 " + ", ".join(f"2-{p}" for p in meta.get("parts", []))
                           + (f" · CQ {', '.join(meta['ids'])}" if meta.get("ids") else ""))),
                ("결과 폴더", run_dir.replace("\\", "/"))]
         names = {"cq": "CQ 목록·SPARQL 질의·정답셋", "schema_check": "스키마 평가항목·검증 질의", "mapping": "매핑 검증 표본·정답",
-                 "schema": "온톨로지 스키마", "instance": "인스턴스 데이터", "shapes": "SHACL 제약규칙"}
+                 "schema": "온톨로지 스키마", "instance": "인스턴스 데이터", "shapes": "SHACL 제약규칙",
+                 "schema_patch": "QA 보완 패치(스키마)", "instance_patch": "QA 보완 패치(인스턴스)"}
         changed = []
         for k, label in names.items():
             a = ast.get(k)

@@ -18,6 +18,12 @@ import csv, json, os, re, sys, time
 
 DA2 = "spec_data/da2"
 TTL = {k: f"{DA2}/landcheck_{k}_v1.0.ttl" for k in ("schema", "instance")}
+
+def _files(k):
+    """시험 대상 파일: 동결본 + (있으면) QA 보완 패치(11-14, 변경내역 110절 — 동결 사본에 더한 위임 항 단위 관계)"""
+    p = f"{DA2}/landcheck_{k}_patch_v1.1.ttl"
+    return [TTL[k]] + ([p] if k in ("schema", "instance") and os.path.exists(p) else [])
+
 OUT = f"{DA2}/aips_da2_mapping_testset.csv"
 ZONE_SAMPLE = False                                                       # 용도지역 코드 표본 넣지 않음 (11-12, 50건 기준)
 AIP = "https://onto.go.kr/aip/"
@@ -104,7 +110,8 @@ def build(url_xlsx, spec_html):
                                                      ensure_ascii=False), note=note))
     import pyoxigraph as ox
     st = ox.Store()
-    st.bulk_load(path=TTL["instance"], format=ox.RdfFormat.TURTLE)
+    for p in _files("instance"):
+        st.bulk_load(path=p, format=ox.RdfFormat.TURTLE)
 
     def law_node(name):                                                  # 원천 레코드의 법령 = 온톨로지에서 같은 법령명을 가진 법령 노드
         r = list(st.query(f'SELECT ?l ?id WHERE {{ ?l <{AIP}lawName> "{name}" . OPTIONAL {{ ?l <{AIP}lawId> ?id }} }}'))
@@ -172,7 +179,8 @@ def run(out_dir, testset=OUT, only=None):
     st = ox.Store()
     t0 = time.time()
     for k in ("schema", "instance"):
-        st.bulk_load(path=TTL[k], format=ox.RdfFormat.TURTLE)
+        for p in _files(k):
+            st.bulk_load(path=p, format=ox.RdfFormat.TURTLE)
     print(f"적재 {len(st):,} 트리플 ({time.time() - t0:.1f}s)", flush=True)
     rows = list(csv.DictReader(open(testset, encoding="utf-8-sig")))
     if only:

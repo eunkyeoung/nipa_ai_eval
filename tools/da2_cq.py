@@ -10,6 +10,13 @@ import csv, io, json, os, re, sys, time, zipfile
 
 DA2 = "spec_data/da2"
 TTL = {k: f"{DA2}/landcheck_{k}_v1.0.ttl" for k in ("schema", "instance")}
+# QA 보완 패치(11-14, 변경내역 110절): 동결 사본에 더하는 위임 항 단위 관계. 있으면 동결본과 함께 읽음(Fuseki 원본은 그대로)
+PATCH = {k: f"{DA2}/landcheck_{k}_patch_v1.1.ttl" for k in ("schema", "instance")}
+
+
+def files(kind):
+    """시험 대상 파일 목록: 동결본 + (있으면) QA 보완 패치"""
+    return [TTL[kind]] + ([PATCH[kind]] if kind in PATCH and os.path.exists(PATCH[kind]) else [])
 ZIP = f"{DA2}/aips_da2_cq_testset.zip"
 LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
 ALIAS = [("국토의계획및이용에관한법률", "국토계획법")]
@@ -149,7 +156,8 @@ def run(out_dir, zp=ZIP, only=None, store=None, progress=None):
     if st is None:
         st = ox.Store()
         for k in ("schema", "instance"):
-            st.bulk_load(path=TTL[k], format=ox.RdfFormat.TURTLE)
+            for p in files(k):
+                st.bulk_load(path=p, format=ox.RdfFormat.TURTLE)
     lab = ox.NamedNode(LABEL)
     keys = set()                                                       # 온톨로지에 있는 조문 키(사유 판정용)
     for b in st.query("PREFIX aip:<https://onto.go.kr/aip/> PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#> SELECT ?lb WHERE { "

@@ -5,7 +5,7 @@
 #   python tools/da2_cq_hangrel.py   → spec_data/da2/da2_cq_hang_rel.json (항 키 목록 + 온톨로지 sha256)
 import hashlib, json, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tools.da2_cq import TTL, norm                                     # noqa: E402
+from tools.da2_cq import TTL, norm, files                                     # noqa: E402
 
 OUT = "spec_data/da2/da2_cq_hang_rel.json"
 STRUCT = "aip:hasUnit, aip:hasArticle, aip:hasAppendix, aip:unitType, aip:unitNo, rdfs:label, rdf:type"
@@ -29,7 +29,8 @@ def build(store=None):
     if st is None:
         st = ox.Store()
         for k in ("schema", "instance"):
-            st.bulk_load(path=TTL[k], format=ox.RdfFormat.TURTLE)
+            for p in files(k):
+                st.bulk_load(path=p, format=ox.RdfFormat.TURTLE)
     return sorted({norm(r["l"].value) for r in st.query(Q)})
 
 
@@ -41,6 +42,7 @@ if __name__ == "__main__":
     t = time.time()
     keys = build()
     json.dump(dict(made=time.strftime("%Y-%m-%d %H:%M:%S"), rule="항(또는 하위 호·목)에 구조 외 관계가 있으면 항 단위",
-                   instance_sha256=sha(TTL["instance"]), schema_sha256=sha(TTL["schema"]), n=len(keys), hang=keys),
+                   instance_sha256=sha(TTL["instance"]), schema_sha256=sha(TTL["schema"]),
+                   patch_sha256={os.path.basename(p): sha(p) for k in ("schema", "instance") for p in files(k)[1:]}, n=len(keys), hang=keys),
               open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
     print(OUT, len(keys), f"{time.time() - t:.0f}s")

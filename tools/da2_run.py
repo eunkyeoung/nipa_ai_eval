@@ -10,7 +10,9 @@ import qa_runner                                                    # noqa: E402
 DA2 = "spec_data/da2"
 ASSETS = {"cq": f"{DA2}/aips_da2_cq_testset.zip", "schema_check": f"{DA2}/aips_da2_schema_checklist.zip",
           "mapping": f"{DA2}/aips_da2_mapping_testset.csv", "schema": f"{DA2}/landcheck_schema_v1.0.ttl",
-          "instance": f"{DA2}/landcheck_instance_v1.0.ttl", "shapes": f"{DA2}/landcheck_shapes_v1.0.ttl"}
+          "instance": f"{DA2}/landcheck_instance_v1.0.ttl", "shapes": f"{DA2}/landcheck_shapes_v1.0.ttl",
+          # QA 보완 패치(11-14, 변경내역 110절) — 있으면 시험 도구가 동결본과 함께 읽음. 해시·사본을 결과 폴더에 남김
+          "schema_patch": f"{DA2}/landcheck_schema_patch_v1.1.ttl", "instance_patch": f"{DA2}/landcheck_instance_patch_v1.1.ttl"}
 NEED = {1: ("cq", "schema", "instance"), 2: ("schema_check", "schema", "instance", "shapes"),
         3: ("mapping", "schema", "instance"), 4: ("schema", "instance")}
 PARTS = {1: ("DA 2-1", "CQ 질의 응답 정확도", 0.35), 2: ("DA 2-2", "온톨로지 스키마 적합률", 0.15),

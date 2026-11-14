@@ -12,6 +12,12 @@ import csv, io, json, os, sys, time, zipfile
 
 DA2 = "spec_data/da2"
 TTL = {k: f"{DA2}/landcheck_{k}_v1.0.ttl" for k in ("schema", "instance", "shapes")}
+
+def _files(k):
+    """시험 대상 파일: 동결본 + (있으면) QA 보완 패치(11-14, 변경내역 110절 — 동결 사본에 더한 위임 항 단위 관계)"""
+    p = f"{DA2}/landcheck_{k}_patch_v1.1.ttl"
+    return [TTL[k]] + ([p] if k in ("schema", "instance") and os.path.exists(p) else [])
+
 ZIP = f"{DA2}/aips_da2_schema_checklist.zip"
 
 PFX = """PREFIX aip: <https://onto.go.kr/aip/>
@@ -214,7 +220,8 @@ def run(out_dir, zp=ZIP, only=None):
     t0 = time.time()
     st = ox.Store()
     for k in ("schema", "instance", "shapes"):
-        st.bulk_load(path=TTL[k], format=ox.RdfFormat.TURTLE)
+        for p in _files(k):
+            st.bulk_load(path=p, format=ox.RdfFormat.TURTLE)
     print(f"적재 {len(st):,} 트리플 ({time.time() - t0:.1f}s)", flush=True)
     by_id = {it[0]: it for it in ASK_ITEMS}
     res = []
@@ -241,8 +248,8 @@ def run(out_dir, zp=ZIP, only=None):
     if shc:                                                       # Shape 전체를 한 번 검증하고 결과를 NodeShape별로 모음
         t = time.time()
         d = rdflib.Graph()
-        d.parse(TTL["instance"])
-        d.parse(TTL["schema"])
+        for p in _files("instance") + _files("schema"):
+            d.parse(p)
         sg = rdflib.Graph()
         sg.parse(TTL["shapes"])
         SH = rdflib.Namespace("http://www.w3.org/ns/shacl#")

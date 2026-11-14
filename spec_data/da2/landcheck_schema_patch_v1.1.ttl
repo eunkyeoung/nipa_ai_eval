@@ -1,0 +1,13 @@
+# [QA 보완 패치 스키마] 동결 온톨로지(v1.0, 2026-11-12 17:46 내보내기) 사본에 더함 — tools/da2_unitlink.py (변경내역 110절)
+# 기존 '단위 → 조' 위임 중, 받는 조의 원문 항이 위임하는 단위를 직접 인용한 경우만 '단위 → 항'으로 더함. 기존 관계는 지우지 않음.
+# Fuseki 원본에는 반영하지 않음(개발자 반영 필요).
+@prefix aip: <https://onto.go.kr/aip/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+aip:provisoImplementedBy a owl:ObjectProperty ;
+    rdfs:subPropertyOf aip:implementedBy ;
+    rdfs:label "단서 위임"@ko ;
+    rdfs:comment "이 (상위) 단위의 단서(다만 …)가 하위 법령의 어느 단위로 구체화되는가 — 원문 '법 제N조제M항 단서에서'. QA 보완 패치(2026-11-14)."@ko ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( aip:Article aip:ArticleUnit ) ] ;
+    rdfs:range [ a owl:Class ; owl:unionOf ( aip:Article aip:ArticleUnit aip:Appendix ) ] .

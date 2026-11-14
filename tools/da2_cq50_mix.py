@@ -5,7 +5,7 @@
 # 정답: 작성자 원 정답(항 단위, 법령 원문 근거, 84·89절)에 위 기준을 적용. 시스템 결과를 옮기지 않음.
 # 질의: 질문 개념으로 출발해 관계가 닿는 가장 작은 단위(항·조·별표)를 냄. 결과의 '고유 관계 없는 항'은 채점 때 조로 올림
 #   (tools/da2_cq.py run: 시험셋 zip 의 hang_rel.json 으로 정답과 같은 규칙. SPARQL 로 하면(to_mix) 너무 느려 파이썬으로)
-# 교체 10건(사용자 지시, 8건 + 혼합 기준 시험에서 같은 경우로 확인된 005·036): 같은 조의 여러 항에 모두 관계가 있어 온톨로지로 정답 항을 고를 수 없던 문항
+# 교체 10건(사용자 지시, 8건 + 혼합 기준 시험에서 같은 경우로 확인된 005·036) → 11-14 005·010 은 원래 질문으로 복원(아래 RESTORED, 변경내역 110절): 같은 조의 여러 항에 모두 관계가 있어 온톨로지로 정답 항을 고를 수 없던 문항
 #   → 온톨로지가 항까지 구분하는 다른 질문으로 바꿈(정답은 법령 원문으로 확인). 아래 REPL.
 import sys
 sys.path.insert(0, ".")
@@ -55,9 +55,6 @@ QTEXT.update({o: r[3] for o, r in NEWW.items()})
 
 # ── 교체 8건(원번호 → 새 문항). 정답은 법령 원문(법령 수집·적재 관리자)으로 확인 ──
 REPL = {
-    "CQ-010": (B.T_EX, "공통", "「산업입지 및 개발에 관한 법률」에 따른 농공단지 안에서 건축물의 용도·종류 및 규모 등의 제한에 관하여 "
-               "「국토의 계획 및 이용에 관한 법률」의 용도지역 건축제한 대신 다른 법률을 따르도록 한 예외 조항은 무엇인가?",
-               ["국토계획법.76.5"], "국토계획법 제76조제5항 제2호(농공단지는 산업입지법에 따름). 제1항~제4항은 원칙이라 뺌"),
     "CQ-027": (B.T_EX, "공통", "국립공원 등 자연공원에 대하여 다른 법률의 규정을 적용하지 아니하도록 정한 「자연공원법」의 예외 조항은 무엇인가?",
                ["자연공원법.70.1"], "자연공원법 제70조제1항(국토계획법 제76조제1항, 도로법 접도구역 규정 적용 배제)"),
     "CQ-020": (B.T_HI, "공통", "「국토의 계획 및 이용에 관한 법률 시행령」 제51조(개발행위허가의 대상)의 위임 근거가 되는 상위 법률 조항은 무엇인가?",
@@ -71,19 +68,20 @@ REPL = {
                ["산지관리법.12.1"], "산지관리법 제12조제1항(임업용산지). 제2항·제3항은 공익용산지"),
     "CQ-045": (B.T_RC, "경산시", "경산시 제1종전용주거지역에서 건축물을 건축할 때 정북방향 인접대지경계선으로부터 띄어야 하는 거리를 정한 조항은 무엇인가?",
                ["경산시건축조례.27.1"], "경산시 건축 조례 제27조제1항(정북방향 이격거리). 제2항은 인동간격, 제3항은 부속건축물 예외"),
-    "CQ-005": (B.T_HI, "공통", "「건축법 시행령」 제18조(설계도서의 작성)의 위임 근거가 되는 상위 법률 조항은 무엇인가?",
-               ["건축법.23.1"], "건축법 제23조제1항 제3호('대통령령으로 정하는 건축물의 건축등'). 영 제18조 본문이 '법 제23조제1항제3호'를 명시"),
     "CQ-036": (B.T_RC, "아산시", "아산시 제1종전용주거지역에서 건축선 및 인접대지경계선으로부터 건축물의 각 부분까지 띄어야 하는 거리를 정한 조항은 무엇인가?",
                ["아산시건축조례.37.1", "아산시건축조례.별표4"], "아산시 건축 조례 제37조제1항('별표 4와 같다')과 [별표 4]. 제2항은 적용 제외, 제3항·제4항은 전통시장"),
     "CQ-046": (B.T_RC, "경산시", "경산시 일반주거지역에서 방재지구의 재해저감대책에 맞게 재해예방시설을 설치하는 건축물의 용적률 기준을 정한 조항은 무엇인가?",
                ["경산시도시계획조례.84.3"], "경산시 도시계획 조례 제84조제3항(해당 용도지역 용적률의 120% 이하). 제1항은 용도지역별 용적률"),
 }
 
+# 원래 질문 복원(11-14): 교체(91절) 대신 작성자 원 질문·원 정답(항 단위, 법령 원문). QA 보완 패치로 온톨로지가 항까지 구분
+RESTORED = {"CQ-005": "법 제20조 제3항, 영 제15조 제5항(제16호) — 원문 영 제15조 ⑤ '법 제20조제3항에서 …'. QA 보완 패치(위임 항 단위)로 판정",
+            "CQ-010": "법 제16조 제1항 단서, 영 제12조 제2항(경미한 변경) — 원문 영 제12조 ② '법 제16조제1항 단서에서 …'. QA 보완 패치(단서 위임)로 판정"}
+
 LP, LPR = B.LP, B.LPR
 RAW = dict(B.SPARQL)
 RAW.update({
     # 교체 8건
-    "CQ-010": sel(" ".join([B.Z("농공단지", "z"), G("?e aip:inZone ?z ; aip:exemptsArticle ?u ."), hang_of("u")])),
     "CQ-027": sel(" ".join([B.Z("국립공원", "z"), G("?e aip:inZone ?z ; aip:exemptsArticle ?u ."), hang_of("u"),
                             G("?ans_a aip:hasUnit ?ans ."), B.law_has("ans_a", "자연공원법", "L")])),
     "CQ-020": sel(" ".join([art(LPR, "개발행위허가의 대상", "c"), G("?x aip:implementedBy ?c ."), hang_of("x"),
@@ -97,13 +95,22 @@ RAW.update({
                             B.law_has("ans_a", "경산시", "L"), title_has("ans_a", "일조")])),
     "CQ-046": sel(" ".join([B.Z("일반주거지역", "z"), G("?z aip:restrictedBy ?ans ."), G("?ans_a aip:hasUnit ?ans ."),
                             B.law_has("ans_a", "경산시", "L"), title_has("ans_a", "용적률")])),
-    "CQ-005": sel(" ".join([art(B.BLDR, "설계도서의 작성", "c"), G("?x aip:implementedBy ?c ."), hang_of("x"),
-                            G("?ans_a aip:hasUnit ?ans ."), B.law_has("ans_a", B.BLD, "L")])),
     "CQ-036": sel(UNION(" ".join([B.Z("제1종전용주거지역", "z"), G("?z aip:restrictedBy ?ans ."), G("?ans_a aip:hasUnit ?ans ."),
                                   B.law_has("ans_a", "아산시", "L"), title_has("ans_a", "공지")]),
                         " ".join([B.Z("제1종전용주거지역", "z"), G("?z aip:restrictedBy ?h ."), G("?ha aip:hasUnit ?h ."),
                                   B.law_has("ha", "아산시", "L"), title_has("ha", "공지"),
                                   G("?ans aip:relatedArticle ?ha . ?ans a aip:Appendix .")]))),
+    # 원래 질문 복원 2건(11-14 의뢰기업 요청, 변경내역 110절) — QA 보완 패치(위임 항 단위·단서 위임)로 항까지 구분
+    # 005: 음성군 조례 '가설건축물' 조를 구체화하도록 위임한 시행령 항 + 그 시행령 항을 (항 단위로) 위임한 법률 항 (위계: 법률 → 시행령 → 조례)
+    "CQ-005": sel(UNION(
+        " ".join([art(B.YS, "가설건축물", "c"), G("?c aip:hasUnit* ?ct . ?s aip:implementedBy ?ct . ?sa aip:hasUnit+ ?s . ?sa a aip:Article ."),
+                  B.law_has("sa", "시행령", "Ls"), hang_of("s")]),
+        " ".join([art(B.YS, "가설건축물", "c"), G("?c aip:hasUnit* ?ct . ?s aip:implementedBy ?ct . ?sa aip:hasUnit+ ?s . ?sa a aip:Article ."),
+                  B.law_has("sa", "시행령", "Ls"), hang_of("s", "sh"), G("?up aip:implementedBy ?sh ."), hang_of("up")]))),
+    # 010: 건축법 '허가와 신고사항의 변경' 조의 항 중 단서(예외)가 하위 법령으로 구체화된 항 + 그 단서를 구체화한 항
+    "CQ-010": sel(UNION(
+        " ".join([art(B.BLD, "허가와 신고사항의 변경", "v"), hang("v", "ans"), G("?ans aip:provisoImplementedBy ?x .")]),
+        " ".join([art(B.BLD, "허가와 신고사항의 변경", "v"), hang("v", "h"), G("?h aip:provisoImplementedBy ?x ."), hang_of("x")]))),
     # ① 정답 조가 조로 올라간 문항: 질의가 그 조를 항으로 펼치지 않고 조를 냄(관계가 조에 닿음)
     "CQ-001": sel(UNION(B.hang_with_delegated_ho(B.BLD, "대지와 도로의 관계"),
                         " ".join([art(B.BLD, "대지와 도로의 관계", "x"), G("?x aip:hasUnit/aip:hasUnit ?xh . ?xh aip:implementedBy ?ans . ?ans a aip:Article .")]))),
@@ -144,6 +151,8 @@ for i, o in enumerate(_ORDER, 1):
     else:
         r = ROWS.get(o) or NEWW[o]
         typ, area, q, gold, note = r[1], r[2], QTEXT[o], SRC[o], f"[원번호 {o}] " + (J.NOTE.get(o) or r[5])
+        if o in RESTORED:
+            note = f"[원번호 {o} 원래 질문 복원] " + RESTORED[o]
     CQS.append((cid, typ, area, q, sorted({mix(x) for x in gold}), note))
     SPARQL[o] = J.SPARQL[o] if RAW.get(o) is None else RAW[o]          # 결과의 항→조 올림은 채점 때 파이썬으로(da2_cq.run, hang_rel.json)
 

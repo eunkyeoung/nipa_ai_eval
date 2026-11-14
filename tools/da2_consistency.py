@@ -14,6 +14,11 @@ import csv, glob, json, os, shutil, sys, time
 DA2 = "spec_data/da2"
 SCHEMA = f"{DA2}/landcheck_schema_v1.0.ttl"
 INSTANCE = f"{DA2}/landcheck_instance_v1.0.ttl"
+# QA 보완 패치(11-14, 변경내역 110절): 있으면 함께 읽음. OOPS!에는 스키마 패치(속성 선언)만 더해 보냄(인스턴스 패치는 보내지 않음)
+SCHEMA_PATCH = f"{DA2}/landcheck_schema_patch_v1.1.ttl"
+INSTANCE_PATCH = f"{DA2}/landcheck_instance_patch_v1.1.ttl"
+SCHEMAS = [SCHEMA] + ([SCHEMA_PATCH] if os.path.exists(SCHEMA_PATCH) else [])
+INSTANCES = [INSTANCE] + ([INSTANCE_PATCH] if os.path.exists(INSTANCE_PATCH) else [])
 OOPS_URL = "https://oops.linkeddata.es/rest"
 CYCLE_PROPS = ["rdfs:subClassOf", "rdfs:subPropertyOf", "skos:broader"]
 PFX = """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -35,7 +40,8 @@ def reasoner(out_dir):
     o.JAVA_EXE = java_exe()
     nt = os.path.join(out_dir, "_schema.nt")
     g = rdflib.Graph()
-    g.parse(SCHEMA)
+    for f in SCHEMAS:
+        g.parse(f)
     g.serialize(nt, format="nt", encoding="utf-8")
     w = o.World()
     onto = w.get_ontology("file://" + os.path.abspath(nt).replace("\\", "/")).load()
@@ -54,7 +60,7 @@ def reasoner(out_dir):
 def cycles():
     import pyoxigraph as ox
     st = ox.Store()
-    for f in (SCHEMA, INSTANCE):                                     # skos:broader 개념 계층은 인스턴스(구역)에 있음
+    for f in SCHEMAS + INSTANCES:                                     # skos:broader 개념 계층은 인스턴스(구역)에 있음
         st.bulk_load(path=f, format=ox.RdfFormat.TURTLE)
     out = {}
     for p in CYCLE_PROPS:
@@ -67,7 +73,8 @@ def oops(out_dir):
     import rdflib
     import requests
     g = rdflib.Graph()
-    g.parse(SCHEMA)
+    for f in SCHEMAS:
+        g.parse(f)
     body = ('<?xml version="1.0" encoding="UTF-8"?><OOPSRequest><OntologyURI></OntologyURI>'
             '<OntologyContent><![CDATA[' + g.serialize(format="xml") + ']]></OntologyContent>'
             '<Pitfalls></Pitfalls><OutputFormat>RDF/XML</OutputFormat></OOPSRequest>')
@@ -164,7 +171,8 @@ def describe(code, el, g):
 def oops_rows(pits, t=None):
     import rdflib
     g = rdflib.Graph()
-    g.parse(SCHEMA)
+    for f in SCHEMAS:
+        g.parse(f)
     rows = []
     for p in pits or []:
         loc = locate(p["elements"])
