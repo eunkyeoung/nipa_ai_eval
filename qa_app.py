@@ -9,6 +9,7 @@ QA 대시보드 결과는 dashboard/ (raw/, pred.xlsx, qa_result.xlsx, f1_result
 성과지표 시험 결과는 spec/AIn/<시각>/ 에 저장됩니다.
 """
 import glob
+import html
 import io
 import json
 import os
@@ -266,7 +267,18 @@ def progress_panel():
         h1, h2 = st.columns([4, 1], vertical_alignment="center")
         if running:
             el = int(time.time() - stt.get("started", time.time()))
-            h1.markdown(f"**⏳ 실행 중** · {str(stt.get('mode', '')).replace('규격서', '성과지표')} · {done}/{total}건 · 경과 {el // 60}분 {el % 60}초")
+            # 어느 성과지표가 돌고 있는지 한눈에 (11-14 사용자): 빨간 '실행 중' 배지(깜박이는 점) + 큰 항목 이름 + 진행·경과
+            mode = str(stt.get("mode", "")).replace("규격서", "성과지표")
+            kind, _, name = mode.partition(" ")
+            name = html.escape(name if kind == "성과지표" and name else mode)
+            h1.markdown(
+                "<style>@keyframes aipsBlink{0%,100%{opacity:1}50%{opacity:.25}}</style>"
+                "<div style='display:flex;align-items:center;gap:14px;flex-wrap:wrap'>"
+                "<span style='background:#dc2626;color:#fff;font-weight:800;font-size:1.15rem;padding:5px 16px;border-radius:999px;"
+                "box-shadow:0 0 0 3px #fecaca'><span style='animation:aipsBlink 1.2s infinite'>●</span> 실행 중</span>"
+                f"<span style='font-size:1.9rem;font-weight:900;color:#1d4ed8;letter-spacing:.5px'>{name}</span>"
+                f"<span style='font-size:1.15rem;font-weight:600;color:#334155'>{html.escape(kind) + ' · ' if kind == '성과지표' else ''}"
+                f"{done}/{total}건 · 경과 {el // 60}분 {el % 60}초</span></div>", unsafe_allow_html=True)
             if os.path.exists(qa_runner.STOP_FILE):
                 h2.button("⏹ 중지 요청됨", width="stretch", disabled=True)
             elif h2.button("⏹ 중지", width="stretch", help="지금 질의가 끝나면 멈춰요. 그때까지의 결과는 저장돼요."):
