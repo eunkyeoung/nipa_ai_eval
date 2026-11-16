@@ -1097,7 +1097,11 @@ def render_da2(item, sp, area):
     # ---- 결과 표 + 성과지표 시험 기준 (AI1~AI5와 같은 순서: 핵심 지표 → 시험 환경 → 결과 → 상세, 11-13 사용자)
     with area("box_spec_tables"):
         st.markdown("#### 결과")
-        show_table(pd.DataFrame(rows).drop(columns=["목표", "달성 여부"], errors="ignore"))   # 구성지표별 목표·달성은 화면에서 숨김(11-16 사용자)
+        d = pd.DataFrame(rows).drop(columns=["목표", "달성 여부"], errors="ignore")      # 구성지표별 목표·달성은 화면에서 숨김(11-16 사용자)
+        d = d.astype(str).replace({"": EMPTY, "-": EMPTY, "nan": EMPTY, "None": EMPTY})   # show_table 과 같은 빈칸 표시
+        st.dataframe(d.style.apply(lambda r: ["background-color: #eff6ff; color: #1d4ed8; font-weight: 700"   # 가중치 합산 행 = 파랑(11-16)
+                                              if r["세부 시험항목"] == "[DA 2]" else ""] * len(r), axis=1),
+                     hide_index=True, width="stretch")
         _da2_criteria(item, sp)
 
     xbytes, zbytes = _da2_xlsx(run_dir, sp, sm, rows), _da2_logzip(run_dir)
