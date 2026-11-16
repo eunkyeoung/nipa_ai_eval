@@ -161,6 +161,10 @@ def _prefixes(up, low, doc_text):
     for ab in ("법", "영"):                                              # 조례 등: 「건축법」(이하 "법"이라 한다)
         if re.search(rf"「{re.escape(up)}」\s*\(\s*이하\s*[\"“”']{ab}[\"“”']", doc_text) and rf"(?<![가-힣]){ab}" not in pre:
             pre.append(rf"(?<![가-힣]){ab}")
+    # 조례: 「건축법」(이하 "법"이라 한다), 같은 법 시행령(이하 "영"이라 한다) — 영천시 건축 조례 등 (11-16, 변경내역 114절)
+    if up.endswith(" 시행령") and r"(?<![가-힣])영" not in pre and re.search(
+            rf"「{re.escape(up[:-4])}」\s*\([^)]*\)\s*,?\s*같은\s*법\s*시행령\s*\(\s*이하\s*[\"“”']영[\"“”']", doc_text):
+        pre.append(r"(?<![가-힣])영")
     return pre
 
 
