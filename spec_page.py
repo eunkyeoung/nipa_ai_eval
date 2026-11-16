@@ -1103,7 +1103,8 @@ def render_da2(item, sp, area):
         # HTML 표(11-16 사용자): 가중치 합산 행은 연한 회색 바탕 + '일치(적합)/전체'·'오류' 두 칸을 합쳐 달성 표시 (st.dataframe 은 셀 병합 불가)
         esc = lambda v: html.escape(str(v))
         cols = list(d.columns)
-        th = "".join(f"<th>{esc(c)}</th>" for c in cols)
+        td = "padding:8px 12px;border:1px solid #e5e7eb"                  # DA2-4 상세 표와 같은 방식(칸마다 style — <style> 블록은 걸러짐)
+        th = "".join(f"<th style='{td};background:#f8fafc;font-weight:500;color:#64748b;text-align:left'>{esc(c)}</th>" for c in cols)
         body = []
         for _, r in d.iterrows():
             if r["세부 시험항목"] == "[DA 2]":
@@ -1113,20 +1114,15 @@ def render_da2(item, sp, area):
                         skip = False
                         continue
                     if c == "일치(적합)/전체":
-                        cells.append(f'<td colspan="2" style="text-align:center">{esc(r[c])}</td>')
+                        cells.append(f"<td style='{td};text-align:center' colspan='2'>{esc(r[c])}</td>")
                         skip = True
                     else:
-                        cells.append(f"<td>{esc(r[c])}</td>")
-                body.append(f'<tr class="da2sum">{"".join(cells)}</tr>')
+                        cells.append(f"<td style='{td}'>{esc(r[c])}</td>")
+                body.append(f"<tr style='background:#f1f5f9;font-weight:700'>{''.join(cells)}</tr>")   # 합계 행: 옅은 회색·굵게
             else:
-                body.append("<tr>" + "".join(f"<td>{esc(r[c])}</td>" for c in cols) + "</tr>")
-        st.markdown(
-            "<style>.da2tbl{width:100%;border-collapse:collapse;font-size:.88rem}"
-            ".da2tbl th{background:rgba(128,128,128,.08);font-weight:500;color:rgba(49,51,63,.7);text-align:left}"
-            ".da2tbl th,.da2tbl td{border:1px solid rgba(128,128,128,.2);padding:6px 10px}"
-            ".da2tbl tr.da2sum td{background:#f1f3f5;color:#111827;font-weight:700;border-top:2px solid rgba(128,128,128,.45)}</style>"
-            f'<table class="da2tbl"><thead><tr>{th}</tr></thead><tbody>{"".join(body)}</tbody></table>',
-            unsafe_allow_html=True)
+                body.append("<tr>" + "".join(f"<td style='{td}'>{esc(r[c])}</td>" for c in cols) + "</tr>")
+        st.markdown(f"<table style='width:100%;border-collapse:collapse;font-size:14px;margin-bottom:1rem'>"
+                    f"<thead><tr>{th}</tr></thead><tbody>{''.join(body)}</tbody></table>", unsafe_allow_html=True)
         _da2_criteria(item, sp)
 
     xbytes, zbytes = _da2_xlsx(run_dir, sp, sm, rows), _da2_logzip(run_dir)
