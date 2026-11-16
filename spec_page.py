@@ -776,7 +776,8 @@ def sidebar_ai7(side, launch, running, missing):
         side.caption(f"시험 명령 {len(ts_rows)}건 — " + " · ".join(f"{t} {cnt.get(t, 0)}" for t in E7.TYPES))
     if probs:
         hard = E7.blocking(probs)
-        with side.expander(f"⚠️ 시험 데이터 점검 {len(hard)}건" + (f" · 참고 {len(probs) - len(hard)}건" if len(probs) > len(hard) else ""),
+        with side.expander(("⚠️ " if hard or rule_err else "") + f"시험 데이터 점검 {len(hard)}건"   # 참고만 있으면 ⚠️ 빼기(오류로 오해, 11-16 사용자)
+                           + (f" · 참고 {len(probs) - len(hard)}건" if len(probs) > len(hard) else ""),
                            expanded=bool(rule_err or hard)):
             st.markdown("\n".join(f"- {p}" for p in probs[:60]) + ("\n- …" if len(probs) > 60 else ""))
     side.caption("ℹ️ ① 의도 · ② 파라미터로 판정해요 (③ 3D 화면 실행은 시험 범위 밖).")
@@ -1529,7 +1530,9 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                              + (f" — ❌ 실패 {len(bad)}건" if bad else " — 정상"), expanded=bool(bad)):
                 show_table(pd.DataFrame(pre))
         if auto6 and meta.get("data_check"):
-            with st.expander(f"⚠️ 실행 당시 시험 데이터 점검 {len(meta['data_check'])}건"):
+            dc_hard = [p for p in meta["data_check"] if not str(p).startswith("(참고)")]
+            with st.expander(("⚠️ " if dc_hard else "") + f"실행 당시 시험 데이터 점검 {len(dc_hard)}건"   # 참고만 있으면 ⚠️ 빼기(11-16 사용자)
+                             + (f" · 참고 {len(meta['data_check']) - len(dc_hard)}건" if len(meta["data_check"]) > len(dc_hard) else "")):
                 st.markdown("\n".join(f"- {p}" for p in meta["data_check"][:60]))
         changed = [p for p, h, h0 in cur if h and h0 and h != h0]
         if changed:
