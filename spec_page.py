@@ -1599,7 +1599,7 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                     d[c] = d[c].astype(object).where(d[c].notna(), EMPTY).map(str).replace({"": EMPTY, "-": EMPTY, "nan": EMPTY, "None": EMPTY})
             aux = [c for c in AI4_AUX_HELP if c in d.columns]
             st.dataframe(d,
-                         column_config={c: st.column_config.Column(c + " ⓘ", help=AI4_AUX_HELP[c]) for c in aux},
+                         column_config={c: st.column_config.Column(c + " ℹ️", help=AI4_AUX_HELP[c]) for c in aux},
                          hide_index=True, width="stretch", height=rows_height(len(view), cap=560))
         else:
             show_table(view, height=rows_height(len(view), cap=560))
