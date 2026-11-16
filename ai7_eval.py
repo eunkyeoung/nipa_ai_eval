@@ -312,7 +312,7 @@ def extract(turn, rules=None):
         ("실행대상기능", functions),
         ("3D 상태", OrderedDict([("3D명령", [OrderedDict([("명령", a["raw_type"]), *[(k, v) for k, v in a["params"].items()
                                                                                 if v not in (None, "")]]) for a in cmds]),
-                                ("실행상태", "미확인(3D 화면 상태 연동 전 — 명령 발행까지 확인)" if cmds else "명령 없음")])),
+                                ("실행상태", "명령 발행까지 확인(3D 화면 실행은 시험 범위 밖)" if cmds else "명령 없음")])),
     ])
     return OrderedDict([
         ("calls", calls), ("actions", actions), ("intents", intents), ("intent_evidence", evidence),
