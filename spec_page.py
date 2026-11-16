@@ -560,7 +560,7 @@ def sidebar_ai6(side, launch, running, missing):
     return "AI6"
 
 
-def ai6_errors(cases, area, busy=False):
+def ai6_errors(cases, area, busy=False, item="AI6"):
     """AI6 결과 화면 '오류 사례' — 정답과 다르게 수행한 사례를 모아 오류 원인·사유(실제로 일어난 일)를 평문으로.
     AIPS 탓인 사례와 그 밖(시험 데이터·시험 도구 중단·미실행)을 나눠 보여 줌. 실행 중이면 아직 끝나지 않은 명령은 오류로 보이지 않게 뺌.
     오류가 없어도(100 %) 칸을 남겨 '오류 없음'을 보여 줌 — 오류가 시험 도구 고장이 아니라 시험 대상 결과임을 화면에서 바로 알 수 있게"""
@@ -590,10 +590,15 @@ def ai6_errors(cases, area, busy=False):
                        + ". 오류가 생기면 이 자리에 사례마다 오류 원인·사유가 나와요.")
         else:
             table(aips)
-            st.caption("시험 도구는 시험셋 명령문을 그대로 AIPS(지도제어·공간분석 Sub 오케스트레이터)에 보내고, AIPS가 돌려준 "
-                       "해석 의도·호출 기능·지도 명령을 정답과 대조해요. 위 사유는 그 응답 기록에서 AIPS가 실제로 한 일이에요 — "
-                       "시험 도구의 오류가 아니에요. 오류 원인은 규격대로 ① 의도 → ② 핵심 파라미터 → ③ 지도 제어 중 처음 어긋난 기준이고, "
-                       "정답·AIPS 응답 원문은 아래 '질의별 상세 결과'에서 사례를 고르면 보여요.")
+            if item == "AI7":                                         # AI7: 3D 시뮬레이션 명령, ①②로 판정(③ 시험 범위 밖)
+                st.caption("시험 도구는 시험셋 명령문을 그대로 AIPS에 보내고, AIPS가 돌려준 해석 의도·핵심 파라미터·3D 명령을 정답과 대조해요 — "
+                           "시험 도구의 오류가 아니에요. 오류 원인은 ① 의도 → ② 핵심 파라미터 중 처음 어긋난 기준이고(③ 3D 실행은 시험 범위 밖), "
+                           "정답·AIPS 응답 원문은 아래 '질의별 상세 결과'에서 사례를 고르면 보여요.")
+            else:
+                st.caption("시험 도구는 시험셋 명령문을 그대로 AIPS(지도제어·공간분석 Sub 오케스트레이터)에 보내고, AIPS가 돌려준 "
+                           "해석 의도·호출 기능·지도 명령을 정답과 대조해요. 위 사유는 그 응답 기록에서 AIPS가 실제로 한 일이에요 — "
+                           "시험 도구의 오류가 아니에요. 오류 원인은 규격대로 ① 의도 → ② 핵심 파라미터 → ③ 지도 제어 중 처음 어긋난 기준이고, "
+                           "정답·AIPS 응답 원문은 아래 '질의별 상세 결과'에서 사례를 고르면 보여요.")
         if len(other):
             st.markdown(f"**그 밖에 오류로 센 사례 ({len(other)}건)** — AIPS 응답 결과가 아님")
             table(other)
@@ -619,6 +624,64 @@ def ai6_stop_kind(stt):
     msg = str(stt.get("message") or "")                            # 예전 상태 파일(stop_kind 없음)
     return ("system" if msg.startswith("응답 오류") and "연속" in msg else "environment" if msg.startswith("연결 실패") and "연속" in msg
             else "precheck" if msg.startswith("사전 점검 실패") else "")
+
+
+def orch_event_rows(evs):
+    """[AI6·AI7] 공간오케 응답 조각(SSE 이벤트) → 번호별 요약 [{번호, 종류, 내용}] — AI1~AI5 '응답 흐름 요약'과 같은 꼴.
+    번호는 원문 JSON 의 0, 1, 2 … 와 같음. 내용은 원문 값을 줄여 보여 줌(바꾸지 않음)"""
+    def plan(d):
+        ps = (((d.get("args") or {}).get("_metadata") or {}).get("plan")) or []
+        return ", ".join(str(p.get("tool")) + (f" {json.dumps(p.get('args'), ensure_ascii=False)[:120]}" if p.get("args") else "")
+                         for p in ps) or str((d.get("args") or {}).get("query") or "-")
+    rows = []
+    for i, e in enumerate(evs or []):
+        ev, d = e.get("event"), e.get("data") or {}
+        if ev == "turn.started":
+            kind, txt = "처리 시작", f"대화 {d.get('thread_id', '-')}"
+        elif ev == "progress":
+            kind, txt = "진행 메시지", str(d.get("text") or "-")
+        elif ev == "workflow":
+            it = d.get("intents") or {}
+            kind, txt = "의도 분류", f"분류 {', '.join(it.get('classified') or []) or '-'} · 호출 {', '.join(it.get('called') or []) or '-'}"
+        elif ev == "call.started":
+            kind, txt = "기능 호출", f"[{d.get('call_id', '-')}] {d.get('callee', '-')} · {plan(d)}"
+        elif ev == "call.finished":
+            kind, txt = "기능 호출 결과", (f"[{d.get('call_id', '-')}] {d.get('callee', '-')} {d.get('status', '-')}"
+                                       + (f" ({d.get('reason_code')})" if d.get("reason_code") else "")
+                                       + (f" · {d.get('elapsed_ms')}ms" if d.get("elapsed_ms") is not None else ""))
+        elif ev == "actions":
+            kind = "화면 명령"
+            txt = ", ".join(str(a.get("type")) + (f"({a.get('target')})" if a.get("target") else "") for a in d.get("items") or []) or "-"
+        elif ev == "ask":
+            kind, txt = "되묻기", str(d.get("question") or "-")
+        elif ev == "answer.delta":
+            kind, txt = "답변 문장", str(d.get("delta") or "")[:80]
+        elif ev == "answer_check":
+            kind, txt = "답변 점검", "정상" if d.get("ok") else f"지적 {len(d.get('findings') or [])}건"
+        elif ev == "receipts":
+            kind, txt = "요청 처리 기록", ", ".join(str(r.get("status")) for r in d.get("requests") or []) or "-"
+        elif ev == "turn.finished":
+            kind, txt = "처리 종료", f"{d.get('status', '-')} · {d.get('stop_reason', '-')}"
+        else:
+            kind, txt = ev or "-", ", ".join(list(d.keys())[:5])
+        rows.append({"번호": i, "종류": kind, "내용": txt})
+    return rows
+
+
+def orch_raw(run_dir, cid):
+    """[AI6·AI7] 질의별 상세의 '응답 원문 (JSON)' — AI1~AI5와 같은 구성: 응답 흐름 요약 표 + 번호·종류를 붙인 원문"""
+    raw = os.path.join(run_dir, "raw", f"{cid}.json")
+    if not os.path.exists(raw):
+        return
+    with st.expander("응답 원문 (JSON)"):
+        resp = read_json(raw).get("response") or {}
+        evs = resp.get("events") or []
+        st.caption(f"요청 {json.dumps(resp.get('request'), ensure_ascii=False)} · 종료 {resp.get('ended_by')} · 이벤트 {len(evs)}개")
+        rows = orch_event_rows(evs)
+        st.markdown("**응답 흐름 요약** — AIPS 응답은 조각 여러 개가 차례로 옵니다. 번호는 받은 순서(0부터)이고, 아래 원문의 번호와 같습니다.")
+        show_table(pd.DataFrame(rows), height=rows_height(len(rows), cap=360))
+        st.markdown("**원문** — 번호 옆 이름이 조각의 종류입니다. ▶를 누르면 내용이 펼쳐집니다.")
+        st.json({f"{r['번호']} · {r['종류']}": e for r, e in zip(rows, evs)}, expanded=1)
 
 
 def ai6_detail(run_dir, cid):
@@ -666,17 +729,10 @@ def ai6_detail(run_dir, cid):
            ("되묻기", "예 — " + j(pr.get("되묻기내용")) if gr.get("되묻기") else "아니오"),
            ("응답 오류", gr.get("응답오류") or "-"), ("소요(초)", gr.get("소요초")), ("thread_id", gr.get("thread_id")),
            ("최종 응답", (gr.get("최종응답") or "-")[:500])]
-    show_table(pd.DataFrame(out, columns=["항목", "값"]).astype(str))
+    show_table(pd.DataFrame(out, columns=["출력 항목", "값"]).astype(str))
     with st.expander("규격 출력 JSON (의도 · 핵심파라미터 · 실행대상기능 · 지도상태)"):
         st.json(pr.get("규격출력") or {})
-    raw = os.path.join(run_dir, "raw", f"{cid}.json")
-    if os.path.exists(raw):
-        with st.expander("응답 원문 (공간오케 SSE 이벤트)"):
-            d = read_json(raw)
-            evs = (d.get("response") or {}).get("events") or []
-            st.caption(f"요청 {j((d.get('response') or {}).get('request'))} · 종료 {(d.get('response') or {}).get('ended_by')} · "
-                       f"이벤트 {len(evs)}개")
-            st.json(evs, expanded=False)
+    orch_raw(run_dir, cid)                                         # AI1~AI5와 같은 구성(응답 흐름 요약 + 원문)
 
 
 # ---------------------------------------------------------------- [AI 7] 3D 시뮬레이션 — 자동 실행 (①② 판정, ③은 시험 범위 밖)
@@ -795,7 +851,7 @@ def ai7_detail(run_dir, cid):
            ("되묻기", "예 — " + j(pr.get("되묻기내용")) if gr.get("되묻기") else "아니오"),
            ("응답 오류", gr.get("응답오류") or "-"), ("소요(초)", gr.get("소요초")), ("thread_id", gr.get("thread_id")),
            ("최종 응답", (gr.get("최종응답") or "-")[:500])]
-    show_table(pd.DataFrame(out, columns=["항목", "값"]).astype(str))
+    show_table(pd.DataFrame(out, columns=["출력 항목", "값"]).astype(str))
     if gr.get("3D명령"):
         st.markdown("**3D 명령 (응답의 actions — 3D 화면이 실행할 명령)**")
         show_table(pd.DataFrame([{"명령": a.get("raw_type"), "의도 대응 key": a.get("key"),
@@ -803,14 +859,7 @@ def ai7_detail(run_dir, cid):
                                  for a in gr["3D명령"]]))
     with st.expander("규격 출력 JSON (의도 · 핵심파라미터 · 실행대상기능 · 3D 상태)"):
         st.json(pr.get("규격출력") or {})
-    raw = os.path.join(run_dir, "raw", f"{cid}.json")
-    if os.path.exists(raw):
-        with st.expander("응답 원문 (공간오케 SSE 이벤트)"):
-            d = read_json(raw)
-            evs = (d.get("response") or {}).get("events") or []
-            st.caption(f"요청 {j((d.get('response') or {}).get('request'))} · 종료 {(d.get('response') or {}).get('ended_by')} · "
-                       f"이벤트 {len(evs)}개")
-            st.json(evs, expanded=False)
+    orch_raw(run_dir, cid)                                         # AI1~AI5와 같은 구성(응답 흐름 요약 + 원문)
 
 
 # ---------------------------------------------------------------- 본문
@@ -1382,13 +1431,13 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                                                 "'이어서 실행'을 누르면 이 건만 다시 질의")
         aux = r.get("aux") or {}
         if aux:
-            a = st.columns(max(len(aux), 2))
+            a = st.columns([1.3, 1, 1, 1, 1]) if auto6 and len(aux) <= 5 else st.columns(max(len(aux), 2))   # AI6·AI7: 윗줄과 같은 칸 너비
             for i, (kk, vv) in enumerate(aux.items()):
                 a[i].metric(kk + " (보조)", fmt_pct(vv) if "%" in kk else vv)
         st.caption(f"산정식: {sp['formula']}  ·  결과는 {trunc_txt(item)}")
 
     if auto6:                                                       # 오류 사례 — 오류 원인·사유, 0건이어도 자리 유지
-        ai6_errors(r["cases"], area, busy)
+        ai6_errors(r["cases"], area, busy, item)
 
     # ---- 시험 환경 (재현성)
     with area("box_spec_env"):
