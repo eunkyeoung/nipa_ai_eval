@@ -997,9 +997,10 @@ def render_da2(item, sp, area):
     if not rs:
         with area("box_spec_cases"):
             st.markdown("#### 구성지표 (세부 시험항목 1-1 ~ 1-4)")
-            show_table(pd.DataFrame([{"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %",
-                                      "목표": (f"{sp['part_target'][k]:.0f} % 이상" if sp["part_target"].get(k) else "미정(○○)"),
-                                      "판정 방식": how, "산출식": f, "결과": "미실행"} for k, n, w, how, f in sp["parts"]]))
+            show_table(pd.DataFrame([{"세부 시험항목": f"[{k}]", "구성지표": n, "가중치": f"{w} %",   # 구성지표별 목표는 화면에서 숨김(11-16)
+                                      "판정 방식": how, "산출식": f, "결과": "미실행"} for k, n, w, how, f in sp["parts"]]
+                                    + [{"세부 시험항목": "[DA 2]", "구성지표": "가중치 합산 (온톨로지 설계 완성도)", "가중치": "100 %",
+                                        "판정 방식": f"가중합 {target_txt(item)}", "산출식": "구성지표 결과 × 가중치의 합", "결과": "미실행"}]))
             _da2_criteria(item, sp)
             st.info("왼쪽 '📂 시험 데이터 (검증 자산)'에서 준비 상태를 확인하고 실행하세요.")
         return
@@ -1044,6 +1045,14 @@ def render_da2(item, sp, area):
                                     else ("✅ 달성" if p["value"] >= sp["part_target"][k] else "❌ 미달성")),
                          "일치(적합)/전체": f"{ok} / {tot}" if tot else "-", "오류": str(p.get("error", "-")) if p else "-",
                          "산출식": f})
+        # 맨 아래 가중치 합산 행 (11-16 사용자). 구성지표별 목표·달성 열은 화면에서만 숨김(결과 엑셀엔 있음)
+        rows.append({"세부 시험항목": "[DA 2]", "구성지표": "가중치 합산 (온톨로지 설계 완성도)", "가중치": "100 %",
+                     "결과": (fmt_pct(sm.get("value"), item) + f" ({'✅ 달성' if sm.get('passed') else '❌ 미달성'}, 목표 {target_txt(item)})")
+                     if sm.get("value") is not None else "부분 실행(계산 안 함)",
+                     "목표": target_txt(item),
+                     "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
+                     "일치(적합)/전체": "-", "오류": "-",
+                     "산출식": " + ".join(f"{k.replace('DA ', '')} × {w / 100:.2f}" for k, n, w, *_ in sp["parts"])})
         st.caption(f"산정식: {sp['formula']}  ·  결과는 {trunc_txt(item)}")
 
     # ---- 시험 환경 (재현성) — AI1~AI5와 같은 표 (11-13 사용자)
@@ -1087,7 +1096,7 @@ def render_da2(item, sp, area):
     # ---- 결과 표 + 성과지표 시험 기준 (AI1~AI5와 같은 순서: 핵심 지표 → 시험 환경 → 결과 → 상세, 11-13 사용자)
     with area("box_spec_tables"):
         st.markdown("#### 결과")
-        show_table(pd.DataFrame(rows))
+        show_table(pd.DataFrame(rows).drop(columns=["목표", "달성 여부"], errors="ignore"))   # 구성지표별 목표·달성은 화면에서 숨김(11-16 사용자)
         _da2_criteria(item, sp)
 
     xbytes, zbytes = _da2_xlsx(run_dir, sp, sm, rows), _da2_logzip(run_dir)
