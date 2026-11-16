@@ -133,9 +133,28 @@ NOT_PROVIDED_AI7 = [   # [AI 7] 규격서 6.2.7 이 요구하지만 아직 얻�
     "**③ 3D 시뮬레이션 실행 결과(실행 후 3D 지도 상태·생성 객체·'완료')·사례별 화면 캡처** — 이 시험(AIPS 사전진단 성능테스트)은 "
     "3D 분석에 쓸 명령·파라미터가 응답에 제대로 들어오는지(①②)만 봄 → ③·캡처는 시험 범위 밖, 판정하지 않음",
     "**선행 상태 설정(카메라 방위·LOD 건물·기상 효과)** — 3D 화면을 실행하지 않으므로 로그에만 기록",
-    "**3D 시뮬레이션 에이전트·3D 엔진 버전, 지형·건물 데이터 기준일, temperature = 0** — 시스템이 알려 주지 않음 → 개발팀 확인 중",
-    "**시뮬레이션 실행 대기 상한(○분)** — 규격서 미정 → 임시 300초(`AI7_DEADLINE`)",
+    "**3D 시뮬레이션 에이전트·3D 엔진 버전, 지형·건물 데이터 기준일, temperature = 0** — 시스템이 알려 주지 않음 → 위 '동결 버전 확인' 표에 "
+    "**의뢰기업 선언값**으로 기록. 3D 엔진은 3D 화면(115:17010)이 브이월드에서 받는 엔진 파일에서 확인한 값(2026-11-16), "
+    "지형·건물(LOD)은 우리 DB가 아니라 브이월드 서비스에서 실시간으로 받는 데이터라 기준일 대신 출처로 적음",
+    "**시뮬레이션 실행 대기 상한(○분)** — 규격서 미정 → 300초로 동결(2026-11-16, `AI7_DEADLINE`)",
 ]
+AI7_VERSIONS = [   # [AI 7] 규격서 6.2.7 사전조건 '동결 버전' — 시스템이 알려 주지 않는 값은 의뢰기업 선언값 (2026-11-16 사용자 결정)
+    ("3D 시뮬레이션 에이전트", "v1.0", "버전을 알려 주는 API 없음 — 의뢰기업 선언값으로 기록 (규격서 5.1 APP Server '3D 시뮬레이션 에이전트 v1.0', 연결 에이전트 목록은 위 표)"),
+    ("3D 엔진", "브이월드 WS3D v3.0 (Cesium 1.99.0)", "시험 도구가 조회하지 않음 — 3D 화면(115:17010)이 브이월드에서 받는 엔진 파일"
+     "(WS3DRelease3, 엔진 빌드 1.0.1.99)에서 2026-11-16 확인한 값을 의뢰기업 선언값으로 기록"),
+    ("지형·건물 데이터", "브이월드 3D 지형·건물(LOD) 데이터 — 시험 시점 브이월드 서비스 제공본",
+     "기준일을 알려 주는 API 없음 — 3D 화면이 브이월드 서비스에서 실시간으로 받는 데이터(우리 DB에 없음), 의뢰기업 선언값으로 기록"),
+]
+
+
+def ai7_version_rows(rows6):
+    """[AI 7] '동결 버전 확인' 표 — AI6 표(ai6_client.version_rows)에서 공통 행(AI 모델·vLLM·결정성 옵션)은 그대로 쓰고
+    (같은 공간오케·LLM 서버), 지도제어 쪽 행 대신 AI7 사전조건 행(선언값)을 넣음"""
+    by = {r["항목"]: r for r in rows6}
+    out = [by[k] for k in ("AI 모델", "추론 서버 (vLLM)") if k in by]
+    out += [{"항목": n, "시험 조건": v, "확인값": "시스템 미제공", "확인 방법": how, "결과": "선언값"} for n, v, how in AI7_VERSIONS]
+    out += [by[k] for k in ("AI 엔진 결정성 옵션",) if k in by]
+    return out
 CRITERIA = {
     "AI1": "AI 판단 결과(판단 유형)가 정답 판단 유형과 정확히 일치하는지 평가. 개별 테스트 사례에 대해 판단 유형이 정답과 "
            "일치한 경우 일치 건수로 계수(판단 유형 2종: 허가 가능 / 허가 불가능, 조작적 정의서에 따라 조건부 가능 = 허가 가능).\n\n"
@@ -1495,16 +1514,14 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             env.insert(1, ("실행 결과 파일 SHA-256", f"{meta.get('result_sha256') or '-'}  ({meta.get('result_file') or '-'})"))
         _env = pd.DataFrame(env, columns=["항목", "값"])
         show_table(_env)
-        if auto6 and item == "AI7" and meta.get("precheck"):           # AI7: 동결 버전 표(규격 시험조건 값)는 버전 확인 뒤에 — 지금은 점검 결과만
-            with st.expander("실행 전 사전 점검 결과"):
-                show_table(pd.DataFrame(meta["precheck"]))
-        elif auto6 and meta.get("precheck"):
+        if auto6 and meta.get("precheck"):                             # AI6·AI7 같은 구성 (AI7은 사전조건 행만 다름, 11-16)
             rp = (meta.get("resume_precheck") or [{}])[-1]                  # 이어서 실행했으면 그때 다시 한 점검이 기준
             pre = rp.get("rows") or meta["precheck"]
             import ai6_client as C6
             st.markdown("**동결 버전 확인** (규격 시험방법 (2) — 실행 때 사전 점검 · 조회값 기준, 선언값 = 시스템이 알려 주지 않아 의뢰기업 선언값으로 기록)")
-            show_table(pd.DataFrame(C6.version_rows(pre, rp.get("ready"), rp.get("llm")) if rp.get("rows")
-                                    else C6.version_rows(pre, meta.get("ready"), meta.get("llm"))))
+            vr = (C6.version_rows(pre, rp.get("ready"), rp.get("llm")) if rp.get("rows")
+                  else C6.version_rows(pre, meta.get("ready"), meta.get("llm")))
+            show_table(pd.DataFrame(ai7_version_rows(vr) if item == "AI7" else vr))
             bad = [p for p in pre if p.get("결과") != "정상"]
             with st.expander("실행 전 사전 점검 결과" + (f" (이어서 실행 {rp.get('at')})" if rp.get("rows") else "")
                              + (f" — ❌ 실패 {len(bad)}건" if bad else " — 정상"), expanded=bool(bad)):
