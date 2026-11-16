@@ -1,0 +1,14 @@
+{
+ "testset_sha256": "ceac9f58236c8d3d0f0caffad64f1dd149f1d5b43635ad445ef1fe9f2f1f631a",
+ "answer_sha256": "8efdf3723356d177687dbc20c169cba0789dd3154af522d47b90656e37322f08",
+ "intent_map_sha256": "기본:8696899d99f7b8f477079849b5fd01b80bb32caad875bf93bf8776af87aa0e51",
+ "criteria_sha256": "562433744c496d1e38f0400243f84ddd3d5f7d82c1702087579a6320567e83b6",
+ "deadline_s": 300.0,
+ "base": "http://192.168.200.115:17006",
+ "frozen_at": "2026-11-16 18:10:12",
+ "files": {
+  "testset": "spec_data/testset_ai7.csv",
+  "answer": "spec_data/answer_ai7.csv",
+  "intent_map": "기본 대응표"
+ }
+}
