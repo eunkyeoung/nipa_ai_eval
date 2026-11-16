@@ -610,6 +610,8 @@ def validate(testset_rows, answer_rows, rules=None):
             probs.append(f"{r.get('사례ID')}: 명령문에 앞뒤 공백·줄바꿈·연속 공백·탭이 있음(문장을 그대로 보내므로 데이터에서 고칠 것)")
         if re.search(r"(?<!\d)\d{19}(?!\d)", cmd):
             probs.append(f"{r.get('사례ID')}: 명령문에 19자리 숫자(PNU)가 있음 — 시스템에는 자연어 명령만 입력")
+        if str(r.get("선행상태") or "").strip():
+            probs.append(f"{NOTE}{r.get('사례ID')}: 선행상태 '{r.get('선행상태')}' — 기록만 함(3D 화면 실행은 시험 범위 밖)")
     cnt = Counter(canon_type(r.get("명령유형")) for r in testset_rows)
     for t, want in TYPE_COUNTS.items():
         if cnt.get(t, 0) != want:
@@ -636,6 +638,8 @@ def validate(testset_rows, answer_rows, rules=None):
                 probs.append(f"{cid}: 대조 규칙이 없는 파라미터 키 '{k}' ({' · '.join(PARAM_KEYS)} 중에서 쓸 것)")
     for cid in sorted(set(ans) - set(ids)):
         probs.append(f"{cid}: 시험셋에 없는 정답")
+    if not JUDGE_EXEC:
+        probs.append(f"{NOTE}{EXEC_SCOPE} — 정답시나리오 칸은 판정에 쓰지 않음(참고용)")
     return probs
 
 
