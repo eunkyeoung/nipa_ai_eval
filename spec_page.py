@@ -1047,11 +1047,12 @@ def render_da2(item, sp, area):
                          "산출식": f})
         # 맨 아래 가중치 합산 행 (11-16 사용자). 구성지표별 목표·달성 열은 화면에서만 숨김(결과 엑셀엔 있음)
         rows.append({"세부 시험항목": "[DA 2]", "구성지표": "가중치 합산 (온톨로지 설계 완성도)", "가중치": "100 %",
-                     "결과": (fmt_pct(sm.get("value"), item) + f" ({'✅ 달성' if sm.get('passed') else '❌ 미달성'}, 목표 {target_txt(item)})")
-                     if sm.get("value") is not None else "부분 실행(계산 안 함)",
+                     "결과": fmt_pct(sm.get("value"), item) if sm.get("value") is not None else "부분 실행(계산 안 함)",
                      "목표": target_txt(item),
                      "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
-                     "일치(적합)/전체": "-", "오류": "-",
+                     # 달성 표시는 일치 열 자리에(표 셀 병합 불가, 11-16 사용자)
+                     "일치(적합)/전체": (f"{'✅ 달성' if sm.get('passed') else '❌ 미달성'} (목표 {target_txt(item)})"
+                                     if sm.get("value") is not None else "-"), "오류": "-",
                      "산출식": " + ".join(f"{k.replace('DA ', '')} × {w / 100:.2f}" for k, n, w, *_ in sp["parts"])})
         st.caption(f"산정식: {sp['formula']}  ·  결과는 {trunc_txt(item)}")
 
