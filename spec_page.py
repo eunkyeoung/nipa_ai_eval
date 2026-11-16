@@ -152,7 +152,7 @@ def ai7_version_rows(rows6):
     (같은 공간오케·LLM 서버), 지도제어 쪽 행 대신 AI7 사전조건 행(선언값)을 넣음"""
     by = {r["항목"]: r for r in rows6}
     out = [by[k] for k in ("AI 모델", "추론 서버 (vLLM)") if k in by]
-    out += [{"항목": n, "시험 조건": v, "확인값": "시스템 미제공", "확인 방법": how, "결과": "선언값"} for n, v, how in AI7_VERSIONS]
+    out += [{"항목": n, "시험 조건": v, "확인값": "-", "확인 방법": how, "결과": "선언값"} for n, v, how in AI7_VERSIONS]
     out += [by[k] for k in ("AI 엔진 결정성 옵션",) if k in by]
     return out
 CRITERIA = {
@@ -1521,7 +1521,9 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             st.markdown("**동결 버전 확인** (규격 시험방법 (2) — 실행 때 사전 점검 · 조회값 기준, 선언값 = 시스템이 알려 주지 않아 의뢰기업 선언값으로 기록)")
             vr = (C6.version_rows(pre, rp.get("ready"), rp.get("llm")) if rp.get("rows")
                   else C6.version_rows(pre, meta.get("ready"), meta.get("llm")))
-            show_table(pd.DataFrame(ai7_version_rows(vr) if item == "AI7" else vr))
+            vr = ai7_version_rows(vr) if item == "AI7" else vr
+            vr = [{**r, "확인값": "-" if r.get("확인값") == "시스템 미제공" else r.get("확인값")} for r in vr]   # 미제공은 '-' (결과 칸 '선언값'으로 구분, 11-16 사용자)
+            show_table(pd.DataFrame(vr))
             bad = [p for p in pre if p.get("결과") != "정상"]
             with st.expander("실행 전 사전 점검 결과" + (f" (이어서 실행 {rp.get('at')})" if rp.get("rows") else "")
                              + (f" — ❌ 실패 {len(bad)}건" if bad else " — 정상"), expanded=bool(bad)):
