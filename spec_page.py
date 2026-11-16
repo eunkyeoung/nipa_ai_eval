@@ -1103,7 +1103,7 @@ def render_da2(item, sp, area):
         # HTML 표(11-16 사용자): 가중치 합산 행은 연한 회색 바탕 + '일치(적합)/전체'·'오류' 두 칸을 합쳐 달성 표시 (st.dataframe 은 셀 병합 불가)
         esc = lambda v: html.escape(str(v))
         cols = list(d.columns)
-        td = "padding:8px 12px;border:1px solid #e5e7eb"                  # DA2-4 상세 표와 같은 방식(칸마다 style — <style> 블록은 걸러짐)
+        td = "padding:8px 12px;border:1px solid #e5e7eb;background:#ffffff"                  # DA2-4 상세 표와 같은 방식(칸마다 style — <style> 블록은 걸러짐)
         th = "".join(f"<th style='{td};background:#f8fafc;font-weight:500;color:#64748b;text-align:left'>{esc(c)}</th>" for c in cols)
         body = []
         for _, r in d.iterrows():
@@ -1118,7 +1118,7 @@ def render_da2(item, sp, area):
                         skip = True
                     else:
                         cells.append(f"<td style='{td}'>{esc(r[c])}</td>")
-                body.append(f"<tr style='background:#f1f5f9;font-weight:700'>{''.join(cells)}</tr>")   # 합계 행: 옅은 회색·굵게
+                body.append(f"<tr style='font-weight:700'>{''.join(cells).replace('background:#ffffff', 'background:#fdf0dc')}</tr>")   # 합계 행: 옅은 살구색·굵게(파랑 계열 X, 11-16 사용자)
             else:
                 body.append("<tr>" + "".join(f"<td style='{td}'>{esc(r[c])}</td>" for c in cols) + "</tr>")
         st.markdown(f"<table style='width:100%;border-collapse:collapse;font-size:14px;margin-bottom:1rem'>"
