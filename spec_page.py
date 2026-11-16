@@ -1052,7 +1052,7 @@ def render_da2(item, sp, area):
                      "목표": target_txt(item),
                      "달성 여부": ("✅ 달성" if sm.get("passed") else "❌ 미달성") if sm.get("value") is not None else "-",
                      # 달성 표시는 일치 열 자리에(표 셀 병합 불가, 11-16 사용자)
-                     "일치(적합)/전체": (f"{'✅ 달성' if sm.get('passed') else '❌ 미달성'} (목표 {target_txt(item)})"
+                     "일치(적합)/전체": (f"{'✅ 달성' if sm.get('passed') else '❌ 미달성'}"
                                      if sm.get("value") is not None else "-"), "오류": "-",
                      "산출식": " + ".join(f"{k.replace('DA ', '')} × {w / 100:.2f}" for k, n, w, *_ in sp["parts"])})
         st.caption(f"산정식: {sp['formula']}  ·  결과는 {trunc_txt(item)}")
