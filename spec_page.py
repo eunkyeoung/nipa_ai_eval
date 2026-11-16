@@ -1594,13 +1594,13 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             else:
                 st.caption("① 의도 · ② 핵심 파라미터 · ③ 지도 제어 — 셋 다 O 여야 정상 수행. 오류 원인은 ①→②→③ 순으로 처음 틀린 단계 "
                            "(응답이 없거나 대기 상한을 넘기면 응답 오류, 되묻기는 오류). 사유는 시험 대상(AIPS)이 실제로 한 일이에요.")
-        if item == "AI4":                                          # 보조 지표 열: 연한 회색 칸 + 머리글 ⓘ 설명(st.dataframe 은 머리글 색 지정 불가)
+        if item == "AI4":                                          # 보조 지표 열: 머리글 ⓘ 설명 (칸 바탕색은 넣지 않음, 11-16 사용자)
             d = view.copy()
             for c in d.columns:                                    # 글자 열은 일반 object 로(Styler + 문자열 dtype 이면 표 변환 경고)
                 if d[c].dtype != bool:
                     d[c] = d[c].astype(object).where(d[c].notna(), EMPTY).map(str).replace({"": EMPTY, "-": EMPTY, "nan": EMPTY, "None": EMPTY})
             aux = [c for c in AI4_AUX_HELP if c in d.columns]
-            st.dataframe(d.style.map(lambda _: f"background-color: {AI4_AUX_BG}", subset=aux),
+            st.dataframe(d,
                          column_config={c: st.column_config.Column(c + " ⓘ", help=AI4_AUX_HELP[c]) for c in aux},
                          hide_index=True, width="stretch", height=rows_height(len(view), cap=560))
         else:
