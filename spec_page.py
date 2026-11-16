@@ -2,6 +2,7 @@
 성과지표 화면 (AI 1 ~ AI 7) — qa_app.py 사이드바의 '화면' 전환에서 불러옴
 """
 import glob
+import html
 import io
 import json
 import os
@@ -1099,9 +1100,33 @@ def render_da2(item, sp, area):
         st.markdown("#### 결과")
         d = pd.DataFrame(rows).drop(columns=["목표", "달성 여부"], errors="ignore")      # 구성지표별 목표·달성은 화면에서 숨김(11-16 사용자)
         d = d.astype(str).replace({"": EMPTY, "-": EMPTY, "nan": EMPTY, "None": EMPTY})   # show_table 과 같은 빈칸 표시
-        st.dataframe(d.style.apply(lambda r: ["background-color: #eff6ff; color: #1d4ed8; font-weight: 700"   # 가중치 합산 행 = 파랑(11-16)
-                                              if r["세부 시험항목"] == "[DA 2]" else ""] * len(r), axis=1),
-                     hide_index=True, width="stretch")
+        # HTML 표(11-16 사용자): 가중치 합산 행은 연한 회색 바탕 + '일치(적합)/전체'·'오류' 두 칸을 합쳐 달성 표시 (st.dataframe 은 셀 병합 불가)
+        esc = lambda v: html.escape(str(v))
+        cols = list(d.columns)
+        th = "".join(f"<th>{esc(c)}</th>" for c in cols)
+        body = []
+        for _, r in d.iterrows():
+            if r["세부 시험항목"] == "[DA 2]":
+                cells, skip = [], False
+                for c in cols:
+                    if skip:
+                        skip = False
+                        continue
+                    if c == "일치(적합)/전체":
+                        cells.append(f'<td colspan="2" style="text-align:center">{esc(r[c])}</td>')
+                        skip = True
+                    else:
+                        cells.append(f"<td>{esc(r[c])}</td>")
+                body.append(f'<tr class="da2sum">{"".join(cells)}</tr>')
+            else:
+                body.append("<tr>" + "".join(f"<td>{esc(r[c])}</td>" for c in cols) + "</tr>")
+        st.markdown(
+            "<style>.da2tbl{width:100%;border-collapse:collapse;font-size:.88rem}"
+            ".da2tbl th{background:rgba(128,128,128,.08);font-weight:500;color:rgba(49,51,63,.7);text-align:left}"
+            ".da2tbl th,.da2tbl td{border:1px solid rgba(128,128,128,.2);padding:6px 10px}"
+            ".da2tbl tr.da2sum td{background:#f1f3f5;color:#111827;font-weight:700;border-top:2px solid rgba(128,128,128,.45)}</style>"
+            f'<table class="da2tbl"><thead><tr>{th}</tr></thead><tbody>{"".join(body)}</tbody></table>',
+            unsafe_allow_html=True)
         _da2_criteria(item, sp)
 
     xbytes, zbytes = _da2_xlsx(run_dir, sp, sm, rows), _da2_logzip(run_dir)
