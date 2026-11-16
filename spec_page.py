@@ -1114,7 +1114,7 @@ def render_da2(item, sp, area):
                         skip = False
                         continue
                     if c == "일치(적합)/전체":
-                        cells.append(f"<td style='{td};text-align:center' colspan='2'>{esc(r[c])}</td>")
+                        cells.append(f"<td style='{td}' colspan='2'>{esc(r[c])}</td>")
                         skip = True
                     else:
                         cells.append(f"<td style='{td}'>{esc(r[c])}</td>")
