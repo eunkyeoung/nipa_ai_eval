@@ -1561,10 +1561,8 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
         if item == "AI4":                                          # 오른쪽 위 범례: 회색 = 보조 지표(11-16 사용자 시안)
             tc = st.columns([3, 2])
             only = tc[0].toggle("문제 사례만 보기", key=f"spec_only_{item}")
-            tc[1].markdown(f"<div style='text-align:right;color:#475569;font-size:0.9rem'>"
-                           f"<span style='display:inline-block;width:14px;height:14px;background:{AI4_AUX_BG};"
-                           f"border:1px solid #cbd5e1;border-radius:3px;vertical-align:-2px;margin-right:6px'></span>"
-                           f"ⓘ 보조 지표 (평가에는 미포함)</div>", unsafe_allow_html=True)
+            tc[1].markdown("<div style='text-align:right;color:#475569;font-size:0.9rem'>"
+                           "ⓘ 보조 지표 (평가에는 미포함)</div>", unsafe_allow_html=True)
         else:
             only = st.toggle("문제 사례만 보기", key=f"spec_only_{item}")
         view = cases
