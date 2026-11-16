@@ -1562,7 +1562,7 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             tc = st.columns([3, 2])
             only = tc[0].toggle("문제 사례만 보기", key=f"spec_only_{item}")
             tc[1].markdown("<div style='text-align:right;color:#475569;font-size:0.9rem'>"
-                           "ⓘ 보조 지표 (평가에는 미포함)</div>", unsafe_allow_html=True)
+                           "ℹ️ 보조 지표 (평가에는 미포함)</div>", unsafe_allow_html=True)
         else:
             only = st.toggle("문제 사례만 보기", key=f"spec_only_{item}")
         view = cases
