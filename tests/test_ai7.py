@@ -270,7 +270,7 @@ class Runner(unittest.TestCase):
         os.chdir(self.tmp)
         rows = {r["사례ID"]: r for r in E.read_rows(os.path.join(ROOT, "spec_data", "testset_ai7.csv"))}
         REPLAY.update({rows["AI7-0036"]["명령문"]: "build_sun_date", rows["AI7-0016"]["명령문"]: "slope",
-                       rows["AI7-0004"]["명령문"]: "lod", rows["AI7-0013"]["명령문"]: "zoomin"})
+                       rows["AI7-0007"]["명령문"]: "lodon", rows["AI7-0013"]["명령문"]: "zoomin"})
 
     def tearDown(self):
         os.chdir(self.cwd)
@@ -281,7 +281,7 @@ class Runner(unittest.TestCase):
         ts = os.path.join(ROOT, "spec_data", "testset_ai7.csv")
         an = os.path.join(ROOT, "spec_data", "answer_ai7.csv")
         argv = sys.argv
-        sys.argv = ["spec_runner_ai7.py", "--testset", ts, "--answer", an, "--cases", "AI7-0036,AI7-0016,AI7-0004,AI7-0013",
+        sys.argv = ["spec_runner_ai7.py", "--testset", ts, "--answer", an, "--cases", "AI7-0036,AI7-0016,AI7-0007,AI7-0013",
                     "--base", f"http://127.0.0.1:{self.port}", "--deadline", "20", "--no-precheck", "--run-dir", "run"]
         old_gap = R7.GAP
         R7.GAP = 0
@@ -292,10 +292,10 @@ class Runner(unittest.TestCase):
             R7.GAP = old_gap
         sim = R7.read_jsonl(os.path.join("run", E.SIM_LOG))
         by = {r["사례ID"]: r for r in sim}
-        self.assertEqual(set(by), {"AI7-0036", "AI7-0016", "AI7-0004", "AI7-0013"})
+        self.assertEqual(set(by), {"AI7-0036", "AI7-0016", "AI7-0007", "AI7-0013"})
         self.assertEqual(by["AI7-0036"]["판정"], "정상 수행")
         self.assertEqual(by["AI7-0016"]["판정"], "정상 수행")
-        self.assertEqual(by["AI7-0004"]["판정"], "정상 수행")
+        self.assertEqual(by["AI7-0007"]["판정"], "정상 수행")
         self.assertEqual(by["AI7-0013"]["오류원인"], "의도 해석 오류")
         self.assertTrue(os.path.exists(os.path.join("run", E.PARSE_LOG)))
         with open(os.path.join("run", "meta.json"), encoding="utf-8") as f:

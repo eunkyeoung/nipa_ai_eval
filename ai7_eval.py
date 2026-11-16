@@ -69,6 +69,7 @@ DEFAULT_RULES = [
     ("기상 효과 켜기", "동작", "WEATHER:ON", "weather{type: auto·rain·snow …}"),
     ("기상 효과 끄기", "동작", "WEATHER:OFF", "weather{type:off}"),
     ("카메라 방위 초기화", "동작", "RESET_CAMERA", "resetCamera — 정북"),
+    ("3D 지도 켜기", "호출", "map_3d:SWITCH", "2D → 3D 화면 전환 (11-16 실측: 화면 전환 동작 UI.FOCUS{map3d}와 함께 옴)"),
     ("높이 계산", "동작", "HEIGHT|MEASURE_HEIGHT", "11-13 실측: WKT 를 되묻고 명령이 나오지 않음 — 명령 이름 미확인"),
     ("경사도 분석", "동작", "SLOPE", "tool.map3d.slope"),
     ("경사도 분석", "호출", "map_3d:SLOPE", ""),
@@ -92,7 +93,7 @@ FUNCTION_LABEL = {                               # 규격 출력 '실행대상�
     "HIGHLIGHT": "필지 강조 Tool", "SPLIT_FOR_BUILDING": "건물 자리 추천 Tool", "AREA": "면적 계산 Tool",
     "SLOPE": "경사도 분석 Tool", "TERRAIN": "토공량 산출 Tool", "GROUND": "지형 생성 Tool", "BUILD": "가상건물 생성 Tool",
     "SUNVOLUME": "일조 시뮬레이션 Tool", "LANDSCAPE": "조망 시뮬레이션 Tool",
-    "BUILDING_VISIBLE": "LOD 건물 표시 Tool", "WEATHER": "기상 효과 Tool", "RESET_CAMERA": "카메라 초기화 Tool",
+    "SWITCH": "3D 화면 전환 Tool", "BUILDING_VISIBLE": "LOD 건물 표시 Tool", "WEATHER": "기상 효과 Tool", "RESET_CAMERA": "카메라 초기화 Tool",
 }
 BUILDING_TYPE = {"detached": "단독주택"}          # build.buildingType → 용도 (실측한 값만 — 나머지는 원래 값으로 대조)
 STAIR_TYPE = {"stairfloor": "계단형"}             # ground.stairType → 지형유형
@@ -643,7 +644,8 @@ def validate(testset_rows, answer_rows, rules=None):
 
 
 def _no_param_ok(a):
-    """위치·값이 없는 기본 제어(LOD·기상·카메라·확대)는 정답파라미터가 비어도 됨"""
-    return all(norm(i) in {norm(x) for x in ("LOD 건물 끄기", "LOD 건물 켜기", "기상 효과 켜기", "기상 효과 끄기",
-                                              "카메라 방위 초기화", "지도 확대/축소")}
+    """위치·값이 없는 기본 제어(3D 지도 켜기·LOD·기상·카메라·확대·높이)는 정답파라미터가 비어도 됨
+    (높이 계산: '이 자리 표고 알려줘'처럼 화면에서 찍는 명령은 위치 값이 없음 — 11-16 데이터 개정)"""
+    return all(norm(i) in {norm(x) for x in ("3D 지도 켜기", "LOD 건물 끄기", "LOD 건물 켜기", "기상 효과 켜기", "기상 효과 끄기",
+                                              "카메라 방위 초기화", "지도 확대/축소", "높이 계산")}
                for i in split_list(a.get("정답의도"))) and bool(split_list(a.get("정답의도")))
