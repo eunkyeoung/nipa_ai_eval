@@ -26,6 +26,15 @@ OPTIONAL = ("law_", "result_", "intent_")   # 없어도 실행 가능 (조문 DB
 RAW_VERDICT = {"possible": "승인 가능", "impossible": "부적합", "conditional": "조건부 가능",   # AIPS 원 판정값 → 수행계획서 4종
                "needs_review": "검토 필요", "unknown": "검토 필요"}
 HIDE_TABLES = {"AI1": ("보조 지표(적용 법령·근거 조문)별 일치·불일치 건수 및 일치율",)}   # 2026-11-11 의뢰기업 요청: 결과 화면에서 숨김 (result.xlsx에는 남음)
+AI4_AUX_BG = "#eef1f5"                   # AI4 질의별 결과의 보조 지표 열 색(범례와 같은 색, 11-16 사용자 시안)
+AI4_AUX_HELP = {                        # 보조 지표 열 머리글 ⓘ 설명 — 정확도(적합) 산정에는 포함하지 않음
+    "정답_보완사항": "정답셋의 보완사항(핵심 요건). 보조 지표 — 평가에는 미포함",
+    "보완사항": "AIPS 응답에서 뽑은 보완사항. 보조 지표 — 평가에는 미포함",
+    "보완사항_판정": "정답 보완사항의 핵심 요건이 응답에 들어 있는지: 정확 일치 / 부분 일치 / 불일치. 정답 보완사항이 없으면 빈칸",
+    "정답_필요행정절차": "정답셋의 필요 행정절차. 보조 지표 — 평가에는 미포함",
+    "필요행정절차": "AIPS 응답에서 뽑은 필요 행정절차. 보조 지표 — 평가에는 미포함",
+    "필요행정절차_일치": "정답 행정절차가 응답에 들어 있는지(순서 무시): 정확 일치 / 부분 일치 / 불일치. 정답 행정절차가 없으면 '-'",
+}
 HIDE_CASE_COLS = ["적용룰셋"]          # 질의별 결과 화면에서 숨길 컬럼 (질의별 상세 결과·result.xlsx에는 남음)
 
 
@@ -1549,7 +1558,15 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
         cases = r["cases"]
         flag = {"AI1": "판단_일치", "AI2": "일치", "AI3": "일치", "AI4": "적합", "AI5": "환각",
                 "AI6": "정상수행", "AI7": "정상수행"}[item]
-        only = st.toggle("문제 사례만 보기", key=f"spec_only_{item}")
+        if item == "AI4":                                          # 오른쪽 위 범례: 회색 = 보조 지표(11-16 사용자 시안)
+            tc = st.columns([3, 2])
+            only = tc[0].toggle("문제 사례만 보기", key=f"spec_only_{item}")
+            tc[1].markdown(f"<div style='text-align:right;color:#475569;font-size:0.9rem'>"
+                           f"<span style='display:inline-block;width:14px;height:14px;background:{AI4_AUX_BG};"
+                           f"border:1px solid #cbd5e1;border-radius:3px;vertical-align:-2px;margin-right:6px'></span>"
+                           f"ⓘ 보조 지표 (평가에는 미포함)</div>", unsafe_allow_html=True)
+        else:
+            only = st.toggle("문제 사례만 보기", key=f"spec_only_{item}")
         view = cases
         if only and flag in cases:
             view = cases[cases[flag] == (item == "AI5")] if item == "AI5" else cases[~cases[flag].astype(bool)]
@@ -1577,7 +1594,17 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             else:
                 st.caption("① 의도 · ② 핵심 파라미터 · ③ 지도 제어 — 셋 다 O 여야 정상 수행. 오류 원인은 ①→②→③ 순으로 처음 틀린 단계 "
                            "(응답이 없거나 대기 상한을 넘기면 응답 오류, 되묻기는 오류). 사유는 시험 대상(AIPS)이 실제로 한 일이에요.")
-        show_table(view, height=rows_height(len(view), cap=560))
+        if item == "AI4":                                          # 보조 지표 열: 연한 회색 칸 + 머리글 ⓘ 설명(st.dataframe 은 머리글 색 지정 불가)
+            d = view.copy()
+            for c in d.columns:                                    # 글자 열은 일반 object 로(Styler + 문자열 dtype 이면 표 변환 경고)
+                if d[c].dtype != bool:
+                    d[c] = d[c].astype(object).where(d[c].notna(), EMPTY).map(str).replace({"": EMPTY, "-": EMPTY, "nan": EMPTY, "None": EMPTY})
+            aux = [c for c in AI4_AUX_HELP if c in d.columns]
+            st.dataframe(d.style.map(lambda _: f"background-color: {AI4_AUX_BG}", subset=aux),
+                         column_config={c: st.column_config.Column(c + " ⓘ", help=AI4_AUX_HELP[c]) for c in aux},
+                         hide_index=True, width="stretch", height=rows_height(len(view), cap=560))
+        else:
+            show_table(view, height=rows_height(len(view), cap=560))
         logs = [S.log_name(run_dir, item)]
         if auto6:
             logs = list(sp["logs"])
