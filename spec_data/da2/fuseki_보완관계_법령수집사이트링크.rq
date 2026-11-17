@@ -1,5 +1,6 @@
 # [QA] 보완 관계(qa_cq_patch_20261116) + 법령 수집 사이트 원문 링크 — Fuseki 조회만(아무것도 넣지 않음)
 # 칸: from_label_위임하는쪽 · relation(implementedBy = 항 단위 위임, provisoImplementedBy = 단서 위임) · to_label_위임받는쪽 · to_text_원문링크
+# 특정 법령만 보려면 GRAPH ?g1 줄 다음에  FILTER(STRSTARTS(?from_label, "농지법 "))  처럼 한 줄 (끝의 LIMIT 100 때문에 앞 100줄만 나옴 — 전부 보려면 LIMIT 줄을 지움)
 # 단서 위임만 보려면 첫 GRAPH 줄 다음에  FILTER(?p = aip:provisoImplementedBy)  한 줄을 넣음
 # 아래 VALUES 표 = 법령 ID(lawId) → 법령 수집 사이트 문서 번호(doc_id). 2026-11-17 법령 수집 사이트 API(/api/documents/hierarchy)에서 받음
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
