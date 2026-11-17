@@ -1003,6 +1003,9 @@ def _da2_table(df):
         if d[c].dtype == object:
             d[c] = d[c].where(d[c].notna(), EMPTY).replace({"": EMPTY, "-": EMPTY, "nan": EMPTY, "None": EMPTY})
     cfg = {c: st.column_config.TextColumn(c, width=w) for c, w in (("문제", 360), ("사유", 640)) if c in d.columns}
+    if "정답" in d.columns and "CQ ID" in d.columns:                   # DA2-1: 호까지 적힌 정답 설명(11-17 사용자)
+        cfg["정답"] = st.column_config.TextColumn("정답", help="채점은 '법령명 제○조 제○항'까지 비교합니다(호·목 제외). "
+                                                 "작성자 정답에 호가 있으면(예: CQ-035 제5호) 표시만 하고 채점은 항까지입니다.")
     st.dataframe(d, hide_index=True, width="stretch", column_config=cfg)
 
 
@@ -1027,6 +1030,8 @@ def _da2_cq_disp(df):
     for c in ("expected_bindings", "actual_bindings", "missing_bindings", "extra_bindings"):
         if c in df:
             df[c] = [_cq.cite_list(v) for v in df[c]]
+    if "expected_bindings" in df and "cq_id" in df:                   # 정답 칸 표시만: 작성자 정답의 호(채점은 항까지, 11-17 사용자)
+        df["expected_bindings"] = [_cq.gold_disp(i, v) for i, v in zip(df["cq_id"], df["expected_bindings"])]
     for c in ("문제", "사유"):
         if c in df:
             df[c] = [_cq.cite_text(v) for v in df[c]]

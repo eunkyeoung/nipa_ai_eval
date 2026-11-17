@@ -73,6 +73,17 @@ def cite_list(v):
     return ", ".join(cite(x) for x in xs) if xs else "-"
 
 
+# 정답 칸 표시만 — 작성자 정답의 호(채점은 '법령명.조.항'까지 비교라 정답 키에는 호가 없음). 11-17 사용자: CQ-035 제5호가 보이게
+GOLD_SHOW = {"CQ-035": {"건축법 제77조의4 제1항": "건축법 제77조의4 제1항 제5호"}}
+
+
+def gold_disp(cid, text):
+    """보이는 정답 글(cite_list 결과)에 작성자 정답의 호를 붙임. 채점 값은 그대로"""
+    for a, b in GOLD_SHOW.get(cid, {}).items():
+        text = re.sub(re.escape(a) + r"(?=,|$)", b, text)
+    return text
+
+
 def cite_text(s):
     """글 속의 비교 키·붙여 쓴 조항·가운데 점을 법령 표기로 ('제44조제1항·제2항' → '제44조 제1항, 제2항')"""
     s = _KEY.sub(lambda m: cite(m.group(0)), str(s or ""))
