@@ -278,8 +278,15 @@ class Runner(unittest.TestCase):
 
     def test_run_then_rescore(self):
         import spec_runner_ai7 as R7
-        ts = os.path.join(ROOT, "spec_data", "testset_ai7.csv")
-        an = os.path.join(ROOT, "spec_data", "answer_ai7.csv")
+        # 시험 데이터를 임시 폴더로 복사하고, 그 폴더에 시험용 동결 기록(가짜 서버 주소·대기 20초)을 만듦 —
+        # 실제 동결(spec_data/freeze_ai7.json, 11-16)은 실제 주소·300초라 그대로 쓰면 실행기가 거부함(AI6 시험 코드와 같은 방식)
+        dd = os.path.join(self.tmp, "data")
+        os.makedirs(dd)
+        ts, an = os.path.join(dd, "testset_ai7.csv"), os.path.join(dd, "answer_ai7.csv")
+        shutil.copy(os.path.join(ROOT, "spec_data", "testset_ai7.csv"), ts)
+        shutil.copy(os.path.join(ROOT, "spec_data", "answer_ai7.csv"), an)
+        with open(os.path.join(dd, R7.FREEZE_FILE), "w", encoding="utf-8") as f:
+            json.dump(R7.freeze_record(ts, an, None, 20, f"http://127.0.0.1:{self.port}"), f)
         argv = sys.argv
         sys.argv = ["spec_runner_ai7.py", "--testset", ts, "--answer", an, "--cases", "AI7-0036,AI7-0016,AI7-0007,AI7-0013",
                     "--base", f"http://127.0.0.1:{self.port}", "--deadline", "20", "--no-precheck", "--run-dir", "run"]
