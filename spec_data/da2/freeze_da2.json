@@ -1,0 +1,20 @@
+{
+ "assets": {
+  "cq": "e7494ac2e718e13be4db21130313304ce0fbfc1b4a29d86420754a00dd25abc9",
+  "schema_check": "4cca853822bbb197a2f4442b7b15a271703b2775925b67de42b351972efc82a1",
+  "mapping": "6187063e2bdf200994e8bf17f0e32fb4cb8223043c7610fc4292e20912195cbd",
+  "schema": "1eb517ff8412954c701a769d9298a8f7d5907ef88cb380efdc70264f19180c7b",
+  "instance": "028e0a06b94a64eaef9f12db4c9f10a80cdb8a19fb7ae8757d219f21934f8f6c",
+  "shapes": "b89d9427796ab9b7a5bb23503faf1a04e1002bae41667ac21c859c707586dff5",
+  "schema_patch": "ab0de03554c8360a735ce2a3fdc348440cefe8376467161e3d9dd74cf161e400",
+  "instance_patch": "2a62a180855b24fe14ea952a166ae4e5757c6403c082e7854af965f7a9d3f201"
+ },
+ "tools": {
+  "pyoxigraph": "0.5.13",
+  "pyshacl": "0.40.2",
+  "owlready2": "ok",
+  "rdflib": "7.6.0",
+  "Java": "25.0.5"
+ },
+ "frozen_at": "2026-11-17 12:41:22"
+}
