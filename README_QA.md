@@ -557,7 +557,7 @@ f1_result.xlsx `오탐미탐사례` 시트에 정답과 AI 판단이 다른 케�
 | `answer_ai1.csv` | 사례ID, 판단유형(허가 가능/허가 불가능), 적용법령, 근거조문 |
 | `testset_ai2.csv` | 질의ID, 시나리오ID, 구분(원문/변형1~4), 질의문 |
 | `answer_ai2.csv` | 시나리오ID, 판단유형 |
-| `testset_ai3.csv` | 사례ID, 질의문 (반복 횟수는 화면에서, 기본 5) |
+| `testset_ai3.csv` | 사례ID, 질의문 (반복 횟수 5회 고정 — 11-17부터 화면에서 바꾸지 않음) |
 | `testset_ai4.csv` | 사례ID, 질의문, 예외유형(예외 조항/단서 규정/협의 대상/심의 대상) |
 | `answer_ai4.csv` | 사례ID, 판정결과, 근거조문, 보완사항, 필요행정절차 |
 | `testset_ai5.csv` | 사례ID, 질의문 |
@@ -567,7 +567,7 @@ f1_result.xlsx `오탐미탐사례` 시트에 정답과 AI 판단이 다른 케�
 - 여러 값은 `;`로 구분: `건축법.2.1; 건축법.44`
 - 근거조문은 `건축법.44.1` 같은 정규화 표기나 `건축법 제44조 제1항` 같은 문장 모두 읽습니다. 호·목은 버립니다.
 - 법령 약칭(국계법·국토계획법, 산집법 등)은 같은 법령으로 봅니다.
-- 처음 배포한 `spec_data/`에는 gold.xlsx 10건으로 만든 `testset_ai1` / `answer_ai1`와 나머지 항목의 **1행짜리 양식 예시**가 들어 있습니다. 화면의 **📂 시험 데이터**에서 양식을 내려받고, 채운 파일을 올리면 됩니다.
+- 처음 배포한 `spec_data/`에는 gold.xlsx 10건으로 만든 `testset_ai1` / `answer_ai1`와 나머지 항목의 **1행짜리 양식 예시**가 들어 있습니다. **11-17부터 화면에서는 시험 데이터를 올리거나 양식을 내려받지 않습니다**(📂 시험 데이터는 파일·SHA-256·내려받기만). 데이터 교체는 운영자가 PC에서 고쳐 통합 브랜치로 커밋·배포하고 다시 동결합니다(변경내역 124·125절).
 
 #### 정답셋 작성 규칙 (적용법령 · 근거조문)
 
@@ -671,7 +671,7 @@ python spec_runner.py AI1 --rescore spec/AI1/20261022_101500 --answer spec_data/
 | `qa_runner.py` | 시스템 호출(`stream_query`), 응답 추출(`extract`), 진행 상태 기록(`write_status`), API 주소·대기 시간 설정 |
 | `qa_eval.py` | 법령 약칭 표(`LAW_ALIAS`), 법령명 정규화(`norm_law`), 행위허가 10종 분류(`classify_permits`) |
 | `run_status.json`, `run.log`, `run_stop.flag` | 실행 상태·로그·중지 신호 (그래서 두 기능은 동시에 실행되지 않음) |
-| `gold.xlsx` | 규격서 쪽은 'gold.xlsx → AI1 시험셋·정답셋 만들기' 버튼에서만 읽음 |
+| `gold.xlsx` | 대시보드(`/dashboard`)에서만 씀. 규격서 화면의 'gold.xlsx → AI1 시험셋·정답셋 만들기' 버튼은 11-17 제거 |
 
 `qa_runner.extract`나 `qa_eval`의 법령 정규화를 바꾸면 두 기능 결과가 함께 바뀝니다.
 
@@ -756,7 +756,7 @@ python verdict_check.py --rescore check/20261022_183000     # 재질의 없이 �
 - **3D 화면(③)을 붙이지 않는 이유**(11-13): 시험 목적이 파라미터 확인이라 화면 실행·캡처는 범위 밖. 참고로 3D 명령을 실제로 실행하는 프론트 코드(public-user-web develop `agentStore`)는 스테이징 `115:27000`에 있고, `115:17010` 배포본에는 아직 없음(변경내역 108절).
 - **시험 코드**: `python -m unittest tests.test_ai7` — 11-13 실측 응답 20건(`tests/fixtures/ai7/`)으로 ①② 판정, 실측 원문을 돌려주는 가짜 공간오케로 실행기 끝까지.
 
-시스템 실행 결과를 결과 파일(`result_ai7`)로 올려 채점하는 예전 방식(아래)도 남아 있습니다.
+결과 파일(`result_ai6`·`result_ai7`)을 올려 채점하던 예전 방식(아래)은 **11-17 화면에서 올리기를 없애 쓰지 않습니다**(기록용으로 남김).
 
 ### 데이터 (spec_data/)
 
@@ -780,7 +780,7 @@ python verdict_check.py --rescore check/20261022_183000     # 재질의 없이 �
 
 ### 화면
 
-규격서 시험(`/`) → 시험 항목 AI6·AI7 → 📂 시험 데이터에서 시험셋·정답셋·결과 파일을 올림 → **▶ 결과 채점**. 결과는 `spec/AI6/<시각>/` (command_log_ai6.jsonl, meta.json, result.xlsx, summary.json)에 저장됩니다.
+(예전 방식, 11-17부터 화면에서 쓸 수 없음) 규격서 시험(`/`) → 시험 항목 AI6·AI7 → 📂 시험 데이터에서 시험셋·정답셋·결과 파일을 올림 → **▶ 결과 채점**. 결과는 `spec/AI6/<시각>/` (command_log_ai6.jsonl, meta.json, result.xlsx, summary.json)에 저장됩니다.
 
 ### 12-1. 자동 실행 연결 전 확인 사항 (AI6·AI7 담당자에게 요청)
 
