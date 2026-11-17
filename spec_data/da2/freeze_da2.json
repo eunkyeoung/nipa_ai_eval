@@ -12,9 +12,9 @@
  "tools": {
   "pyoxigraph": "0.5.13",
   "pyshacl": "0.40.2",
-  "owlready2": "ok",
+  "owlready2": "0.51",
   "rdflib": "7.6.0",
   "Java": "25.0.5"
  },
- "frozen_at": "2026-11-17 12:41:22"
+ "frozen_at": "2026-11-17 12:44:00"
 }
