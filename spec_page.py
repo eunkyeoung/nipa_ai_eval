@@ -435,20 +435,50 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
             ids = side.multiselect("실행할 ID (비우면 전체)", tsdf[key].tolist(), key=f"spec_ids_{item}")
             n = (len(ids) or len(tsdf)) * repeat
             side.caption(f"질의 {n}회 · 예상 약 {n * 50 // 60}분")
+    # 사전 점검·동결(11-17 사용자: AI6·AI7과 같게) — 규격서 시험방법 (2) 동결 버전 확인
+    import qa_runner
+    import spec_freeze as F
+    ans_p = data_path(f"answer_{item.lower()}")
+    law_p = data_path("law_article_db") if item == "AI5" else None
+    fz = F.read_freeze(item, DATA)
+    base = fz.get("base") or qa_runner.BASE                          # 동결돼 있으면 동결한 시험 조건으로만 실행(⚙️ 설정 값은 쓰지 않음)
+    timeout = int(fz.get("timeout_s") or qa_runner.TIMEOUT)
+    side.caption(f"시험 조건 — AIPS `{base}` · 질의 대기 상한 {timeout}초" + (" · 반복 5회" if item == "AI3" else ""))
+    if side.button("사전 점검", width="stretch", disabled=running or not ts_p, key=f"pre_{item}",
+                   help="모델·vLLM·법령 DB 버전을 조회하고, 확인 질의 1건으로 룰엔진 버전·빌드를 읽어 동결 버전과 비교해요 (1~4분)."):
+        with st.spinner("사전 점검 중… 확인 질의 1건을 보내요 (1~4분)"):
+            q0 = str(S.read_table(ts_p)["질의문"].iloc[0]).strip()
+            st.session_state[f"pre_{item}_res"] = dict(at=time.strftime("%H:%M:%S"), ver=F.current_versions(q0, base, timeout))
+    pc = st.session_state.get(f"pre_{item}_res")
+    if pc:
+        rows = F.precheck_rows(pc["ver"])
+        vrows = F.version_rows(fz, pc["ver"])
+        bad = [r for r in rows if r["결과"] != "정상"] + [r for r in vrows if r["결과"] == "불일치"]
+        side.caption(("✅ 사전 점검 정상" if not bad else f"❌ 사전 점검 문제 {len(bad)}건") + f" · {pc['at']}")
+        with side.expander("사전 점검 결과", expanded=bool(bad)):
+            show_table(pd.DataFrame(rows))
+            st.markdown("**동결 버전 확인**")
+            show_table(pd.DataFrame(vrows)[["항목", "시험 조건", "확인값", "결과", "확인 방법"]])
+    diff = F.check_conditions(fz, ts_p, ans_p, law_p, base, timeout, repeat) if fz and ts_p else []
+    if fz:
+        side.caption(f"🔒 동결됨 · {fz.get('frozen_at', '')}" + (f" — ❌ 바뀐 항목: {', '.join(diff)} (실행할 수 없음)" if diff else
+                                                                 " — 시험셋·정답셋·시험 조건·버전 고정"))
+    elif ts_p:
+        side.caption("⚠️ 동결 기록이 없어요 — 운영자가 동결해야 해요")
     run = side.button("⏳ 실행 중…" if running else f"▶ {SHORT[item]} 시험 실행", type="primary", width="stretch",
-                      disabled=running or bool(missing),
-                      help="결과는 spec/" + item + "/<시각>/ 에 저장돼요. 백그라운드에서 실행됩니다.")
+                      disabled=running or bool(missing) or bool(diff),
+                      help="결과는 spec/" + item + "/<시각>/ 에 저장돼요. 백그라운드에서 실행됩니다. "
+                           "실행할 때 버전을 다시 확인하고, 동결과 다르면 시작하지 않아요.")
     if missing:
         side.caption("❌ 시험 데이터 파일이 없어요 (📂 시험 데이터) — 운영자에게 알려 주세요.")
-    if run:
-        import qa_runner
+    if run and not diff:
         cmd = [sys.executable, "-u", "spec_runner.py", item, "--testset", ts_p, "--status-file", qa_runner.STATUS_FILE,
-               "--base", qa_runner.BASE, "--timeout", str(qa_runner.TIMEOUT)]
-        a = data_path(f"answer_{item.lower()}")
+               "--base", base, "--timeout", str(timeout)]
+        a = ans_p
         if a:
             cmd += ["--answer", a]
-        if item == "AI5" and data_path("law_article_db"):
-            cmd += ["--lawdb", data_path("law_article_db")]
+        if law_p:
+            cmd += ["--lawdb", law_p]
         if item == "AI3":
             cmd += ["--repeat", str(repeat)]
         if ids:

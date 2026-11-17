@@ -10,6 +10,7 @@
   python spec_runner.py AI5 --testset spec_data/testset_ai5.csv --answer spec_data/answer_ai5.csv --lawdb spec_data/law_article_db.csv
 
   python spec_runner.py AI1 --rescore spec/AI1/20261022_101500 --answer ...   # 재질의 없이 다시 채점
+  python spec_runner.py AI1 --freeze --testset … --answer … [--lawdb …] [--base …] [--timeout 600]   # 운영자 동결 (spec_data/freeze_ai1.json, 11-17)
 결과 폴더: spec/AIn/<시각>/  (raw/, diagnose_log_aiN.jsonl, meta.json, result.xlsx, summary.json)
 """
 import argparse
@@ -24,6 +25,7 @@ import pandas as pd
 
 import qa_runner
 import spec_eval as S
+import spec_freeze as F
 
 ID_COL = {"AI2": "질의ID"}
 
@@ -62,6 +64,8 @@ def main():
                     help="AI1 참조 정보(PNU·용도지역·규제구역·토지특성) 조회 서버. 빈 값이면 조회 안 함")
     ap.add_argument("--timeout", type=int)
     ap.add_argument("--status-file")
+    ap.add_argument("--freeze", action="store_true",
+                    help="운영자용: 지금 시험 데이터·조건·버전으로 동결 기록(spec_data/freeze_aiN.json). 확인 질의 1건을 보냄")
     a = ap.parse_args()
     item = a.item
     if a.rescore:
@@ -73,6 +77,34 @@ def main():
 
     qa_runner.BASE = (a.base or qa_runner.BASE).rstrip("/")
     qa_runner.TIMEOUT = a.timeout or qa_runner.TIMEOUT
+    repeat0 = a.repeat or (5 if item == "AI3" else 1)
+    fz_dir = os.path.dirname(os.path.abspath(a.testset)) if a.testset else F.DATA
+    if a.freeze:                                                  # 운영자 동결 — 확인 질의 1건으로 룰엔진 버전·빌드까지 기록
+        ts0 = S.read_table(a.testset)
+        q0 = str(ts0["질의문"].iloc[0]).strip()
+        ver = F.current_versions(q0, qa_runner.BASE, qa_runner.TIMEOUT)
+        rec = F.freeze_record(item, a.testset, a.answer, a.lawdb, qa_runner.BASE, qa_runner.TIMEOUT, repeat0, ver)
+        with open(F.freeze_path(item, fz_dir), "w", encoding="utf-8") as f:
+            json.dump(rec, f, ensure_ascii=False, indent=1)
+        print(json.dumps(rec, ensure_ascii=False, indent=1))
+        if (ver.get("확인질의") or {}).get("오류"):
+            print("⚠️ 확인 질의에서 룰엔진 버전을 읽지 못함:", ver["확인질의"]["오류"])
+        return
+    fz = F.read_freeze(item, fz_dir)                              # 동결 기록이 있으면 시험 조건·버전이 같아야 실행(11-17)
+
+    def refuse(msg):
+        qa_runner.write_status(a.status_file, dict(state="error", script="spec_runner.py", mode=f"성과지표 {item}",
+                                                   message=msg, finished=time.time()))
+        raise SystemExit(msg)
+    if fz:
+        diff = F.check_conditions(fz, a.testset, a.answer, a.lawdb, qa_runner.BASE, qa_runner.TIMEOUT, repeat0)
+        if diff:
+            refuse("동결 이후 바뀐 시험 조건이 있어 실행하지 않아요: " + ", ".join(diff)
+                   + f" — 의도한 변경이면 운영자가 다시 동결하세요(python spec_runner.py {item} --freeze …).")
+        vdiff = F.check_versions(fz, F.current_versions())
+        if vdiff:
+            refuse("동결 버전과 다른 항목이 있어 실행하지 않아요: " + ", ".join(vdiff)
+                   + " — 규격서: 버전이 바뀌면 다시 동결하고 전체 테스트셋을 재수행.")
     ts = S.read_table(a.testset)
     if ts is None or ts.empty:
         raise SystemExit(f"시험셋을 읽지 못했습니다: {a.testset}")
@@ -83,7 +115,7 @@ def main():
     if a.cases:
         want = {c.strip() for c in a.cases.split(",") if c.strip()}
         ts = ts[ts[key].isin(want)]
-    repeat = a.repeat or (5 if item == "AI3" else 1)
+    repeat = repeat0
 
     run_dir = a.run_dir or os.path.join("spec", item, time.strftime("%Y%m%d_%H%M%S"))
     raw_dir = os.path.join(run_dir, "raw")
@@ -120,6 +152,7 @@ def main():
     meta["법령DB"], meta["법령DB출처"] = S.current_law_db()               # 응답에 없는 법령 DB 기준 → 법령 수집 관리자 조회
     meta["인프라"] = S.infra_versions()                                    # vLLM·Fuseki·Milvus 버전 (설치정보 v1.1·서버 조회)
     meta["법령해석"] = S.current_itpt()                                    # 법령해석사례는 매일 04시 갱신 → 실행 시작 때 상태 기록
+    meta["동결"] = fz.get("frozen_at") if fz else None                    # 동결 기록(11-17~) — 없으면 None
     mp = os.path.join(run_dir, "meta.json")
     if a.resume and os.path.exists(mp):
         with open(mp, encoding="utf-8") as f:
@@ -167,6 +200,14 @@ def main():
                 rec.update(S.map_response(events, base), 단계로그=S.step_log(events, base),
                            session_id=sid, 오류="")
                 rec["오류"] = S.error_text(rec)              # 판정 없이 끝난 응답 → '응답 중단' (이어서 실행 때 다시 질의)
+                if fz.get("룰엔진버전") and not status.get("eng_checked"):   # 첫 응답의 룰엔진 버전이 동결과 다르면 멈춤(규격: 재동결·전체 재수행)
+                    eng = ", ".join(S.versions_in(json.dumps([{"event": e, "data": d} for e, d in events], ensure_ascii=False))
+                                    .get("룰엔진버전") or [])
+                    if eng:
+                        status["eng_checked"] = True
+                        if eng != fz["룰엔진버전"]:
+                            status.update(state="error", message=f"룰셋(룰엔진) 버전이 동결({fz['룰엔진버전']})과 달라({eng}) 멈췄어요 "
+                                                                 "— 규격서: 다시 동결하고 전체 테스트셋을 재수행.")
             except Exception as e:                                  # noqa: BLE001
                 rec.update(판단유형=S.UNDECIDED, 단계로그=[], 오류=f"{type(e).__name__}: {str(e)[:300]}")
             rec["소요초"] = round(time.time() - t0, 1)
@@ -185,6 +226,8 @@ def main():
             print(f"[{rid}#{k}] {rec.get('판단유형')} {rec.get('오류', '')} ({rec['소요초']}s)", flush=True)
             status.update(done=status["done"] + 1, current=None)
             qa_runner.write_status(a.status_file, status)
+            if status["state"] == "error":                          # 룰엔진 버전 불일치 → 더 보내지 않음
+                break
         if status["state"] == "running":
             snap_of = lambda p: os.path.join(snap, os.path.basename(p.replace("\\", "/"))) if p and os.path.exists(os.path.join(snap, os.path.basename(p.replace("\\", "/")))) else p
             r = run_score(item, run_dir, snap_of(a.answer), snap_of(a.testset), snap_of(a.lawdb))   # 실행 중 원본이 바뀌어도 시작 당시 사본으로 채점

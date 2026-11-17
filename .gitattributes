@@ -22,3 +22,10 @@ spec_data/testset_ai3.csv -text
 spec_data/testset_ai7.csv -text
 spec_data/answer_ai7.csv -text
 spec_data/freeze_ai7.json -text
+
+# [AI 1]~[AI 5] 동결 기록 (11-17) — PC·서버 같은 내용
+spec_data/freeze_ai1.json -text
+spec_data/freeze_ai2.json -text
+spec_data/freeze_ai3.json -text
+spec_data/freeze_ai4.json -text
+spec_data/freeze_ai5.json -text
