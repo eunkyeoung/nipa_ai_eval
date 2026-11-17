@@ -339,15 +339,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                     st.markdown(f"**{label}** `{os.path.basename(path)}` — ✅ {kb:,.0f} KB  \nSHA-256 `{_sha256(path, os.path.getmtime(path))}`")
                 else:
                     st.markdown(f"**{label}** `{os.path.basename(path)}` — ❌ 없음")
-                ext = os.path.splitext(path)[1].lower()
-                up = st.file_uploader(os.path.basename(path), type=[ext.lstrip(".")], key=f"up_da2_{os.path.basename(path)}",
-                                      label_visibility="collapsed")
-                if up is not None:
-                    os.makedirs(os.path.dirname(path), exist_ok=True)
-                    with open(path, "wb") as f:
-                        f.write(up.getvalue())
-                    st.cache_data.clear()
-                    st.success(f"{os.path.basename(path)} 저장")
+                # 화면에서 올리기 없음(11-17 사용자: 시험 데이터가 바뀌지 않게) — 자산 교체는 운영자가 git·scp로
             st.caption("규격서 [DA 2] 사전조건의 검증 자산입니다. " + sp.get("source", ""))
             st.caption("작성 규칙(제작지시서 0.2v) — CSV는 UTF-8, 헤더 1행. 정답 바인딩·매핑은 JSON 문자열. "
                        "조문은 `법령명.조.항`(항 없으면 `법령명.조`, 별표는 `법령명.별표N`), 호·목은 쓰지 않음. "
@@ -390,37 +382,20 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
 
     need = FILES[item]
     with side.popover("📂 시험 데이터", width="stretch"):
-        if item == "AI6":                                         # 시험관 화면 — 확인만 (동결한 시험 데이터를 화면에서 바꾸지 않게)
-            st.caption("시험에 쓰는 파일과 SHA-256입니다. 규격서에 적힌 값과 같은지 확인하세요.")
-        else:
-            st.caption(f"폴더 `{DATA}/` 의 CSV(UTF-8) 또는 XLSX를 사용해요. 올리면 같은 이름으로 저장돼요.")
-            st.caption("작성 규칙 — 여러 값은 세미콜론(;)으로 구분 · 근거조문은 `법령명.조.항` (예: `건축법.2.1; 건축법.44`) "
-                       "또는 `건축법 제44조 제1항`처럼 '제'를 붙여 표기 (자세한 내용: README 9-2)")
+        # 모든 항목 확인만(11-17 사용자: 화면에서 시험 데이터를 올리거나 만들지 않게 — 11-10 서버 AI1 덮어쓰기 사고). 교체는 운영자가 git으로
+        st.caption("시험에 쓰는 파일과 SHA-256입니다. 규격서에 적힌 값과 같은지 확인하세요.")
         for stem in need:
-            if item == "AI6" and stem.startswith("result_"):         # AI6 는 자동 실행 — 결과 파일을 올리지 않음
+            if item in ("AI6", "AI7") and stem.startswith("result_"):  # AI6·AI7 은 자동 실행 — 결과 파일을 쓰지 않음
                 continue
             p = data_path(stem)
             kind = LABEL.get(stem.split("_")[0], LABEL.get(stem, stem))
             n = len(S.read_table(p)) if p else 0
             st.markdown(f"**{kind}** `{stem}` — " + (f"✅ {n}건" if p else ("기본 대응표 사용" if stem.startswith("intent_") else "❌ 없음"))
-                        + (f" · SHA-256 `{S.sha256(p)}`" if p and item == "AI6" else ""))   # 규격서에 적힌 64자리와 그대로 대조
-            if item == "AI6":
-                if p:
-                    with open(p, "rb") as f_:
-                        st.download_button(f"⬇ {os.path.basename(p)}", f_.read(), file_name=os.path.basename(p),
-                                           width="stretch", key=f"dl_{stem}")
-                continue
-            up = st.file_uploader(stem, type=["csv", "xlsx"], key=f"up_{stem}", label_visibility="collapsed")
-            if up is not None and st.session_state.get(f"up_done_{stem}") != up.file_id:   # 올린 파일은 한 번만 저장 (다시 그릴 때 덮어쓰지 않게)
-                ext = os.path.splitext(up.name)[1].lower()
-                for e in (".csv", ".xlsx"):
-                    if os.path.exists(os.path.join(DATA, stem + e)):
-                        os.remove(os.path.join(DATA, stem + e))
-                with open(os.path.join(DATA, stem + ext), "wb") as f:
-                    f.write(up.getvalue())
-                st.session_state[f"up_done_{stem}"] = up.file_id
-                st.cache_data.clear()
-                st.success(f"{stem}{ext} 저장")
+                        + (f" · SHA-256 `{S.sha256(p)}`" if p else ""))   # 규격서에 적힌 64자리와 그대로 대조
+            if p and os.path.getsize(p) < 5_000_000:                 # 조문 DB(약 43MB)는 화면이 느려져 해시만 표시
+                with open(p, "rb") as f_:
+                    st.download_button(f"⬇ {os.path.basename(p)}", f_.read(), file_name=os.path.basename(p),
+                                       width="stretch", key=f"dl_{stem}")
         if item == "AI4":                       # 규격서 [AI 4] 시험방법 (2): 판정 결과별·예외 유형별 개수 확인
             t4, a4 = S.read_table(data_path("testset_ai4")), S.read_table(data_path("answer_ai4"))
             if t4 is not None and "예외유형" in t4:
@@ -436,15 +411,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                 cols, rows = S.TEMPLATES[item][stem + ".csv"]
                 st.download_button(f"⬇ {stem}.csv 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
                                    file_name=f"{stem}.csv", mime="text/csv", width="stretch", key=f"tpl_{stem}")
-        if item == "AI1" and os.path.exists("gold.xlsx"):
-            if st.button("gold.xlsx → AI1 시험셋·정답셋 만들기", width="stretch",
-                         help="기존 정답셋(주소·시설물·정답판정·근거)으로 testset_ai1.csv / answer_ai1.csv 생성 (기존 파일 덮어씀)"):
-                import qa_eval
-                g = qa_eval.load_gold("gold.xlsx")
-                import qa_runner
-                n = S.gold_to_ai1(g, qa_runner.find_col(g.columns, "주소"), qa_runner.find_col(g.columns, "시설물"), DATA)
-                st.cache_data.clear()
-                st.success(f"{n}건 생성")
+        # 'gold.xlsx → AI1 시험셋·정답셋 만들기' 버튼은 뺌(11-17 사용자: 화면에서 시험 데이터가 바뀌지 않게)
 
     missing = [s for s in need if not data_path(s) and not s.startswith(OPTIONAL)]
     for s_ in need:
@@ -455,7 +422,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
         side.caption(("✅ " if p else ("⚠️ " if opt else "❌ ")) + f"{s_}" +
                      (f" · {len(S.read_table(p))}건" if p else (" 없음 (① 판정 보류)" if s_.startswith("law_")
                                                               else " 없음 (기본 대응표로 판정)" if s_.startswith("intent_")
-                                                              else (" 없음 (채점 전에 올려 주세요)" if opt else " 없음"))))
+                                                              else " 없음")))
     if item == "AI6":
         return sidebar_ai6(side, launch, running, missing)
     if item == "AI7":
@@ -478,7 +445,8 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
         return item
     repeat = 1
     if item == "AI3":
-        repeat = side.number_input("반복 횟수", 2, 10, 5, key="spec_repeat")
+        repeat = 5                                                    # 규격서: 반복 5회 고정(11-17 사용자 — 화면에서 바꾸지 않음)
+        side.caption("반복 횟수 5회 (규격서 고정)")
     ts_p = data_path(f"testset_{item.lower()}")
     ids = []
     if ts_p:
@@ -492,7 +460,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                       disabled=running or bool(missing),
                       help="결과는 spec/" + item + "/<시각>/ 에 저장돼요. 백그라운드에서 실행됩니다.")
     if missing:
-        side.caption("❌ 표시된 파일을 먼저 올려 주세요 (📂 시험 데이터).")
+        side.caption("❌ 시험 데이터 파일이 없어요 (📂 시험 데이터) — 운영자에게 알려 주세요.")
     if run:
         import qa_runner
         cmd = [sys.executable, "-u", "spec_runner.py", item, "--testset", ts_p, "--status-file", qa_runner.STATUS_FILE,
