@@ -43,7 +43,8 @@ AIPS(AI 통합인허가 사전진단 서비스)의 **성과지표 공인시험�
 qa_app.py          화면 진입점 (Streamlit). 성과지표 화면 머리 박스, 진행 표시
 spec_page.py       성과지표 화면: 사이드바(시험 항목 AI1~AI7·DA2, 시험 데이터, 실행), 결과 표, 질의별 결과·상세
 spec_eval.py       SPEC(항목 정의), 채점(score_ai1~ai5, score_cmd), 조문 정규화(parse_citations, cite_match), map_response(응답 → 출력 필드)
-spec_runner.py     실행기: 질의 → raw/ 저장 → 로그(jsonl) → 채점. --rescore --reextract 로 원문에서 다시 추출·채점
+spec_runner.py     실행기: 질의 → raw/ 저장 → 로그(jsonl) → 채점. --rescore --reextract 로 원문에서 다시 추출·채점. --freeze(운영자 동결)
+spec_freeze.py     [AI1~AI5] 사전 점검(모델·vLLM·법령 DB 조회 + 확인 질의로 룰엔진 버전)·동결 기록·비교 (125절)
 qa_runner.py       AIPS SSE 질의(stream_query), 응답에서 판정·근거 추출(extract)
 qa_eval.py         조문 별칭(LAW_ALIAS), 인허가 종류 분류
 spec_runner_ai6.py [AI6] 실행기: 공간오케(115:17006 /api/chat)에 명령 → raw/ → 명령 해석·실행 결과 로그 → 판정. 동결 확인
@@ -60,7 +61,7 @@ spec/              실행 결과 (git 제외)
 backup/            교체 전 데이터 백업 (변경내역에 사유 기록)
 ```
 
-## 4. 성과지표별 현재 상태 (2026-11-13)
+## 4. 성과지표별 현재 상태 (2026-11-17)
 
 | 항목 | 지표·목표 | 데이터 | 최근 결과 | 메모 |
 |---|---|---|---|---|
