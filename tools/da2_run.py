@@ -30,11 +30,11 @@ LABEL = {"cq": "CQ 목록·SPARQL 질의·정답셋", "schema_check": "스키마
 
 def tool_versions():
     """검증 도구 버전 — Python 라이브러리 + Java(Pellet 실행에 필요)"""
+    import importlib.metadata as md
     out = {}
-    for m in ("pyoxigraph", "pyshacl", "owlready2", "rdflib"):
+    for m in ("pyoxigraph", "pyshacl", "owlready2", "rdflib"):     # 설치된 패키지 버전(owlready2는 모듈에 __version__ 이 없어 'ok'로 보였음, 11-17)
         try:
-            mod = __import__(m)
-            out[m] = getattr(mod, "__version__", "ok")
+            out[m] = md.version(m)
         except Exception:                                              # noqa: BLE001
             out[m] = "없음"
     try:
@@ -193,11 +193,7 @@ def main():
             meta["assets"][k] = dict(path=p, sha256=sha256(p), bytes=os.path.getsize(p))
             if os.path.getsize(p) < 20 << 20:
                 shutil.copy2(p, os.path.join(run_dir, "data"))
-    for m in ("pyoxigraph", "pyshacl", "owlready2", "rdflib"):
-        try:
-            meta["tools"][m] = __import__(m).__version__ if hasattr(__import__(m), "__version__") else "ok"
-        except Exception:                                              # noqa: BLE001
-            meta["tools"][m] = "없음"
+    meta["tools"].update(tool_versions())                             # 실행 기록에도 같은 방식(설치 패키지 버전·Java)
     meta["tools"]["reasoner"] = "Pellet 2.3.1 (owlready2 내장)"
     meta["tools"]["oops"] = "https://oops.linkeddata.es/rest"
     with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
