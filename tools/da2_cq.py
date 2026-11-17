@@ -85,11 +85,11 @@ def cite_text(s):
 # 결과가 확인 당시와 같을 때만 씀(키 = 확인한 실제 결과) — 결과가 바뀌면 아래 reason()의 일반 문구로 돌아감. 판정과는 무관
 DETAIL = {
     "CQ-005": (["건축법.20.2", "건축법.20.3", "건축법시행령.15.1", "건축법시행령.15.5"],
-               "음성군 조례 제21조 제1항·제2항이 각각 다른 상위 법령에 연결 → 온톨로지에 항 내용이 없어 '천막 창고용'(제2항)을 구별 못 함 "
-               "→ 제1항의 상위 법령(건축법 제20조 제2항, 시행령 제15조 제1항)도 함께 나옴"),
+               "음성군 조례 제21조에는 제1항과 제2항이 있는데, 온톨로지에는 항 번호만 있고 내용이 없어 어느 항이 질문의 '천막 창고용'인지 알 수 없습니다. "
+               "그래서 정답인 제2항의 상위 법령과 함께, 제1항의 상위 법령(건축법 제20조 제2항, 시행령 제15조 제1항)도 나왔습니다."),
     "CQ-025": (["국토계획법.84", "국토계획법시행령.94"],
-               "국토계획법 제84조 제1항·제3항이 모두 시행령 제94조 하나에 연결 → 온톨로지에 항 내용이 없어 '가중평균'(제1항)을 구별 못 함 "
-               "→ 조 전체(제84조)로 나옴"),
+               "국토계획법 제84조 제1항(정답)과 제3항이 둘 다 시행령 제94조 하나에 연결되어 있고, 온톨로지에는 항 내용이 없어 어느 항이 질문의 '가중평균'인지 알 수 없습니다. "
+               "그래서 제1항을 골라내지 못하고 제84조 전체가 나왔습니다."),
 }
 
 
@@ -104,25 +104,25 @@ def reason(exp, got, keys=None, absent=()):
     keys = 온톨로지에 있는 조문 키(실행 때). 화면에서 저장된 결과로 다시 만들 때는 keys=None, absent = 온톨로지에 없다고 기록된 정답 키"""
     jo = lambda k: ".".join(k.split(".")[:2])                         # '법령.조'
     q = lambda ks: ", ".join(cite(k) for k in ks)
-    no_text = "온톨로지에는 항 번호만 있고 조문 내용이 없어, 같은 조의 여러 항 중 질문에 맞는 항을 구별하지 못함"
+    no_text = "온톨로지에는 항 번호만 있고 내용이 없어, 같은 조의 여러 항 중 어느 항이 질문에 맞는지 알 수 없기 때문입니다."
     out = []
     for k in sorted(set(exp) - set(got)):
         if (keys is not None and k not in keys) or k in absent:
-            out.append(f"정답 조문 {cite(k)}이(가) 온톨로지에 없음: 질의로 찾을 수 없음")
+            out.append(f"정답 조문 {cite(k)}이(가) 온톨로지에 없어서 찾을 수 없습니다.")
         elif not got:
-            out.append(f"결과가 하나도 안 나옴: 질문의 출발 조문이 온톨로지에 없거나, 정답 {cite(k)}까지 이어지는 관계가 없음")
+            out.append(f"결과가 하나도 나오지 않았습니다. 질문에서 정답 {cite(k)}까지 이어지는 관계가 온톨로지에 없기 때문입니다.")
         elif jo(k) in got:
-            out.append(f"정답 항 {cite(k)} 대신 조 전체 {cite(jo(k))}가 나옴: {no_text}")
+            out.append(f"정답은 {cite(k)}인데 {cite(jo(k))} 전체가 나왔습니다. {no_text}")
         else:
-            out.append(f"정답 {cite(k)}이(가) 안 나옴: 질문에서 이 조문까지 이어지는 관계(위임·예외 등)가 온톨로지에 없음")
+            out.append(f"정답 {cite(k)}이(가) 나오지 않았습니다. 질문에서 이 조문까지 이어지는 관계가 온톨로지에 없기 때문입니다.")
     gold_jo = {jo(k) for k in exp}
     extra = sorted(set(got) - set(exp))
     same = [k for k in extra if jo(k) in gold_jo and k.count(".") == 2]
     if same:
-        out.append(f"정답이 아닌 {q(same)}도 나옴(정답과 같은 조의 다른 항): {no_text}")
+        out.append(f"정답이 아닌 {q(same)}도 나왔습니다. {no_text}")
     other = [k for k in extra if k not in same and not any(k == jo(x) for x in exp)]   # 조 단위로 나온 것은 위에서 설명
     if other:
-        out.append(f"정답에 없는 조문 {q(other[:8])}{' 등' if len(other) > 8 else ''}도 나옴: 질문의 말로 찾은 범위가 정답보다 넓음")
+        out.append(f"정답에 없는 조문 {q(other[:8])}{' 등' if len(other) > 8 else ''}도 나왔습니다. 질문의 말로 찾은 범위가 정답보다 넓기 때문입니다.")
     return " / ".join(out)
 
 
