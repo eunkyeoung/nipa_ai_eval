@@ -353,11 +353,39 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
         ids = side.multiselect("실행할 CQ ID (비우면 전체)", cq_ids, key="da2_ids") if cq_ids else []
         if sel or ids:
             side.caption("부분 실행 — 결과는 따로 저장되고 종합 점수(가중합)는 계산하지 않아요.")
+        # 사전 점검·동결(11-17 사용자: AI1~AI7과 같게) — 규격서 [DA 2] 시험방법 (2) '검증 자산·시험 데이터셋 SHA-256이 동결본과 일치하는지 확인'
+        from tools import da2_run as D2
+        if side.button("사전 점검", width="stretch", disabled=running, key="pre_DA2",
+                       help="검증 자산 8개(시험셋·온톨로지·QA 보완 파일)의 SHA-256을 동결 기록과 비교하고, 검증 도구(Java·pyshacl 등) 버전을 확인해요."):
+            with st.spinner("사전 점검 중… (인스턴스 155MB 해시 계산)"):
+                fz0 = D2.read_freeze()
+                st.session_state["pre_DA2_res"] = dict(at=time.strftime("%H:%M:%S"), rows=D2.asset_rows(fz0),
+                                                       tools=D2.tool_versions(), want_tools=fz0.get("tools") or {})
+        pc = st.session_state.get("pre_DA2_res")
+        if pc:
+            trows = [{"도구": k, "동결 버전": pc["want_tools"].get(k, "-"), "지금 버전": v,
+                      "결과": "일치" if pc["want_tools"].get(k) == v else ("불일치" if pc["want_tools"].get(k) else "동결 기록 없음")}
+                     for k, v in pc["tools"].items()]
+            bad = [r for r in pc["rows"] if r["결과"] != "일치"] + [r for r in trows if r["결과"] == "불일치" or r["지금 버전"] == "없음"]
+            side.caption(("✅ 사전 점검 정상" if not bad else f"❌ 사전 점검 문제 {len(bad)}건") + f" · {pc['at']}")
+            with side.expander("사전 점검 결과", expanded=bool(bad)):
+                st.markdown("**동결 버전 확인 (검증 자산 SHA-256)**")
+                show_table(pd.DataFrame(pc["rows"]))
+                st.markdown("**검증 도구**")
+                show_table(pd.DataFrame(trows))
+        fz = D2.read_freeze()
+        diff = [D2.LABEL[k] for k, h in (fz.get("assets") or {}).items()            # 화면은 수정 시각 기준 캐시 해시(매번 155MB 계산 안 함)
+                if not os.path.exists(D2.ASSETS.get(k, "")) or _sha256(D2.ASSETS[k], os.path.getmtime(D2.ASSETS[k])) != h]
+        if fz:
+            side.caption(f"🔒 동결됨 · {fz.get('frozen_at', '')}" + (f" — ❌ 바뀐 자산: {', '.join(diff)} (실행할 수 없음)" if diff else
+                                                                     " — 검증 자산 8개 SHA-256 고정"))
+        else:
+            side.caption("⚠️ 동결 기록이 없어요 — 운영자가 동결해야 해요")
         run = side.button("⏳ 실행 중…" if running else f"▶ {SHORT[item]} 시험 실행", type="primary", width="stretch",
-                          disabled=running or bool(miss), help="결과는 spec/DA2/<시각>/ 에 저장돼요. SHACL 검증 포함 약 7분.")
+                          disabled=running or bool(miss) or bool(diff), help="결과는 spec/DA2/<시각>/ 에 저장돼요. SHACL 검증 포함 약 7분.")
         if miss:
             side.caption("❌ 검증 자산 없음: " + ", ".join(miss))
-        if run:
+        if run and not diff:
             import qa_runner
             cmd = [sys.executable, "-u", os.path.join("tools", "da2_run.py"), "--parts", ",".join(map(str, parts)),
                    "--status-file", qa_runner.STATUS_FILE]

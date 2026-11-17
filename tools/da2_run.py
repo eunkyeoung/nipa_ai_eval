@@ -22,6 +22,68 @@ TARGET = 96.0
 PART_TARGET = {1: 96.0, 2: 96.0, 3: 96.0, 4: 96.0}
 
 
+FREEZE_FILE = f"{DA2}/freeze_da2.json"                             # 동결 기록(11-17 사용자: AI1~AI7과 같게) — 운영자 명령 --freeze
+LABEL = {"cq": "CQ 목록·SPARQL 질의·정답셋", "schema_check": "스키마 평가항목·검증 질의", "mapping": "매핑 검증 표본·정답",
+         "schema": "온톨로지 스키마", "instance": "인스턴스 데이터", "shapes": "SHACL 제약규칙",
+         "schema_patch": "QA 보완 파일(스키마)", "instance_patch": "QA 보완 파일(인스턴스)"}
+
+
+def tool_versions():
+    """검증 도구 버전 — Python 라이브러리 + Java(Pellet 실행에 필요)"""
+    out = {}
+    for m in ("pyoxigraph", "pyshacl", "owlready2", "rdflib"):
+        try:
+            mod = __import__(m)
+            out[m] = getattr(mod, "__version__", "ok")
+        except Exception:                                              # noqa: BLE001
+            out[m] = "없음"
+    try:
+        import subprocess
+        from tools.da2_consistency import java_exe
+        r = subprocess.run([java_exe(), "-version"], capture_output=True, text=True, timeout=20)
+        import re as _re
+        m = _re.search(r'version "([^"]+)"', (r.stderr or "") + (r.stdout or ""))
+        out["Java"] = m.group(1) if m else "없음"
+    except Exception:                                                  # noqa: BLE001
+        out["Java"] = "없음"
+    return out
+
+
+def freeze_record():
+    rec = dict(assets={k: sha256(p) for k, p in ASSETS.items() if os.path.exists(p)}, tools=tool_versions(),
+               frozen_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+    return rec
+
+
+def read_freeze():
+    if not os.path.exists(FREEZE_FILE):
+        return {}
+    with open(FREEZE_FILE, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def asset_rows(fz=None, hashes=None):
+    """'동결 버전 확인' 표 — 검증 자산별 동결 SHA-256과 지금 SHA-256 (규격서 [DA 2] 시험방법 (2))"""
+    fz = read_freeze() if fz is None else fz
+    want = fz.get("assets") or {}
+    rows = []
+    for k, p in ASSETS.items():
+        got = (hashes or {}).get(k) or (sha256(p) if os.path.exists(p) else "")
+        w = want.get(k, "")
+        rows.append({"항목": LABEL[k], "파일": os.path.basename(p), "동결 SHA-256": w or "-", "지금 SHA-256": got or "없음",
+                     "결과": "일치" if w and got == w else ("불일치" if w else "동결 기록 없음")})
+    return rows
+
+
+def freeze_diff(fz=None):
+    """동결 기록과 다른 검증 자산 이름 목록 (없으면 [])"""
+    fz = read_freeze() if fz is None else fz
+    if not fz:
+        return []
+    return [LABEL[k] for k, h in (fz.get("assets") or {}).items()
+            if not os.path.exists(ASSETS.get(k, "")) or sha256(ASSETS[k]) != h]
+
+
 def sha256(p):
     h = hashlib.sha256()
     with open(p, "rb") as f:
@@ -84,7 +146,21 @@ def main():
     ap.add_argument("--status-file")
     ap.add_argument("--ids", default="", help="DA2-1 CQ ID 일부만 실행(부분 실행 — 종합 점수 계산 안 함)")
     ap.add_argument("--resume", action="store_true", help="화면 '이어서': --run-dir 안에 결과가 이미 있는 구성지표는 건너뜀")
+    ap.add_argument("--freeze", action="store_true", help="운영자용: 지금 검증 자산 SHA-256·도구 버전으로 동결 기록(spec_data/da2/freeze_da2.json)")
     a = ap.parse_args()
+    if a.freeze:
+        rec = freeze_record()
+        with open(FREEZE_FILE, "w", encoding="utf-8") as f:
+            json.dump(rec, f, ensure_ascii=False, indent=1)
+        print(json.dumps(rec, ensure_ascii=False, indent=1))
+        return
+    diff = freeze_diff()
+    if diff:                                                           # 동결본과 다른 검증 자산 → 실행하지 않음(규격서 시험방법 (2))
+        msg = ("동결 이후 바뀐 검증 자산이 있어 실행하지 않아요: " + ", ".join(diff)
+               + " — 의도한 변경이면 운영자가 다시 동결하세요(python tools/da2_run.py --freeze).")
+        qa_runner.write_status(a.status_file, dict(state="error", script="tools/da2_run.py", mode="성과지표 DA2",
+                                                   message=msg, finished=time.time()))
+        raise SystemExit(msg)
     parts = sorted({int(x) for x in a.parts.split(",") if x.strip()})
     ids = {x.strip() for x in a.ids.split(",") if x.strip()}
     run_dir = a.run_dir or os.path.join("spec", "DA2", time.strftime("%Y%m%d_%H%M%S"))
@@ -111,7 +187,7 @@ def main():
         print(status["message"])
         return
     meta = dict(item="DA2", parts=parts, ids=sorted(ids), scope="partial" if (ids or parts != [1, 2, 3, 4]) else "full",
-                started=time.strftime("%Y-%m-%d %H:%M:%S"), assets={}, tools={})
+                started=time.strftime("%Y-%m-%d %H:%M:%S"), assets={}, tools={}, 동결=read_freeze().get("frozen_at"))
     for k, p in ASSETS.items():                                        # 검증 자산 해시 기록, 작은 파일은 사본 보관
         if os.path.exists(p):
             meta["assets"][k] = dict(path=p, sha256=sha256(p), bytes=os.path.getsize(p))
