@@ -965,6 +965,13 @@ def _da2_reason(i, r):
     g = lambda c: str(r.get(c, "") if r.get(c, "") is not None else "").strip()
     if not _da2_cause(i, r) or g("status") == "error":
         return ""
+    if i == 0 and g("expected_bindings") and g("actual_bindings"):          # 2-1: 정답·결과로 풀어 쓴 사유를 다시 만듦(11-17 사용자, 저장 파일은 그대로)
+        try:
+            exp, got, old = json.loads(g("expected_bindings")), json.loads(g("actual_bindings")), g("reason")
+            absent = {k for k in exp if "온톨로지에 없" in old and (k in old or _cq.cite(k) in old)}
+            return _cq.detail(g("cq_id"), got) or _cq.reason(exp, got, absent=absent) or old
+        except Exception:                                                   # noqa: BLE001
+            pass
     if i in (0, 1):                                                         # 2-1·2-2: 도구가 쓴 사유
         return g("reason") or "(이 실행 결과에는 사유 열이 없음 — 다시 실행하면 표시)"
     if i == 2:                                                              # 2-3: 확인 경로의 결론

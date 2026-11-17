@@ -81,27 +81,60 @@ def cite_text(s):
     return re.sub(r"(?<=[조항호목\d])·(?=\s*(?:제\d|별표|법 |영 |같은 법|시행령|시행규칙))", ", ", s)
 
 
-def reason(exp, got, keys):
-    """불일치 사유: 정답·결과 키와 온톨로지에 있는 조문 키로 판정"""
+# 문항별 불일치 사유(QA가 법령 원문·온톨로지·보완 파일을 대조해 확인한 내용, 11-17 사용자: 구체적으로).
+# 결과가 확인 당시와 같을 때만 씀(키 = 확인한 실제 결과) — 결과가 바뀌면 아래 reason()의 일반 문구로 돌아감. 판정과는 무관
+DETAIL = {
+    "CQ-005": (["건축법.20.2", "건축법.20.3", "건축법시행령.15.1", "건축법시행령.15.5"],
+               "질문은 음성군 건축 조례에서 '천막과 유사한 구조의 창고용' 가설건축물을 정한 규정(조례 제21조 제2항)의 상위 법령을 묻습니다. "
+               "정답(건축법 제20조 제3항, 건축법 시행령 제15조 제5항)은 모두 나왔지만, 정답이 아닌 건축법 제20조 제2항과 건축법 시행령 제15조 제1항도 함께 나왔습니다. "
+               "음성군 건축 조례 제21조(가설건축물)에는 항이 두 개 있습니다. 제1항은 도시계획시설 부지의 가설건축물로 건축법 제20조 제2항 → 시행령 제15조 제1항에서 이어지고, "
+               "제2항은 천막 구조 창고용 등으로 건축법 제20조 제3항 → 시행령 제15조 제5항에서 이어집니다. "
+               "온톨로지에는 조례 제21조 제1항·제2항의 번호만 있고 '천막과 유사한 구조의 창고용'이라는 조문 내용이 없어서, 질의가 두 항을 구별하지 못하고 두 항의 상위 법령을 모두 냈습니다. "
+               "위임 관계는 QA 보완 파일로 항 단위까지 연결되어 있으므로, 관계를 더해서는 풀리지 않습니다(조문 내용이 있어야 구별 가능)."),
+    "CQ-025": (["국토계획법.84", "국토계획법시행령.94"],
+               "질문은 대지가 둘 이상의 용도지역에 걸칠 때 건폐율·용적률을 가중평균하는 규정을 묻고, 정답은 국토계획법 제84조 제1항과 국토계획법 시행령 제94조입니다. "
+               "시행령 제94조는 나왔지만, 국토계획법은 '제84조 제1항'이 아니라 '제84조'(조 전체)로 나왔습니다. "
+               "국토계획법 제84조에는 제1항(가중평균 적용)과 제3항(녹지지역에 걸친 경우)이 있는데, 시행령 제94조는 항이 나뉘지 않은 한 문장으로 '법 제84조제1항 … 및 같은 조 제3항 본문'을 함께 인용합니다. "
+               "그래서 온톨로지에서도 제84조 제1항과 제3항이 모두 같은 시행령 제94조로 연결되어 있어, 위임 관계로는 두 항을 구별할 수 없습니다. "
+               "제1항만 고르려면 '가중평균'이라는 말이 필요한데, 이 말은 법령 원문의 항 본문에만 있고 온톨로지에는 없습니다. 그래서 질의가 항을 고르지 못하고 조 전체로 결과를 냈습니다. "
+               "시행령 제94조는 나뉜 항이 없어 QA 보완 파일(항 단위 위임)로도 풀리지 않습니다."),
+}
+
+
+def detail(cid, got):
+    """확인한 문항이고 실제 결과가 확인 당시와 같으면 문항별 사유, 아니면 None"""
+    d = DETAIL.get(cid)
+    return d[1] if d and sorted(got) == sorted(d[0]) else None
+
+
+def reason(exp, got, keys=None, absent=()):
+    """불일치 사유(사람이 읽는 문장, 11-17 사용자: 함축적 문구 → 풀어 씀). 판정과는 무관한 설명.
+    keys = 온톨로지에 있는 조문 키(실행 때). 화면에서 저장된 결과로 다시 만들 때는 keys=None, absent = 온톨로지에 없다고 기록된 정답 키"""
     jo = lambda k: ".".join(k.split(".")[:2])                         # '법령.조'
+    q = lambda ks: ", ".join(f"'{cite(k)}'" for k in ks)
+    no_text = "온톨로지의 항에는 '제○조 제○항'이라는 번호만 있고 조문 내용(본문)이 없어서, 질문에 쓰인 말로는 같은 조의 여러 항 중 어느 항이 질문에 해당하는지 가려낼 수 없습니다."
     out = []
     for k in sorted(set(exp) - set(got)):
-        if k not in keys:
-            out.append(f"정답 조문 {k}이(가) 온톨로지에 없음 — 질의로 낼 수 없음")
+        if (keys is not None and k not in keys) or k in absent:
+            out.append(f"정답 조문 '{cite(k)}'이(가) 온톨로지에 들어 있지 않아, 어떤 질의로도 결과에 나올 수 없습니다.")
         elif not got:
-            out.append(f"{k}: 질의 결과가 없음 — 질문의 출발점(법령·조문)이 온톨로지에 없거나 연결이 없음")
+            out.append(f"질의 결과가 하나도 나오지 않아 정답 '{cite(k)}'을(를) 찾지 못했습니다. "
+                       "질문에서 출발하는 법령·조문이 온톨로지에 없거나, 그 조문에서 정답 조문까지 이어지는 관계가 온톨로지에 없습니다.")
         elif jo(k) in got:
-            out.append(f"{k}: 결과가 항이 아니라 조({jo(k)})로 나옴 — 위임 연결이 조 단위라 항을 구분할 수 없음")
+            out.append(f"정답은 '{cite(k)}'(항)인데 결과는 '{cite(jo(k))}'(조 전체)로 나왔습니다. {no_text} "
+                       "그래서 질의가 항을 고르지 못하고 조 전체를 결과로 냈습니다.")
         else:
-            out.append(f"{k}: 정답 조문까지 이어지는 연결이 없음 — 질문 개념에서 이 조문으로 가는 관계가 온톨로지에 없음")
+            out.append(f"정답 '{cite(k)}'이(가) 결과에 없습니다. 질문에서 이 조문까지 이어지는 관계(위임·예외 등)가 온톨로지에 없습니다.")
     gold_jo = {jo(k) for k in exp}
     extra = sorted(set(got) - set(exp))
     same = [k for k in extra if jo(k) in gold_jo and k.count(".") == 2]
     if same:
-        out.append(f"같은 조의 다른 항이 함께 나옴({', '.join(same)}) — 온톨로지 연결이 조 단위라 질문 개념만으로는 정답 항만 고를 수 없음")
+        out.append(f"정답이 아닌 {q(same)}도 함께 나왔습니다(정답과 같은 조의 다른 항). {no_text} "
+                   "그래서 질문에 해당하지 않는 항과, 그 항으로 이어진 조문까지 함께 결과에 나왔습니다.")
     other = [k for k in extra if k not in same and not any(k == jo(x) for x in exp)]   # 조 단위로 나온 것은 위에서 설명
     if other:
-        out.append(f"정답에 없는 다른 조문이 함께 나옴({', '.join(other[:8])}{' 외' if len(other) > 8 else ''}) — 질문 개념으로 걸리는 조문이 정답보다 넓음")
+        out.append(f"정답에 없는 다른 조문 {q(other[:8])}{' 등' if len(other) > 8 else ''}도 함께 나왔습니다. "
+                   "질문에 쓰인 말로 찾은 조문의 범위가 정답보다 넓습니다.")
     return " / ".join(out)
 
 
@@ -185,7 +218,7 @@ def run(out_dir, zp=ZIP, only=None, store=None, progress=None):
                        extra_bindings=json.dumps(sorted(set(got) - set(exp)), ensure_ascii=False),
                        match=str(set(got) == set(exp)).lower())
             if set(got) != set(exp):
-                rec["reason"] = reason(exp, got, keys)
+                rec["reason"] = detail(r["cq_id"], got) or reason(exp, got, keys)
         except Exception as e:                                             # noqa: BLE001
             rec.update(status="error", error_message=f"{type(e).__name__}: {str(e)[:300]}")
         rec["elapsed_ms"] = int((time.time() - t) * 1000)
