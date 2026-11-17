@@ -298,20 +298,13 @@ def _sha256(path, mtime):
     return h.hexdigest()
 
 
-# [DA 2] 입력 양식 — 제작지시서 0.2v(2026-11-06)의 CSV 필수 열 중 입력(정답) 열. 예시 1행
-DA2_TEMPLATES = {
-    "da2_cq_testset.csv": (
-        ["cq_id", "odp_type", "municipality", "question", "inference_required", "query_file", "expected_bindings"],
-        [["CQ-001", "Exception (예외·단서 적용)", "공통", "대지가 도로에 2m 미만으로 접한 경우에도 건축이 허용되는 단서 조항은 무엇인가?",
-          "false", "sparql/CQ-001.rq", '["건축법.44.1", "건축법시행령.28.1", "건축법시행령.28.2"]']]),
-    "da2_schema_checklist.csv": (
-        ["check_id", "item_group", "description", "method", "validator_file", "expected"],
-        [["SCH-001", "핵심 클래스", "법령(aip:Law)마다 법령명(aip:lawName)이 있다", "SPARQL ASK", "checks/SCH-001.rq", "true"]]),
-    "aips_da2_mapping_testset.csv": (
-        ["mapping_id", "source_field", "target_element", "expected_mapping"],
-        [["MAP-001", "(원천 테이블).(필드) 예: 법령수집DB.법령.법령명", "https://onto.go.kr/aip/lawName",
-          '{"class": "aip:Law", "property": "aip:lawName", "relation": "", "datatype": "xsd:string"}']]),
-}
+def _file_dl(container, path, key):
+    """실제 파일 내려받기 버튼 — 누를 때만 파일을 읽음(큰 파일도 화면이 느려지지 않게, 11-17)"""
+    def _read(p=path):
+        with open(p, "rb") as f:
+            return f.read()
+    container.download_button(f"⬇ {os.path.basename(path)}", _read, file_name=os.path.basename(path),
+                              width="stretch", key=key)
 
 
 def sidebar(side, launch, running):
@@ -337,18 +330,12 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
                 if os.path.exists(path):
                     kb = os.path.getsize(path) / 1024
                     st.markdown(f"**{label}** `{os.path.basename(path)}` — ✅ {kb:,.0f} KB  \nSHA-256 `{_sha256(path, os.path.getmtime(path))}`")
+                    _file_dl(st, path, f"dl_da2_{os.path.basename(path)}")
                 else:
                     st.markdown(f"**{label}** `{os.path.basename(path)}` — ❌ 없음")
                 # 화면에서 올리기 없음(11-17 사용자: 시험 데이터가 바뀌지 않게) — 자산 교체는 운영자가 git·scp로
-            st.caption("규격서 [DA 2] 사전조건의 검증 자산입니다. " + sp.get("source", ""))
-            st.caption("작성 규칙(제작지시서 0.2v) — CSV는 UTF-8, 헤더 1행. 정답 바인딩·매핑은 JSON 문자열. "
-                       "조문은 `법령명.조.항`(항 없으면 `법령명.조`, 별표는 `법령명.별표N`), 호·목은 쓰지 않음. "
-                       "CQ·스키마 zip에는 CSV 1개와 질의 파일(.rq / Shape .ttl)을 함께 넣음")
-            st.divider()
-            st.markdown("**양식**")
-            for fn, (cols, rows) in DA2_TEMPLATES.items():
-                st.download_button(f"⬇ {fn} 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
-                                   file_name=fn, mime="text/csv", width="stretch", key=f"tpl_da2_{fn}")
+            st.caption("규격서 [DA 2] 사전조건의 검증 자산입니다. 규격서에 적힌 SHA-256과 같은지 확인하세요. " + sp.get("source", ""))
+            # 양식 내려받기 없음 — 모든 항목 AI6과 같은 '파일·SHA-256·내려받기' 구조(11-17 사용자)
         # 실행: 구성지표 선택(비우면 전체 2-1 ~ 2-4) → tools/da2_run.py
         labels = {f"{k} {n}": i + 1 for i, (k, n, *_r) in enumerate(sp["parts"])}
         sel = side.multiselect("실행할 구성지표 (비우면 전체)", list(labels), key="da2_parts")
@@ -391,11 +378,9 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
             kind = LABEL.get(stem.split("_")[0], LABEL.get(stem, stem))
             n = len(S.read_table(p)) if p else 0
             st.markdown(f"**{kind}** `{stem}` — " + (f"✅ {n}건" if p else ("기본 대응표 사용" if stem.startswith("intent_") else "❌ 없음"))
-                        + (f" · SHA-256 `{S.sha256(p)}`" if p else ""))   # 규격서에 적힌 64자리와 그대로 대조
-            if p and os.path.getsize(p) < 5_000_000:                 # 조문 DB(약 43MB)는 화면이 느려져 해시만 표시
-                with open(p, "rb") as f_:
-                    st.download_button(f"⬇ {os.path.basename(p)}", f_.read(), file_name=os.path.basename(p),
-                                       width="stretch", key=f"dl_{stem}")
+                        + (f" · SHA-256 `{_sha256(p, os.path.getmtime(p))}`" if p else ""))   # 규격서에 적힌 64자리와 그대로 대조
+            if p:
+                _file_dl(st, p, f"dl_{stem}")
         if item == "AI4":                       # 규격서 [AI 4] 시험방법 (2): 판정 결과별·예외 유형별 개수 확인
             t4, a4 = S.read_table(data_path("testset_ai4")), S.read_table(data_path("answer_ai4"))
             if t4 is not None and "예외유형" in t4:
@@ -404,13 +389,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
             if a4 is not None and "판정결과" in a4:
                 vc = a4["판정결과"].map(S.type2).value_counts()
                 st.markdown("**판정 결과별 개수** — " + " / ".join(f"{k} {int(vc.get(k, 0))}건" for k in S.TYPE2))
-        if item != "AI6":                                         # AI6 시험관 화면에는 양식 없음
-            st.divider()
-            st.markdown("**양식**")
-            for stem in need:
-                cols, rows = S.TEMPLATES[item][stem + ".csv"]
-                st.download_button(f"⬇ {stem}.csv 양식", pd.DataFrame(rows, columns=cols).to_csv(index=False).encode("utf-8-sig"),
-                                   file_name=f"{stem}.csv", mime="text/csv", width="stretch", key=f"tpl_{stem}")
+        # 양식 내려받기 없음 — 모든 항목 AI6과 같은 '파일·SHA-256·내려받기' 구조(11-17 사용자)
         # 'gold.xlsx → AI1 시험셋·정답셋 만들기' 버튼은 뺌(11-17 사용자: 화면에서 시험 데이터가 바뀌지 않게)
 
     missing = [s for s in need if not data_path(s) and not s.startswith(OPTIONAL)]
