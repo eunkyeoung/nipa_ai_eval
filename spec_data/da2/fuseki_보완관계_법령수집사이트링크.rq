@@ -1,8 +1,10 @@
 # [QA] 보완 관계(qa_cq_patch_20261116) + 법령 수집 사이트 원문 링크 — Fuseki 조회만(아무것도 넣지 않음)
+# 칸: from_label_위임하는쪽 · relation(implementedBy = 항 단위 위임, provisoImplementedBy = 단서 위임) · to_label_위임받는쪽 · to_text_원문링크
+# 단서 위임만 보려면 첫 GRAPH 줄 다음에  FILTER(?p = aip:provisoImplementedBy)  한 줄을 넣음
 # 아래 VALUES 표 = 법령 ID(lawId) → 법령 수집 사이트 문서 번호(doc_id). 2026-11-17 법령 수집 사이트 API(/api/documents/hierarchy)에서 받음
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX aip: <https://onto.go.kr/aip/>
-SELECT ?from_label ?relation ?to_label ?to_text WHERE {
+SELECT (?from_label AS ?from_label_위임하는쪽) ?relation (?to_label AS ?to_label_위임받는쪽) (?to_text AS ?to_text_원문링크) WHERE {
   GRAPH <https://onto.go.kr/aip/graph/qa_cq_patch_20261116> { ?s ?p ?o }
   GRAPH ?g1 { ?s rdfs:label ?from_label }
   GRAPH ?g2 { ?o rdfs:label ?to_label .
@@ -589,6 +591,7 @@ SELECT ?from_label ?relation ?to_label ?to_text WHERE {
     ("2027269" 2653)
     ("2080465" 1030)
   }
-  BIND(STRAFTER(STR(?p), "https://onto.go.kr/aip/") AS ?relation)
+  BIND(STRAFTER(STR(?p), "https://onto.go.kr/aip/") AS ?rel)
+  BIND(CONCAT(?rel, IF(?rel = "provisoImplementedBy", "(단서 위임)", IF(?rel = "implementedBy", "(항 단위 위임)", ""))) AS ?relation)
   BIND(IRI(CONCAT("http://192.168.200.116:17801/api/documents/", STR(?docId), "/html#jo-", STR(?no))) AS ?to_text)
 } LIMIT 100
