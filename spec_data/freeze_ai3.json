@@ -1,0 +1,21 @@
+{
+ "item": "AI3",
+ "testset_sha256": "af2c4a1458fef8d3592604feb621a32ac78c542c3c7879075eb0b3581efcd51c",
+ "answer_sha256": null,
+ "lawdb_sha256": null,
+ "base": "http://192.168.200.115:17010/api",
+ "timeout_s": 600,
+ "repeat": 5,
+ "모델명": "gpt-oss-120b",
+ "vLLM": "0.24.0",
+ "법령DB": "2026-10-18",
+ "법령DB_조회값": "수집 기준 2026-10-18 (법령 295 · 문서 6,833 · 조문 165,931)",
+ "룰엔진버전": "3.3.0",
+ "시스템빌드": "b8aecf5",
+ "frozen_at": "2026-11-17 11:57:44",
+ "files": {
+  "testset": "spec_data/testset_ai3.csv",
+  "answer": null,
+  "lawdb": null
+ }
+}
