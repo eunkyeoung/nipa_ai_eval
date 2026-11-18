@@ -99,7 +99,7 @@ backup/            교체 전 데이터 백업 (변경내역에 사유 기록)
 
 ```bash
 # 서버(ssh 별칭 app = bi@192.168.200.115, 키 인증)에서 한 항목 실행 — 한 번에 하나만
-ssh app 'podman exec -d -w /app nipa-qa sh -c "python -u spec_runner.py AI1 --testset spec_data/testset_ai1.csv --answer spec_data/answer_ai1.csv --status-file run_status.json --base http://192.168.200.115:17010/api > /tmp/ai1.log 2>&1"'
+ssh app 'podman exec -d -w /app nipa-qa sh -c "python -u spec_runner.py AI1 --testset spec_data/testset_ai1.csv --answer spec_data/answer_ai1.csv --status-file run_status.json --base http://192.168.200.115:17000/api > /tmp/ai1.log 2>&1"'
 # 진행 확인
 ssh app 'cat /opt/bi/nipa_ai_eval/run_status.json'
 # 질의 없이 원문에서 다시 추출·채점 (추출 코드를 고친 뒤)

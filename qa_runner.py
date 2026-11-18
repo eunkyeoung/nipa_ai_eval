@@ -25,7 +25,7 @@ import uuid
 import pandas as pd
 import requests
 
-BASE = os.environ.get("AIPS_BASE", "http://192.168.200.115:17010/api")    # AIPS 사전진단 서비스 (2026-11-10 17000 → 17010). 컨테이너는 환경변수로 지정
+BASE = os.environ.get("AIPS_BASE", "http://192.168.200.115:17000/api")    # AIPS 사전진단 서비스 (2026-11-10 17000 → 17010, 11-18 다시 17000 — 17010은 외부 연결용, 운영담당자). 컨테이너는 환경변수로 지정
 DEVICE_ID = "qa-runner"                     # 시스템에서 QA 질의를 구분하기 위한 기기 ID
 TIMEOUT = 600                               # 질의 1건 최대 대기(초) — 11-11 시스템 응답 지연으로 300 → 600
 QUESTION_TMPL = "{주소} {시설물} 건축 가능한가요?"
