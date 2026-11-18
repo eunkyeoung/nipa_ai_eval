@@ -295,7 +295,7 @@ def extract(turn, rules=None):
         k = c["key"].split(":", 1)[1]
         if c["callee"] == "map_3d" and k == "ASK":
             got = [a for a in actions if a["call_id"] == c["call_id"] and a["key"] != "UI.FOCUS"]
-            label = ", ".join(dict.fromkeys(FUNCTION_LABEL.get(a["type"], a["type"]) for a in got)) or "3D 에이전트(명령 없음)"
+            label = ", ".join(dict.fromkeys(FUNCTION_LABEL.get(a["type"], a["type"]) for a in got)) or "3D 건물 생성 모듈(명령 없음)"
         else:
             label = FUNCTION_LABEL.get(k, c["key"])
         label += "" if call_ok(c) else " (실패)"
