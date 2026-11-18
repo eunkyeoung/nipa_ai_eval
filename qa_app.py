@@ -249,7 +249,9 @@ with st.container(key="page_header"):
     if SPEC_VIEW:                                   # 왼쪽에서 고른 시험항목의 전체 이름 (예: 2-4 [AI 4] 예외·단서 규정 …)
         _hs = read_status()                         # 실행 중이면 그 항목을 선택하고 머리 박스를 '실행 중'으로 (11-18 사용자)
         _run_it = str(_hs.get("mode", "")).split(" ")[-1] if is_running(_hs) and str(_hs.get("mode", "")).startswith("성과지표") else ""
-        if _run_it in spec_eval.SPEC:
+        if _run_it in spec_eval.SPEC and st.session_state.get("auto_sel_run") != _hs.get("run_dir"):
+            # 실행이 시작된 뒤 처음 그릴 때 한 번만 그 항목을 선택 — 그 뒤에는 다른 항목도 눌러 볼 수 있음(11-18 사용자)
+            st.session_state["auto_sel_run"] = _hs.get("run_dir")
             st.session_state["spec_item"] = st.session_state["spec_item_last"] = _run_it
         _it = st.session_state.get("spec_item") or st.session_state.get("spec_item_last", "AI1")
         if _it in spec_eval.SPEC:
