@@ -320,6 +320,11 @@ def proc_set(xs):
     return out
 
 
+# [AI 1~5] 판정(diagnosis) 없이 3D 답변으로 끝난 응답 중 '건축 불가'를 말하는 문장 (11-18 사용자 결정: 판단불가가 아니라 허가 불가능)
+#   예: AI1-0028·0047 "건축이 어려운 땅이라 3D 건물을 올릴 수 없습니다." — 허가 검토(permit_review)는 끝났고 3D 단계가 건축 불가로 답한 것
+NOBUILD_3D = re.compile(r"건축이\s*어려운\s*땅|3D\s*건물을\s*올릴\s*수\s*없")
+
+
 def map_response(events, base=None):
     """성과지표 출력 형식: 판단유형·근거조문·적용법령·적용룰셋·보완사항·필요행정절차·설명문 + 6단계 로그"""
     from qa_runner import extract                                           # 지연 import (순환 방지)
@@ -328,6 +333,8 @@ def map_response(events, base=None):
     diag = st["diag"] or {}
     j = diag.get("judgment") or {}
     v = j.get("verdict") or diag.get("status")
+    if not v and NOBUILD_3D.search(str(base.get("AI요약") or "")):    # 판정 대신 3D 답변 "건축이 어려운 땅이라 3D 건물을 올릴 수 없습니다" = 허가 불가능(11-18 사용자)
+        v = "impossible (3D 답변: 건축 불가)"
     decisive = parse_citations(str(base.get("AI근거") or ""))
     cond_src = parse_citations([c.get("source") for c in j.get("conditions") or [] if c.get("source")])
     # [AI 4] 단서 조건 문장(matrix_gate.zone_results[].decision_parts[].원문·text)의 조문 — 예: 농공단지 입주자격 '산업집적법 시행령 제6조 제1항'
