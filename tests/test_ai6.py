@@ -1431,8 +1431,8 @@ class GisVersion(unittest.TestCase):
                {"항목": "LLM (GPT-OSS 120B)", "결과": "정상", "내용": "서버 응답 401 · vLLM 0.24.0 — 키가 없어 띄운 모델 목록은 확인 못 함"},
                {"항목": "공간분석 API (GIS API Server)", "결과": "정상", "내용": "공간 분석 API 버전 v0.1"}]
         got = {r["항목"]: r["결과"] for r in C.version_rows(pre)}
-        self.assertEqual(got, {"AI 모델": "일치", "추론 서버 (vLLM)": "일치", "지도제어·공간분석 Sub 오케스트레이터": "선언값",
-                               "지도제어·공간분석 에이전트": "선언값", "공간분석 API": "일치", "지도 데이터 기준일": "선언값",
+        self.assertEqual(got, {"AI 모델": "일치", "추론 서버 (vLLM)": "일치", "공간분석 통합 에이전트": "선언값",
+                               "공간규제분석·도로 접근성 분석·산지·농지규제 모듈": "선언값", "공간분석 API": "일치", "지도 데이터 기준일": "선언값",
                                "AI 엔진 결정성 옵션": "선언값"})
         temp = {r["항목"]: r for r in C.version_rows(pre)}["AI 엔진 결정성 옵션"]   # 규격 시험환경 temperature = 0 — 시스템이 알려 주지 않아 선언값
         self.assertEqual((temp["시험 조건"], temp["확인값"]), ("temperature = 0", "시스템 미제공"))
