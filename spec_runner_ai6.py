@@ -5,15 +5,14 @@
 명령 해석 로그 · 실행 결과 로그 · 결과표를 만듭니다. 화면(규격서 시험 → AI6)이 이 파일을 실행합니다.
 
   python spec_runner_ai6.py --testset spec_data/testset_ai6.csv --answer spec_data/answer_ai6.csv \
-                            --intent-map spec_data/intent_map_ai6.csv [--cases AI6-0001,AI6-0002] \
-                            [--base http://192.168.200.115:17006] [--deadline 180]
-  python spec_runner_ai6.py --rescore spec/AI6/20261110_150000 --answer ... --intent-map ...   # 다시 묻지 않고 원문으로 재채점(개발용)
+                            [--cases AI6-0001,AI6-0002] [--base http://192.168.200.115:17006] [--deadline 180]
+  python spec_runner_ai6.py --rescore spec/AI6/20261110_150000 --answer ...   # 다시 묻지 않고 원문으로 재채점(개발용)
 
 결과 폴더: spec/AI6/<시각>/
   raw/<사례ID>.json                  요청·응답 원문(SSE 이벤트 전부)
   command_parse_log_ai6.jsonl        명령 1건당 1행 — 해석 의도·핵심 파라미터·실행 대상 기능·규격 출력 JSON
   gis_execution_log_ai6.jsonl        명령 1건당 1행 — 지도 제어 명령·표출 도형·정답 대조·판정
-  data/                              실행 당시 시험셋·정답셋·의도 대응표 사본(채점은 이 사본으로)
+  data/                              실행 당시 시험셋·정답셋 사본(채점은 이 사본으로)
   meta.json · progress.xlsx · result.xlsx · summary.json
 
 규칙: 사례마다 새 thread_id · 순차 실행 · 문장은 그대로 · 사례당 총 대기 상한 초과 = 응답 오류 · 되묻기에 답하지 않음(=오류)
@@ -78,24 +77,19 @@ def pause(sec):
         time.sleep(min(0.2, max(0.0, end - time.monotonic())))
 
 
-def rules_sha256(intent_map):
-    """의도 대응표 지문 — 파일이면 파일 해시, 없으면 기본 대응표 내용의 해시"""
-    return sha256(intent_map) if intent_map else "기본:" + hashlib.sha256(E.rules_csv().encode("utf-8")).hexdigest()
-
-
-def freeze_record(testset, answer, intent_map, deadline, base=None):
-    """동결할 값 — 시험셋·정답셋·의도 대응표·판정 기준 지문·응답 대기 상한·공간오케 주소"""
-    return dict(testset_sha256=sha256(testset), answer_sha256=sha256(answer), intent_map_sha256=rules_sha256(intent_map),
+def freeze_record(testset, answer, deadline, base=None):
+    """동결할 값 — 시험셋·정답셋·판정 기준 지문(의뢰서 기능 정의 포함)·응답 대기 상한·공간오케 주소"""
+    return dict(testset_sha256=sha256(testset), answer_sha256=sha256(answer),
                 criteria_sha256=E.criteria_fingerprint(), deadline_s=float(deadline), base=(base or C.BASE).rstrip("/"))
 
 
 def freeze_check(freeze_path, cur):
-    """동결 기록과 지금 값을 비교 → 다른 항목 목록 (동결 안 했으면 None)"""
+    """동결 기록과 지금 값을 비교 → 다른 항목 목록 (동결 안 했으면 None). 예전 기록에만 있는 항목은 비교하지 않음"""
     if not os.path.exists(freeze_path):
         return None
     with open(freeze_path, encoding="utf-8") as f:
         fz = json.load(f)
-    names = {"testset_sha256": "시험셋", "answer_sha256": "정답셋", "intent_map_sha256": "의도 대응표",
+    names = {"testset_sha256": "시험셋", "answer_sha256": "정답셋",
              "criteria_sha256": "판정 기준(규칙·옵션)", "deadline_s": "응답 대기 상한", "base": "공간오케 주소"}
     return [names[k] for k in names if k in fz and str(fz.get(k)) != str(cur.get(k))]
 
@@ -201,9 +195,9 @@ def score_run(run_dir, testset_path, quiet=False):
     return s
 
 
-def judge_one(case, gold, res, rules):
+def judge_one(case, gold, res):
     turn = C.gather(res.get("events") or [])
-    ext = E.extract(turn, rules)
+    ext = E.extract(turn)
     verdict = E.judge(gold or {}, ext, res, turn)
     return E.parse_log_row(case, res, ext), E.gis_log_row(case, gold or {}, res, ext, verdict), verdict
 
@@ -221,14 +215,13 @@ def progress_row(gr, pr=None):
     return row
 
 
-def rescore(run_dir, answer, testset, intent_map):
-    """원문(raw/*.json)을 다시 판정해 새 폴더 '<실행 폴더>_재판정_<시각>'에 씀 — 정답·대응표를 고친 뒤 확인용(예비).
-    공식 실행 폴더는 건드리지 않음(실행 뒤에 대응표를 바꿔 점수가 바뀌는 일을 막음). 돌려주는 값: (새 폴더, 채점 결과)"""
+def rescore(run_dir, answer, testset):
+    """원문(raw/*.json)을 다시 판정해 새 폴더 '<실행 폴더>_재판정_<시각>'에 씀 — 정답·판정 기준을 고친 뒤 확인용(예비).
+    공식 실행 폴더는 건드리지 않음(실행 뒤에 판정 기준을 바꿔 점수가 바뀌는 일을 막음). 돌려주는 값: (새 폴더, 채점 결과)"""
     src = os.path.normpath(run_dir)
     snap = os.path.join(src, "data")
     pick = lambda p, name: p or next(iter(sorted(glob.glob(os.path.join(snap, name)))), None)
-    answer, testset, intent_map = pick(answer, "answer_ai6.*"), pick(testset, "testset_ai6.*"), pick(intent_map, "intent_map_ai6.*")
-    rules = E.load_rules(intent_map) if intent_map else E.load_rules()
+    answer, testset = pick(answer, "answer_ai6.*"), pick(testset, "testset_ai6.*")
     gold = {str(r.get("사례ID")): r for r in E.read_rows(answer)}
     cases = {str(r.get("사례ID")): r for r in E.read_rows(testset)}
     root = re.sub(r"(_재판정_\d{6}(_\d+)?)+$", "", src)            # 다시 판정한 폴더를 또 판정해도 이름이 겹겹이 붙지 않게
@@ -238,7 +231,7 @@ def rescore(run_dir, answer, testset, intent_map):
         new, k = f"{root}_재판정_{time.strftime('%H%M%S')}_{k}", k + 1
     shutil.copytree(os.path.join(src, "raw"), os.path.join(new, "raw"))
     os.makedirs(os.path.join(new, "data"), exist_ok=True)
-    for p in (testset, answer, intent_map):                      # 이 판정에 쓴 파일
+    for p in (testset, answer):                                  # 이 판정에 쓴 파일
         if p and os.path.exists(p):
             shutil.copy2(p, os.path.join(new, "data", os.path.basename(p)))
     run_dir = new
@@ -249,7 +242,7 @@ def rescore(run_dir, answer, testset, intent_map):
         cid = str(raw.get("사례ID") or os.path.splitext(os.path.basename(p))[0])
         res = dict(raw.get("response") or {})
         res["events"] = [(e.get("event"), e.get("data")) for e in res.get("events") or []]
-        pr, gr, _ = judge_one(cases.get(cid, {"사례ID": cid}), gold.get(cid), res, rules)
+        pr, gr, _ = judge_one(cases.get(cid, {"사례ID": cid}), gold.get(cid), res)
         parse_rows.append(pr)
         gis_rows.append(gr)
     write_jsonl(os.path.join(run_dir, E.PARSE_LOG), parse_rows)
@@ -265,9 +258,10 @@ def rescore(run_dir, answer, testset, intent_map):
     if (meta.pop("완료전", None) or meta.pop("중지", None)) and INCOMPLETE_NOTE not in why:
         why.append(INCOMPLETE_NOTE)
     meta.pop("중지", None)
+    for key in [x for x in meta if x.startswith("intent_")]:       # 예전 실행의 의도 규칙 기록 — 이 판정에는 쓰지 않음
+        meta.pop(key)
     meta.update(원본=first, 공식=False, 예비사유=why + [f"다시 판정(원본 {os.path.basename(first)})"],
-                rescored=dict(at=time.strftime("%Y-%m-%d %H:%M:%S"), answer=answer, answer_sha256=sha256(answer),
-                              intent_map=intent_map or "기본 대응표", intent_map_sha256=rules_sha256(intent_map)),
+                rescored=dict(at=time.strftime("%Y-%m-%d %H:%M:%S"), answer=answer, answer_sha256=sha256(answer)),
                 criteria_sha256=E.criteria_fingerprint(), started=meta.get("started"))
     with open(os.path.join(new, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1, default=str)
@@ -278,7 +272,6 @@ def main():
     ap = argparse.ArgumentParser(description="[AI 6] 자연어 기반 지도 제어 시험 실행")
     ap.add_argument("--testset")
     ap.add_argument("--answer")
-    ap.add_argument("--intent-map", help="의도 대응표 (없으면 ai6_eval.DEFAULT_RULES)")
     ap.add_argument("--cases", help="실행할 사례ID만 (쉼표 구분, 비우면 전체)")
     ap.add_argument("--base", help=f"공간오케 주소 (기본 {C.BASE})")
     ap.add_argument("--deadline", type=float, help=f"사례당 응답 대기 상한 초 (기본 {C.DEADLINE:g})")
@@ -290,38 +283,36 @@ def main():
     ap.add_argument("--probe", help="사전 점검 때 공간오케에 보낼 주소 검색 명령 1건(V-World 경유 확인)")
     ap.add_argument("--status-file")
     ap.add_argument("--freeze", action="store_true",
-                    help="운영자용: spec_data 의 시험셋·정답셋·의도 대응표와 지금 판정 기준·대기 상한·공간오케 주소로 동결 기록을 새로 씀 "
+                    help="운영자용: spec_data 의 시험셋·정답셋과 지금 판정 기준·대기 상한·공간오케 주소로 동결 기록을 새로 씀 "
                          "(시험관 화면에는 동결 버튼이 없음 · 풀려면 spec_data/freeze_ai6.json 을 지움)")
     a = ap.parse_args()
     if a.freeze:                                           # 운영자 동결 — 화면의 옛 '🔒 동결' 버튼과 같은 기록
         ts_p = a.testset or os.path.join("spec_data", "testset_ai6.csv")
-        d = os.path.dirname(ts_p) or "."                    # 정답셋·대응표 기본값은 시험셋과 같은 폴더
+        d = os.path.dirname(ts_p) or "."                    # 정답셋 기본값은 시험셋과 같은 폴더
         an_p = a.answer or os.path.join(d, "answer_ai6.csv")
-        im_p = a.intent_map or (os.path.join(d, "intent_map_ai6.csv") if os.path.exists(os.path.join(d, "intent_map_ai6.csv")) else None)
         if not (os.path.exists(ts_p) and os.path.exists(an_p)):
             raise SystemExit(f"시험셋·정답셋 파일이 없어요: {ts_p}, {an_p}")
-        rules = E.load_rules(im_p) if im_p else E.load_rules()     # 대응표 형식이 틀리면 여기서 멈춤
-        probs = E.blocking(E.validate(E.read_rows(ts_p), E.read_rows(an_p), rules))
+        probs = E.blocking(E.validate(E.read_rows(ts_p), E.read_rows(an_p)))
         if probs:
             raise SystemExit(f"시험 데이터 점검 문제 {len(probs)}건이 있어 동결하지 않아요: " + " / ".join(probs[:3]))
-        rec = freeze_record(ts_p, an_p, im_p, float(a.deadline or C.DEADLINE), a.base)
+        rec = freeze_record(ts_p, an_p, float(a.deadline or C.DEADLINE), a.base)
         path = os.path.join(os.path.dirname(os.path.abspath(ts_p)), FREEZE_FILE)
         with open(path, "w", encoding="utf-8") as f:
             json.dump({**rec, "frozen_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                       "files": {"testset": ts_p, "answer": an_p, "intent_map": im_p or "기본 대응표"}}, f, ensure_ascii=False, indent=1)
+                       "files": {"testset": ts_p, "answer": an_p}}, f, ensure_ascii=False, indent=1)
         print(f"[AI6] 동결 기록 저장: {path}", flush=True)
         for k, v in rec.items():
             print(f"  {k}: {v}", flush=True)
         return
     if a.rescore:
-        new, _ = rescore(a.rescore, a.answer, a.testset, a.intent_map)
+        new, _ = rescore(a.rescore, a.answer, a.testset)
         print(f"[AI6] 다시 판정 결과 폴더: {new} (예비 — 원래 실행 폴더는 그대로)", flush=True)
         return
 
-    live = (a.testset, a.answer, a.intent_map)             # 동결 확인은 지금 시험 데이터 폴더의 파일로
+    live = (a.testset, a.answer)                           # 동결 확인은 지금 시험 데이터 폴더의 파일로
     if a.resume and a.run_dir:                             # 이어서 실행은 처음 실행 때 사본(data/)으로 보내고 판정 — 그 사이 바뀐 파일이 섞이지 않게
         cp = lambda p: os.path.join(a.run_dir, "data", os.path.basename(p))
-        a.testset, a.answer, a.intent_map = [cp(p) if p and os.path.exists(cp(p)) else p for p in live]
+        a.testset, a.answer = [cp(p) if p and os.path.exists(cp(p)) else p for p in live]
     base = (a.base or C.BASE).rstrip("/")
     deadline = float(a.deadline or C.DEADLINE)
     ts = E.read_rows(a.testset)
@@ -330,7 +321,6 @@ def main():
     if "사례ID" not in ts[0] or "명령문" not in ts[0]:
         refuse(a.status_file, f"시험셋에 '사례ID', '명령문' 컬럼이 필요합니다. 현재: {list(ts[0])}")
     answers = {str(r.get("사례ID")): r for r in E.read_rows(a.answer)} if a.answer else {}
-    rules = E.load_rules(a.intent_map) if a.intent_map else E.load_rules()
     ts = [r for r in ts if str(r.get("사례ID", "")).strip()]
     if a.cases:
         want = {c.strip() for c in a.cases.split(",") if c.strip()}
@@ -338,13 +328,13 @@ def main():
 
     outside = any(not re.match(r"^AI6-\d{4}$", str(r.get("사례ID"))) for r in ts)   # 예비 실측(P6-…) 등 → 공식 결과 아님
     pilot = bool(a.cases or a.retry_errors or a.no_precheck or outside)
-    data_check = E.validate(ts if not a.cases else E.read_rows(a.testset), list(answers.values()), rules)
+    data_check = E.validate(ts if not a.cases else E.read_rows(a.testset), list(answers.values()))
     if not pilot and E.blocking(data_check):                    # 이어서 실행도 다시 점검 — 동결을 풀고 정답을 고친 뒤 이어 돌리는 경우
         refuse(a.status_file, f"시험 데이터 점검 문제 {len(E.blocking(data_check))}건이 있어 공식 실행을 시작하지 않아요: "
                + " / ".join(E.blocking(data_check)[:3]) + (" …" if len(E.blocking(data_check)) > 3 else ""))
     freeze_path = os.path.join(os.path.dirname(os.path.abspath(live[0])), FREEZE_FILE)
     frozen = freeze_check(freeze_path, freeze_record(*live, deadline, base))
-    if frozen:                                             # 규격: 의도 대응표는 시험 전에 확정하고 시험 기간 중 바꾸지 않음
+    if frozen:                                             # 시험 데이터·판정 기준은 시험 전에 확정하고 시험 기간 중 바꾸지 않음
         refuse(a.status_file, "동결 이후 바뀐 항목이 있어 실행하지 않아요: " + ", ".join(frozen)
                + " — 의도한 변경이면 운영자가 다시 동결하세요(python spec_runner_ai6.py --freeze).")
 
@@ -354,7 +344,7 @@ def main():
     os.makedirs(raw_dir, exist_ok=True)
     snap = os.path.join(run_dir, "data")
     os.makedirs(snap, exist_ok=True)
-    for p in (a.testset, a.answer, a.intent_map):
+    for p in (a.testset, a.answer):
         if p and os.path.exists(p) and not os.path.exists(os.path.join(snap, os.path.basename(p))):
             shutil.copy2(p, snap)
     parse_path, gis_path = os.path.join(run_dir, E.PARSE_LOG), os.path.join(run_dir, E.GIS_LOG)
@@ -387,9 +377,9 @@ def main():
                 with open(os.path.join(raw_dir, f"{r['사례ID']}.json"), encoding="utf-8") as f:
                     saved = dict(json.load(f)["response"])
                 saved["events"] = [(e.get("event"), e.get("data")) for e in saved.get("events") or []]
-                pr, gr, _ = judge_one(r, answers.get(r["사례ID"]), saved, rules)
+                pr, gr, _ = judge_one(r, answers.get(r["사례ID"]), saved)
             except Exception:                              # noqa: BLE001 — 원문이 없거나 깨졌거나 판정이 안 되면 응답 오류로 남김
-                pr, gr, _ = judge_one(r, answers.get(r["사례ID"]), res, rules)
+                pr, gr, _ = judge_one(r, answers.get(r["사례ID"]), res)
                 lost += 1
             append_jsonl(parse_path, pr)
             append_jsonl(gis_path, gr)
@@ -420,9 +410,8 @@ def main():
         meta.setdefault("resumed", []).append(time.strftime("%Y-%m-%d %H:%M:%S"))
         if meta.pop("중지", None) or meta.get("공식"):            # 예전 기록(중지 표시·시작 때 공식) → 끝낼 때 공식 여부를 다시 정함
             meta.update(공식=False, 완료전=True)
-        cur = freeze_record(a.testset, a.answer, a.intent_map, deadline, base)   # 처음 실행 때와 같은 조건인가 — 그사이 동결을 다시 걸었어도
+        cur = freeze_record(a.testset, a.answer, deadline, base)   # 처음 실행 때와 같은 조건인가 — 그사이 동결을 다시 걸었어도
         changed = [name for key, mkey, name in (("testset_sha256", "testset_sha256", "시험셋"), ("answer_sha256", "answer_sha256", "정답셋"),
-                                                ("intent_map_sha256", "intent_rules_sha256", "의도 대응표"),
                                                 ("criteria_sha256", "criteria_sha256", "판정 기준(규칙·옵션)"),
                                                 ("deadline_s", "deadline_s", "응답 대기 상한"), ("base", "base", "공간오케 주소"))
                    if meta.get(mkey) is not None and (float(meta[mkey]) != float(cur[key]) if key == "deadline_s"
@@ -435,7 +424,7 @@ def main():
         if lost:                                           # QA 쪽 중단 — 시스템 무응답이 아니므로 공식 결과로 쓰지 않고 전체 재수행 권장
             blockers.append(f"QA 중단으로 응답을 기록 못 한 사례 {lost}건(응답 오류로 남김) — 전체 재수행 권장")
         if meta.get("완료전"):
-            fz0 = freeze_check(freeze_path, freeze_record(a.testset, a.answer, a.intent_map, deadline, base))   # 보낸 데이터(사본) 대 지금 동결 기록
+            fz0 = freeze_check(freeze_path, freeze_record(a.testset, a.answer, deadline, base))   # 보낸 데이터(사본) 대 지금 동결 기록
             if fz0 is None or fz0:
                 blockers.append("이어서 실행 때 동결 기록과 다름" + (f" ({', '.join(fz0)})" if fz0 else " (동결 풀림)"))
             if pilot and not a.retry_errors:
@@ -452,10 +441,7 @@ def main():
         meta = dict(item="AI6", 시험항목="[AI 6] 자연어 기반 지도 제어 기능", base=base, endpoint=f"{base}/api/chat",
                     deadline_s=deadline, origin=C.ORIGIN, cases=[r["사례ID"] for r in ts] if a.cases else [],
                     testset=a.testset, testset_sha256=sha256(a.testset), answer=a.answer, answer_sha256=sha256(a.answer),
-                    intent_map=a.intent_map, intent_map_sha256=sha256(a.intent_map),
-                    intent_rules=[{k: (sorted(v) if isinstance(v, set) else v) for k, v in r.items()} for r in rules],
-                    data_check=data_check,
-                    intent_rules_sha256=rules_sha256(a.intent_map), criteria_sha256=E.criteria_fingerprint(),
+                    data_check=data_check, criteria_sha256=E.criteria_fingerprint(),
                     frozen=os.path.exists(freeze_path), 공식=False,   # 공식 여부는 정상으로 끝날 때 정함(중간에 죽은 실행이 공식으로 남지 않게)
                     예비사유=[x for x, on in (("일부 ID만 실행", a.cases), ("응답 오류 재전송", a.retry_errors),
                                               ("사전 점검 생략", a.no_precheck), ("시험셋 밖 ID(예비 실측)", outside),
@@ -508,7 +494,7 @@ def main():
                 json.dump({"사례ID": cid, "명령문": cmd, "response": {**{k: v for k, v in res.items() if k != "events"},
                                                                     "events": [{"event": e, "data": d} for e, d in res["events"]]}},
                           f, ensure_ascii=False, default=str)
-            pr, gr, v = judge_one(r, answers.get(cid), res, rules)
+            pr, gr, v = judge_one(r, answers.get(cid), res)
             append_jsonl(parse_path, pr)
             append_jsonl(gis_path, gr)
             prog.append(progress_row(gr, pr))
@@ -546,7 +532,7 @@ def main():
         if status["state"] == "running":
             if meta.pop("완료전", None):                    # 끝까지 마침(처음부터 · 중지·비정상 종료 뒤 이어서) — 보낸 데이터(사본)가 지금도 동결 그대로이고 다른 예비 사유가 없으면 공식
                 why = [w for w in meta.get("예비사유") or [] if w not in PENDING_NOTES and not str(w).startswith(CRASH_NOTE)]
-                fz = freeze_check(freeze_path, freeze_record(a.testset, a.answer, a.intent_map, deadline, base))
+                fz = freeze_check(freeze_path, freeze_record(a.testset, a.answer, deadline, base))
                 if fz is None or fz:
                     why.append("실행을 마칠 때 동결 기록과 다름" + (f" ({', '.join(fz)})" if fz else " (동결 풀림)"))
                 if pilot and not why:

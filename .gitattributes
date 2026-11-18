@@ -12,7 +12,6 @@ spec_data/da2/*.txt -text
 # (Windows PC에서 받아 서버로 옮길 때 CRLF로 바뀌면 해시가 달라져 동결 확인에서 실행이 거부됨)
 spec_data/testset_ai6.csv -text
 spec_data/answer_ai6.csv -text
-spec_data/intent_map_ai6.csv -text
 spec_data/freeze_ai6.json -text
 
 # [AI 3] 시험셋 — PC·서버 해시가 같도록 줄바꿈 변환 금지 (11-13 교체본, LF)

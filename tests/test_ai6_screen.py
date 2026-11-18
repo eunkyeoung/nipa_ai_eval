@@ -100,7 +100,7 @@ class ResultScreen(unittest.TestCase):
         self.assertEqual(list(err["사례ID"]), ["AI6-0002", "AI6-0003", "AI6-0004"])
         self.assertEqual(list(err.columns), ["사례ID", "명령 유형", "명령문", "오류 원인", "사유", "오류 주체"])
         self.assertEqual(set(err["오류 주체"]), {E.WHO_AIPS})
-        self.assertEqual(err.iloc[0]["사유"], "AIPS가 '규제 저촉 분석' 의도를 잡지 못하고 대상 필지 표시(지도 이동)만 함")
+        self.assertEqual(err.iloc[0]["사유"], "AIPS가 '규제 저촉 분석' 의도를 잡지 못하고 대상 필지 표시(지도 이동)만 함 — 용도지역·지구 중첩 조회 없음")
         self.assertTrue(err.iloc[1]["사유"].startswith("AIPS가 다른 필지(PNU 4729012300100310002)를 대상으로 잡음"))
         self.assertEqual(err.iloc[2]["사유"], "AIPS가 응답 대기 상한(180초) 안에 답하지 않음")
         self.assertTrue(any("시험 도구의 오류가 아니에요" in c.value for c in at.caption))
