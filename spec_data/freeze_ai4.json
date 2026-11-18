@@ -12,7 +12,7 @@
  "법령DB_조회값": "수집 기준 2026-10-18 (법령 295 · 문서 6,833 · 조문 165,931)",
  "룰엔진버전": "3.3.0",
  "시스템빌드": "b8aecf5",
- "frozen_at": "2026-11-18 14:46:20",
+ "frozen_at": "2026-11-18 18:04:42",
  "files": {
   "testset": "spec_data/testset_ai4.csv",
   "answer": "spec_data/answer_ai4.csv",
