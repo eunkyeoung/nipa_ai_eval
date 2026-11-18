@@ -515,9 +515,16 @@ TRACE_STEP = [("행위제한", 5), ("가능한지 확인", 5), ("건폐율", 5),
               ("건축 가능 여부를 검토", 1), ("질문을 이해", 1), ("에이전트", 2), ("답을 정리", 2)]
 
 
-def plan_terms(text):
+PLAN_NODE = {"route_to_sub": "통합 오케스트레이터", "permit_review": "사전진단 추론 에이전트"}
+# ↑ 이름표 없는 진행 메시지는 원문의 처리 위치(node)로 주체를 붙임(11-18 사용자: 에이전트는 사전진단 추론·공간분석 통합 2개).
+#   route_to_sub = 통합 오케스트레이터가 작업을 나눠 보냄, permit_review = 사전진단 추론 에이전트(행위제한·관계 법령·건폐율 확인, 설명 작성)
+
+
+def plan_terms(text, node=None):
     for a, b in PLAN_NAME:
         text = text.replace(a, b)
+    if ":" not in text and node in PLAN_NODE:
+        text = f"{PLAN_NODE[node]}: {text}"
     return text
 
 
@@ -535,7 +542,7 @@ def event_rows(raw):
             kind, txt = "처리 종료", ", ".join(f"{PLAN_SUB.get(k, k)} {PLAN_SUB.get(v, v)}" for k, v in st.items()) or "-"
         elif ev == "orc.trace":
             msg = str(d.get("message") or "-")
-            kind, txt = "진행 메시지", plan_terms(msg)
+            kind, txt = "진행 메시지", plan_terms(msg, d.get("node"))
             step = next((n for k, n in TRACE_STEP if k in msg), None)
         elif ev == "orc.response":
             k, x = d.get("event"), d.get("data") or {}
