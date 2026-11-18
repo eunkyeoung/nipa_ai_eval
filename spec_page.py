@@ -19,10 +19,10 @@ from tools import da2_cq as _cq                                                 
 DATA = "spec_data"
 FILES = {"AI1": ["testset_ai1", "answer_ai1"], "AI2": ["testset_ai2", "answer_ai2"], "AI3": ["testset_ai3"],
          "AI4": ["testset_ai4", "answer_ai4"], "AI5": ["testset_ai5", "answer_ai5", "law_article_db"],
-         "AI6": ["testset_ai6", "answer_ai6", "intent_map_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"], "DA2": []}
+         "AI6": ["testset_ai6", "answer_ai6", "result_ai6"], "AI7": ["testset_ai7", "answer_ai7", "result_ai7"], "DA2": []}
 LABEL = {"testset": "시험셋(질의)", "answer": "정답셋", "law_article_db": "법령·조례 조문 DB",
-         "result": "실행 결과(시스템 응답)", "intent": "의도 대응표"}
-OPTIONAL = ("law_", "result_", "intent_")   # 없어도 실행 가능 (조문 DB 없으면 ① 판정 보류 · 결과 파일은 수동 채점용 · 대응표 없으면 기본 대응표)
+         "result": "실행 결과(시스템 응답)"}
+OPTIONAL = ("law_", "result_")   # 없어도 실행 가능 (조문 DB 없으면 ① 판정 보류 · 결과 파일은 수동 채점용)
 RAW_VERDICT = {"possible": "승인 가능", "impossible": "부적합", "conditional": "조건부 가능",   # AIPS 원 판정값 → 수행계획서 4종
                "needs_review": "검토 필요", "unknown": "검토 필요"}
 HIDE_TABLES = {"AI1": ("보조 지표(적용 법령·근거 조문)별 일치·불일치 건수 및 일치율",)}   # 2026-11-11 의뢰기업 요청: 결과 화면에서 숨김 (result.xlsx에는 남음)
@@ -120,15 +120,42 @@ NOT_PROVIDED_DA2 = [   # 규격서가 요구하지만 시스템(Fuseki 그래프
     "결과 폴더에 보관. 외부 서비스라 **스키마 파일만** 전송(인스턴스 전송 없음)",
     "**추론 의존 CQ 수(○○건)** — 동결한 CQ 50건 모두 추론 미의존(inference_required = false) → 추론기 없이 SPARQL만 실행",
 ]
-NOT_PROVIDED_AI6 = [   # [AI 6] 규격 시험방법 (2) '동결 버전 확인' 중 공간오케·에이전트가 알려 주지 않는 값 → 대신 쓰는 방법
-    "**AI 모델** — 공간오케 /ready 의 설정 모델, LLM 서버 /v1/models 목록(LLM 키를 넣었을 때), vLLM 버전은 LLM 서버 /version 으로 확인 "
-    "(위 'LLM 모델' 두 행과 'vLLM 버전' 행, 조회값)",
-    "**공간분석 API 버전** — 사전 점검 때 /v3/api-docs 의 info.version 을 읽어 시험 조건(v0.1)과 대조 — 다르면 사전 점검 실패로 실행하지 않음 (조회값)",
-    "**공간분석 통합 에이전트·분석 모듈 버전, 지도 데이터 기준일** — 시스템이 알려 주지 않음(/health 는 상태만) → 위 '동결 버전 확인' 표에 "
-    "**의뢰기업 선언값**으로 적고, 실행마다 '연결 에이전트' 목록이 같은지로 바뀌었는지만 확인",
-    "**AI 엔진 결정성 옵션(temperature = 0)** — 공간분석 통합 에이전트(공간오케)가 값을 알려 주지 않음(/ready·응답에 없음) → 위 '동결 버전 확인' 표에 "
-    "**의뢰기업 선언값**으로 기록",
+NOT_PROVIDED_AI6 = [   # [AI 6] 규격 시험방법 (2) '동결 버전 확인' 중 시스템이 알려 주지 않는 값 → 대신 쓰는 방법 (항목 이름은 규격서 v.15 2-6 그대로)
+    "**AI 모델 버전(GPT-OSS 120B, vLLM 0.24.0)** — 지도제어·공간분석 Sub 오케스트레이터 /ready 의 설정 모델, LLM 서버 /v1/models 목록(LLM 키를 넣었을 때), "
+    "vLLM 버전은 LLM 서버 /version 으로 확인 (조회값)",
+    "**공간분석 API 버전(v0.1)** — 사전 점검 때 /v3/api-docs 의 info.version 을 읽어 시험 조건과 대조 — 다르면 사전 점검 실패로 실행하지 않음 (조회값)",
+    "**지도제어·공간분석 Sub 오케스트레이터 버전(v1.0), 지도제어·공간분석 에이전트 버전(v1.0), 지도 데이터 기준일** — 시스템이 알려 주지 않음 → "
+    "위 '동결 버전 확인' 표에 **의뢰기업 선언값**으로 기록",
+    "**AI 엔진의 결정성 옵션(temperature = 0)** — 시스템이 값을 알려 주지 않음 → 위 '동결 버전 확인' 표에 **의뢰기업 선언값**으로 기록",
 ]
+AI6_SPEC_VERSIONS = [   # [AI 6] 규격서 v.15 2-6 시험조건 '동결 버전' 항목 이름·값 그대로 — ai6_client.version_rows 행(AI7과 함께 쓰는 이름)을 묶어 보여 주기만 함
+    ("AI 모델 버전", "GPT-OSS 120B, vLLM 0.24.0", ("AI 모델", "추론 서버 (vLLM)")),
+    ("지도제어·공간분석 Sub 오케스트레이터 버전", "v1.0", ("공간분석 통합 에이전트",)),
+    ("지도제어·공간분석 에이전트 버전", "v1.0", ("공간규제분석 모듈 · 도로 접근성 분석 모듈 · 산지·농지 규제 분석 모듈",)),
+    ("공간분석 API 버전", "v0.1", ("공간분석 API",)),
+    ("지도 데이터 기준일", "연속지적도 2026-10-14, 토지이용계획 2026-05-06·05-07, LX맵 2026-08-31·09-01", ("지도 데이터 기준일",)),
+    ("AI 엔진의 결정성 옵션", "temperature = 0", ("AI 엔진 결정성 옵션",)),
+]
+
+
+def ai6_version_rows(rows6):
+    """[AI 6] '동결 버전 확인' 표 — 규격서 항목 이름·값 그대로. 결과: 불일치가 하나라도 있으면 불일치, 모두 일치면 일치"""
+    by = {r["항목"]: r for r in rows6}
+    out = []
+    for name, want, src in AI6_SPEC_VERSIONS:
+        got = [by[k] for k in src if k in by]
+        if not got:
+            continue
+        res = [str(g.get("결과")) for g in got]
+        result = ("불일치" if "불일치" in res else "일치" if all(r == "일치" for r in res) else
+                  "선언값" if all(r == "선언값" for r in res) else "확인 못 함")
+        vals = ["-" if str(g.get("확인값") or "-") in ("-", "시스템 미제공") else str(g.get("확인값")) for g in got]
+        if len(got) == 2 and vals[1] != "-":                       # AI 모델 버전 = 모델, vLLM 버전
+            vals[1] = "vLLM " + vals[1].removeprefix("vLLM ").strip()
+        shown = ", ".join(v for v in vals if v != "-") or "-"
+        out.append({"항목": name, "시험 조건": want, "확인값": shown,
+                    "확인 방법": " · ".join(dict.fromkeys(str(g.get("확인 방법") or "") for g in got)), "결과": result})
+    return out
 NOT_PROVIDED_AI7 = [   # [AI 7] 규격서 6.2.7 이 요구하지만 아직 얻지 못하는 값 → 지금 처리 (2026-11-13)
     "**③ 3D 시뮬레이션 실행 결과(실행 후 3D 지도 상태·생성 객체·'완료')·사례별 화면 캡처** — 이 시험(AIPS 사전진단 성능테스트)은 "
     "3D 분석에 쓸 명령·파라미터가 응답에 제대로 들어오는지(①②)만 봄 → ③·캡처는 시험 범위 밖, 판정하지 않음",
@@ -182,25 +209,21 @@ CRITERIA = {
     "AI5": "응답별로 환각 유형 ①–④를 순서대로 자동 판정: ① 인용 조문이 법령·조례 조문 DB에 존재하는지 ② 근거 조문 항목이 존재하고 "
            "값이 비어 있지 않은지 ③ 인용 조문과 정답 조문셋의 교집합이 존재하는지 ④ 응답의 적용 법령이 정답 적용 법령과 일치하는지. "
            "하나의 응답에서 ①–④ 중 1개 이상 검출되면 환각 응답 1건으로 계수하며, 복수 유형이 동시에 검출되어도 중복 계수하지 않음.",
-    "AI6": "시험 데이터셋의 자연어 지도 제어 명령을 문장 그대로, 사례마다 새 대화(thread_id)로 공간분석 통합 에이전트에 "
-           "1회 입력. 사례마다 아래 3개 검증 기준을 모두 만족해야 정상 수행 1건.\n\n"
-           "① 의도 추출: 시스템이 실제로 부른 기능과 지도 동작을 의도 대응표로 바꾼 의도가 정답 의도와 집합 완전 일치 — "
-           "빠지거나 남으면 오류(부분 일치 = 오류). 레이어 찾기·토지이용계획 조회 같은 보조 호출은 세지 않고, "
-           "공간오케가 보낸 의도 코드는 참고로만 기록\n\n"
-           "② 파라미터 추출: 위치는 대상 필지 PNU(필지 선택·분석 호출에 쓴 PNU, 검색 후보는 제외)로 대조, 분석대상(분석 종류·레이어)은 "
-           "집합 완전 일치 — 레이어는 공간오케가 실제로 고른 레이어로 대조하고, 그 레이어 ID가 그 레이어의 자료 테이블인지도 확인"
-           "(예: '지구단위계획구역'인데 도로 테이블을 고르면 오류), 명령에 든 반경은 단위만 맞춰 값이 같아야 함"
-           "('300m' = '0.3km', 300.4m ≠ 300m). 표기만 다른 경우는 일치('263번지' = '263', 가운뎃점·공백 무시). "
-           "정답에 없는 반경을 쓰면 오류\n\n"
-           "③ GIS 지도 제어: 응답의 지도 제어 명령(대상 필지 선택·이동, 확대/축소 — 이동+확대 한 번 명령 포함)과 표출 도형(대상 필지 도형·분석 결과 도형)이 "
-           "정답 시나리오와 일치 — 정답의 도형이 모두 와야 함(남는 도형은 기록만)\n\n"
-           "되묻기(후보 선택 요청)는 오류. 무응답·응답 대기 상한 초과·연결 실패·시스템 오류 이벤트, 그리고 위치 확정 호출이 "
-           "시스템 사유로 실패해(연결 실패 등 — '못 찾음'은 제외) 분석을 시작하지 못한 사례는 규격('시스템 오류로 응답하지 못한 사례')대로 "
-           "'응답 오류'로 따로 집계(그 밖의 도구 실패는 답변이 오면 응답한 것으로 보고 ①②③으로 판정). "
-           "오류 원인은 규격대로 ① → ② → ③ 중 처음 어긋난 기준 — 되묻기 사유·위치 미확정 같은 내용은 '세부 원인'으로 따로 남김. "
-           "\n\n"
-           "호출 순서·중심 좌표·줌 레벨·산출 면적·거리는 로그에만 기록하고 판정에 쓰지 않음(명령에 든 반경만 ②에서 판정). "
-           "결과는 소수점 셋째자리 이하 버림.",
+    "AI6": ("- 시스템이 해석한 의도·핵심 파라미터 및 지도 제어 결과가 정답과 일치하는지 여부 평가\n"   # 규격서 v.15 2-6 시험방법 (4) 원문 그대로
+            "- 개별 테스트 사례에 대해 아래 3 개 검증 기준을 모두 만족하는 경우에만 정상 수행(정답) 1 건으로 계수\n\n"
+            "① 의도 추출 정확성 — 자연어 명령의 정답 의도와 시스템 해석 의도가 일치\n\n"
+            "② 파라미터 추출 정확성 — 레이어·위치·분석 조건 등 핵심 파라미터가 정답 파라미터와 일치(표기만 다른 경우도 일치로 봄, "
+            "예시 : ‘263번지’ = ‘263’, 위치는 대상 필지의 PNU로 대조)\n\n"
+            "③ GIS 지도 제어 정확성 — 시스템 응답의 지도 제어 명령(이동·확대/축소·레이어 표시 등)과 표출 도형(대상 필지·분석 결과 도형)에 따른 "
+            "지도 상태 및 분석 결과 표출이 정답 시나리오와 일치(예시 : 대상 필지(PNU)의 도형과 필지에 저촉되는 용도지역·지구 도형이 지도 표출 대상으로 반환됨)\n\n"
+            "- 실행 대상 기능의 호출 순서, 중심 좌표·줌 레벨, 분석 결과로 산출된 면적·거리 등 수치는 로그에 기록하되 판정에 사용하지 않음"
+            "(명령에 포함된 반경·거리 등 분석 조건 값은 ②에서 판정함)\n"
+            "- 부분 일치는 오류로 간주함 (정답 의도 : [‘지도 이동’, ‘규제 저촉 분석’, ‘분석 결과 표출’] / 오답 의도 : [‘지도 이동’, ‘규제 저촉 분석’] — ‘분석 결과 표출’ 누락)\n"
+            "- 명령 1 회 입력으로 판정하며, 되묻기(후보 선택 요청)로 응답한 사례는 오류로 계수함\n"
+            "- 응답이 없거나(시험조건의 응답 대기 상한 초과 포함) 시스템 오류로 응답하지 못한 사례는 오류로 계수하고 원인 유형은 ‘응답 오류’로 별도 집계함\n"
+            "- 오류 사례는 의도 해석 오류 / 핵심 파라미터 추출 오류 / GIS 지도 제어 실행 오류로 원인을 분류하여 별도 집계하며, "
+            "여러 기준이 불일치한 경우 ① → ② → ③ 순으로 처음 불일치한 기준을 원인으로 함\n"
+            "- 자연어 기반 지도 제어 정확도(%) = ( 정상 수행 건수 / 전체 테스트 건수 ) × 100 (실수(%), 소수점 셋째자리 이하 버림)"),
     "AI7": "사례마다 ① 의도 추출 ② 핵심 파라미터(위치·층수·높이·용도·기준일·시간대·조망점 등) ③ 3D 시뮬레이션 실행(3D 지도 상태·생성 객체·"
            "실행 조건이 정답 시나리오와 일치, 실행 상태 '완료')을 순서대로 판정. 셋 다 일치하면 정상 수행 1건, 부분 일치는 오류. "
            "오류 원인은 최초 불일치 기준으로 분류. 실행 대기 상한 안에 '완료'가 아니면 미실행(실행 오류).\n\n"
@@ -405,7 +428,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
             p = data_path(stem)
             kind = LABEL.get(stem.split("_")[0], LABEL.get(stem, stem))
             n = len(S.read_table(p)) if p else 0
-            st.markdown(f"**{kind}** `{stem}` — " + (f"✅ {n}건" if p else ("기본 대응표 사용" if stem.startswith("intent_") else "❌ 없음"))
+            st.markdown(f"**{kind}** `{stem}` — " + (f"✅ {n}건" if p else "❌ 없음")
                         + (f" · SHA-256 `{_sha256(p, os.path.getmtime(p))}`" if p else ""))   # 규격서에 적힌 64자리와 그대로 대조
             if p:
                 _file_dl(st, p, f"dl_{stem}")
@@ -427,9 +450,7 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem;
         if item in ("AI6", "AI7") and s_.startswith("result_") and not p:
             continue                                                  # AI6·AI7 결과 파일은 수동 채점용 — 없으면 표시하지 않음
         side.caption(("✅ " if p else ("⚠️ " if opt else "❌ ")) + f"{s_}" +
-                     (f" · {len(S.read_table(p))}건" if p else (" 없음 (① 판정 보류)" if s_.startswith("law_")
-                                                              else " 없음 (기본 대응표로 판정)" if s_.startswith("intent_")
-                                                              else " 없음")))
+                     (f" · {len(S.read_table(p))}건" if p else (" 없음 (① 판정 보류)" if s_.startswith("law_") else " 없음")))
     if item == "AI6":
         return sidebar_ai6(side, launch, running, missing)
     if item == "AI7":
@@ -524,20 +545,19 @@ def sidebar_ai6(side, launch, running, missing):
 
     import ai6_client as C6
     import ai6_eval as E6
-    ts_p, ans_p, map_p = data_path("testset_ai6"), data_path("answer_ai6"), data_path("intent_map_ai6")
+    ts_p, ans_p = data_path("testset_ai6"), data_path("answer_ai6")
     ts_rows = E6.read_rows(ts_p) if ts_p else []
     ans_rows = E6.read_rows(ans_p) if ans_p else []
-    try:
-        rules, rule_err = (E6.load_rules(map_p) if map_p else E6.load_rules()), ""
-    except ValueError as e:                                        # 대응표 형식 오류 → 실행 막음
-        rules, rule_err = E6.load_rules(), str(e)
-    probs = ([f"❌ {rule_err}"] if rule_err else []) + (E6.validate(ts_rows, ans_rows, rules) if ts_rows else [])
+    probs = E6.validate(ts_rows, ans_rows) if ts_rows else []
     cnt = Counter(E6.canon_type(r.get("명령유형")) for r in ts_rows)
-    if ts_rows:
-        side.caption(f"시험 명령 {len(ts_rows)}건 — " + " · ".join(f"{t} {cnt.get(t, 0)}" for t in E6.TYPES))
+    if ts_rows:                                                    # 규격 시험방법 (2) 표기 그대로
+        side.caption(f"테스트 데이터 개수 : {len(ts_rows)} 건  \n명령 유형별 개수 : "
+                     + " / ".join(f"{t} {cnt.get(t, 0)} 건" for t in E6.TYPES))
     if probs:
-        with side.expander(f"⚠️ 시험 데이터 점검 {len(probs)}건", expanded=bool(rule_err)):
+        with side.expander(f"⚠️ 시험 데이터 점검 {len(probs)}건", expanded=False):
             st.markdown("\n".join(f"- {p}" for p in probs[:60]) + ("\n- …" if len(probs) > 60 else ""))
+    ids = side.multiselect("실행할 ID (비우면 전체)", [r["사례ID"] for r in ts_rows], key="spec_ids_AI6",
+                           help="고르면 그 ID만 실행하고 '예비'로 기록해요.") if ts_rows else []   # 규격 시험방법 (3) '실행할 ID 미선택 시 전체 수행'
     import spec_runner_ai6 as R6
     base, deadline = C6.BASE, C6.DEADLINE                          # 시험 조건(동결 대상) — 화면에서 바꾸지 않음(운영자는 AI6_BASE·AI6_DEADLINE)
     if side.button("사전 점검", width="stretch", disabled=running,
@@ -553,34 +573,32 @@ def sidebar_ai6(side, launch, running, missing):
         with side.expander("사전 점검 결과", expanded=bool(bad)):
             show_table(pd.DataFrame(pc["rows"]))
             st.markdown("**동결 버전 확인**")
-            show_table(pd.DataFrame(C6.version_rows(pc["rows"], llm=pc.get("llm")))[["항목", "시험 조건", "확인값", "결과", "확인 방법"]])
+            show_table(pd.DataFrame(ai6_version_rows(C6.version_rows(pc["rows"], llm=pc.get("llm"))))[["항목", "시험 조건", "확인값", "결과", "확인 방법"]])
     fz_path = os.path.join(DATA, R6.FREEZE_FILE)
     fz = read_json(fz_path) if os.path.exists(fz_path) else {}
-    cur = R6.freeze_record(ts_p, ans_p, map_p, deadline, base) if ts_p and ans_p else None
+    cur = R6.freeze_record(ts_p, ans_p, deadline, base) if ts_p and ans_p else None
     diff = R6.freeze_check(fz_path, cur) if cur else None
-    if fz:                                                         # 규격: 의도 대응표는 시험 전에 확정, 시험 기간 중 변경 안 함 — 화면은 상태만
+    if fz:                                                         # 시험 데이터·판정 기준은 시험 전에 확정, 시험 기간 중 변경 안 함 — 화면은 상태만
         side.caption(f"🔒 동결됨 · {fz.get('frozen_at', '')}" + (f" — ❌ 바뀐 항목: {', '.join(diff)} (실행할 수 없음)" if diff else
-                                                                 " — 시험셋·정답셋·의도 대응표·판정 기준 고정"))
+                                                                 " — 시험셋·정답셋·판정 기준 고정"))
     elif ts_rows:
         side.caption("⚠️ 동결 기록이 없어요 — 이대로 실행하면 '예비'로 기록돼요")
     data_block = bool(E6.blocking(probs))
-    blocked = bool(missing) or not ts_rows or not ans_rows or bool(rule_err) or bool(diff) or data_block
+    blocked = bool(missing) or not ts_rows or not ans_rows or bool(diff) or data_block
     run = side.button("⏳ 실행 중…" if running else "AI 6 지도 제어 시험 실행", type="primary", width="stretch",
                       disabled=running or blocked, help="시험 명령을 차례로 보내 판정해요. 진행 상황과 결과는 오른쪽 화면에 나와요.")
     if missing:
         side.caption("❌ 시험 데이터 파일이 없어요 (📂 시험 데이터).")
-    if rule_err:
-        side.caption("❌ 의도 대응표 형식이 달라 실행할 수 없어요 — 위 '시험 데이터 점검'을 보세요.")
-    elif data_block:
+    if data_block:
         side.caption("❌ 시험 데이터에 문제가 있어 실행할 수 없어요 — 위 '시험 데이터 점검'을 보세요.")
     if run and not blocked and not running:                        # 비활성 버튼이 눌린 것처럼 와도 한 번 더 막음
         import qa_runner
         cmd = [sys.executable, "-u", S.SPEC["AI6"]["runner"], "--testset", ts_p, "--answer", ans_p,
                "--status-file", qa_runner.STATUS_FILE, "--base", base, "--deadline", f"{deadline:g}", "--probe", C6.PROBE_MESSAGE]
-        if map_p:
-            cmd += ["--intent-map", map_p]
+        if ids:
+            cmd += ["--cases", ",".join(ids)]
         st.session_state["spec_run_dir"] = None
-        launch(cmd, len(ts_rows))
+        launch(cmd, len(ids) or len(ts_rows))
     return "AI6"
 
 
@@ -619,7 +637,9 @@ def ai6_errors(cases, area, busy=False, item="AI6"):
                            "시험 도구의 오류가 아니에요. 오류 원인은 ① 의도 → ② 핵심 파라미터 중 처음 어긋난 기준이고(③ 3D 실행은 시험 범위 밖), "
                            "정답·AIPS 응답 원문은 아래 '질의별 상세 결과'에서 사례를 고르면 보여요.")
             else:
-                st.caption("시험 도구는 시험셋 명령문을 그대로 AIPS(공간분석 통합 에이전트)에 보내고, AIPS가 돌려준 "
+                st.caption("시험 도구는 시험셋 명령문을 그대로 AIPS("
+                           + ("지도제어·공간분석 Sub 오케스트레이터" if item == "AI6" else "공간분석 통합 에이전트")   # AI6 = 규격서 v.15 명칭
+                           + ")에 보내고, AIPS가 돌려준 "
                            "해석 의도·호출 기능·지도 명령을 정답과 대조해요. 위 사유는 그 응답 기록에서 AIPS가 실제로 한 일이에요 — "
                            "시험 도구의 오류가 아니에요. 오류 원인은 규격대로 ① 의도 → ② 핵심 파라미터 → ③ 지도 제어 중 처음 어긋난 기준이고, "
                            "정답·AIPS 응답 원문은 아래 '질의별 상세 결과'에서 사례를 고르면 보여요.")
@@ -729,12 +749,12 @@ def ai6_detail(run_dir, cid):
         st.info("이 사례의 실행 결과 로그가 없어요.")
         return
     j = lambda v: json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else ("-" if v in (None, "") else str(v))
-    calls = "; ".join(f"{c.get('callee')}:{c.get('operation')} ({c.get('status')}/{c.get('resolve_status') or '-'})"
-                      for c in gr.get("호출결과") or [])
+    fn = lambda c: "·".join(n for n, _ in E6.spec_hits(c))        # 호출 → 의뢰서 기능 이름 (의뢰서 기능이 아니면 '' — 화면에 안 보임, 로그엔 있음)
+    calls = "; ".join(f"{fn(c)} ({c.get('status')}/{c.get('resolve_status') or '-'})" for c in gr.get("호출결과") or [] if fn(c))
     acts = ", ".join(f"{a.get('type')}" + (f"[{a.get('pnu')}]" if a.get("pnu") else "") for a in gr.get("지도제어명령") or []
-                     if not str(a.get("type", "")).startswith("UI."))
-    geoms = "; ".join(f"{g.get('operation')}: " + ", ".join(f"{k}×{v}" for k, v in (g.get("도형") or {}).items())
-                      for g in gr.get("표출도형") or [])
+                     if a.get("type") in E6.SPEC_ACTIONS)
+    geoms = "; ".join(f"{fn(g)}: " + ", ".join(f"{k}×{v}" for k, v in (g.get("도형") or {}).items())
+                      for g in gr.get("표출도형") or [] if fn(g))
     who, why = E6.explain_logged(gr, pr)
     out = [("명령 유형", gr.get("명령유형")), ("명령문", gr.get("명령문")),
            ("판정", str(gr.get("판정") or "-") + (f" — {gr.get('오류원인')}" if gr.get("오류원인") else "")),
@@ -744,8 +764,8 @@ def ai6_detail(run_dir, cid):
            (AI6_MISMATCH, " | ".join(gr.get("불일치내용") or []) or "-"),
            ("세부 원인", gr.get("세부원인") or "-"),
            ("참고 (판정 제외)", " | ".join(gr.get("참고") or []) or "-"),
-           ("정답 의도", (gr.get("정답") or {}).get("정답의도")), ("해석 의도(대응표 적용)", "; ".join(pr.get("해석의도") or [])),
-           ("의도 근거", "; ".join(f"{e.get('의도')} ← {e.get('근거')} {e.get('값')}" for e in pr.get("의도근거") or [])),
+           ("정답 의도", (gr.get("정답") or {}).get("정답의도")), ("해석 의도", "; ".join(pr.get("해석의도") or [])),
+           ("의도 근거 (의뢰서 기능)", E6.evidence_text(pr.get("의도근거")) or "-"),
            ("정답 파라미터", (gr.get("정답") or {}).get("정답파라미터")), ("핵심 파라미터(시스템)", j(pr.get("핵심파라미터"))),
            ("정답 시나리오", (gr.get("정답") or {}).get("정답시나리오")),
            ("실행 대상 기능(호출)", calls or "-"), ("지도 제어 명령", acts or "-"), ("표출 도형", geoms or "-"),
@@ -1503,9 +1523,10 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                    ("사례당 응답 대기 상한", f"{meta.get('deadline_s', '-')}초 (넘기면 연결을 끊고 응답 오류)"),
                    ("실행 사례", f"선택 {len(meta['cases'])}건" if meta.get("cases") else "시험셋 전체"),
                    ("로그 파일", " · ".join(os.path.join(run_dir, n).replace("\\", "/") for n in sp["logs"])),
-                   env[-2], env[-1],
-                   ("의도 대응표 SHA-256", f"{meta.get('intent_map_sha256') or '-'}  "
-                                        f"({meta.get('intent_map') or f'기본 대응표 ({item.lower()}_eval.DEFAULT_RULES)'})")]
+                   env[-2], env[-1]]
+            if item == "AI7":                                       # AI7 은 의도 대응표를 씀(AI6 은 의뢰서 기능 정의 — 판정 기준 지문에 포함)
+                env.append(("의도 대응표 SHA-256", f"{meta.get('intent_map_sha256') or '-'}  "
+                                                f"({meta.get('intent_map') or f'기본 대응표 ({item.lower()}_eval.DEFAULT_RULES)'})"))
             if meta.get("완료전") and busy:
                 kind = "공식 조건으로 실행 중 — 모두 마치면 공식으로 기록 (지금 값은 중간 값)"
             elif meta.get("공식", True):
@@ -1520,12 +1541,13 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
                              if lost else " · 이어서 끝까지 돌리면 공식 (진행 창의 '↻ 이어서')")
             env.insert(1, ("실행 구분", kind))
             env.append(("판정 기준 지문", f"{str(meta.get('criteria_sha256') or '-')[:16]}… ({item.lower()}_eval 판정 규칙·옵션)"))
-            env.append(("동결", ("예 — 동결된 시험셋·정답셋·대응표·판정 기준·대기 상한으로 실행" if meta.get("frozen")
+            fixed = "정답셋·대응표·판정 기준" if item == "AI7" else "정답셋·판정 기준"   # AI6 은 의도 대응표가 없음(의뢰서 기능 정의는 판정 기준에 포함)
+            env.append(("동결", (f"예 — 동결된 시험셋·{fixed}·대기 상한으로 실행" if meta.get("frozen")
                                 else "아니오 (동결 전 실행)")
-                        + (" · 이 폴더는 다시 판정 — 그때의 정답셋·대응표·판정 기준으로 매김(아래 '다시 판정' 행)" if rsc else "")))
+                        + (f" · 이 폴더는 다시 판정 — 그때의 {fixed}으로 매김(아래 '다시 판정' 행)" if rsc else "")))
             if rsc:
-                env.append(("다시 판정", f"{rsc.get('at')} — 정답셋 {str(rsc.get('answer_sha256') or '-')[:16]}… · "
-                                       f"대응표 {str(rsc.get('intent_map_sha256') or '기본')[:16]}…"
+                env.append(("다시 판정", f"{rsc.get('at')} — 정답셋 {str(rsc.get('answer_sha256') or '-')[:16]}…"
+                                       + (f" · 대응표 {str(rsc.get('intent_map_sha256') or '기본')[:16]}…" if item == "AI7" else "")
                                        + (f" (원본 실행 폴더 {meta['원본']})" if meta.get("원본") else "")))
         elif sp.get("cmd"):
             env = [x for x in env if x[0] not in ("대상 시스템", "시스템 빌드 / 계약 버전")]
@@ -1539,7 +1561,7 @@ def render(item, area, help_fn=None, live=None):                  # live = 지�
             st.markdown("**동결 버전 확인** (규격 시험방법 (2) — 실행 때 사전 점검 · 조회값 기준, 선언값 = 시스템이 알려 주지 않아 의뢰기업 선언값으로 기록)")
             vr = (C6.version_rows(pre, rp.get("ready"), rp.get("llm")) if rp.get("rows")
                   else C6.version_rows(pre, meta.get("ready"), meta.get("llm")))
-            vr = ai7_version_rows(vr) if item == "AI7" else vr
+            vr = ai7_version_rows(vr) if item == "AI7" else ai6_version_rows(vr)
             vr = [{**r, "확인값": "-" if r.get("확인값") == "시스템 미제공" else r.get("확인값")} for r in vr]   # 미제공은 '-' (결과 칸 '선언값'으로 구분, 11-16 사용자)
             show_table(pd.DataFrame(vr))
             bad = [p for p in pre if p.get("결과") != "정상"]
