@@ -341,7 +341,8 @@ div.st-key-spec_item [data-testid="stButtonGroup"] button {
 div.st-key-spec_item [data-testid="stButtonGroup"] button p { font-size: 0.8rem; }
 </style>""", unsafe_allow_html=True)
     pick = side.segmented_control("시험 항목", list(S.SPEC), format_func=lambda k: k,
-                                  default=st.session_state.get("spec_item_last", "AI1"), key="spec_item")
+                                  default=None if "spec_item" in st.session_state else st.session_state.get("spec_item_last", "AI1"),
+                                  key="spec_item")    # 실행 중 항목 자동 선택(qa_app)이 값을 직접 넣으므로 그때는 기본값을 주지 않음
     item = pick or st.session_state.get("spec_item_last", "AI1")          # 다시 눌러 선택이 풀려도 유지
     st.session_state["spec_item_last"] = item
     sp = S.SPEC[item]

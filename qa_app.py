@@ -118,6 +118,11 @@ div.st-key-page_header [data-testid="stMarkdown"] { margin-bottom: 0 !important;
 .aips-title { font-size: 1.9rem; font-weight: 700; line-height: 1.35; margin: 0; color: rgb(49, 51, 63); }
 .aips-item { margin: 10px 0 2px; padding: 10px 16px; border: 1px solid #93c5fd; border-left: 6px solid #1d4ed8;
              border-radius: 8px; background: #eff6ff; font-size: 1.12rem; font-weight: 600; color: #1e3a8a; }
+.aips-item.running { border: 2px solid #f59e0b; border-left: 8px solid #d97706; background: #fffbeb; color: #78350f;
+                     animation: aipsRun 1.6s ease-in-out infinite; }
+.aips-item .runbadge { display: inline-block; margin-right: 10px; padding: 1px 10px; border-radius: 6px;
+                       background: #d97706; color: #fff; font-size: 0.9rem; font-weight: 700; vertical-align: 1px; }
+@keyframes aipsRun { 0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.0); } 50% { box-shadow: 0 0 0 5px rgba(217, 119, 6, 0.25); } }
 .aips-item .no { display: inline-block; margin-right: 10px; padding: 1px 8px; border-radius: 6px;
                  background: #1d4ed8; color: #fff; font-size: 0.9rem; font-weight: 700; vertical-align: 1px; }
 </style>
@@ -225,16 +230,35 @@ def area(key):
 
 SPEC_VIEW = VIEW == "성과지표"
 CHECK_VIEW = VIEW == "판단 여부 점검"
+@st.fragment(run_every=2)
+def _run_header(name):
+    """실행 중 항목의 머리 박스 — 2초마다 진행 건수·% 갱신, 끝나면 화면 전체를 다시 그려 평소 박스로(11-18 사용자)"""
+    stt = read_status()
+    if not is_running(stt):
+        st.rerun()
+    done, total = int(stt.get("done") or 0), int(stt.get("total") or 0)
+    pct = f" · {done * 100 / total:.0f}%" if total else ""
+    st.markdown(f'<div class="aips-item running"><span class="runbadge">⏳ 실행 중 · {done}/{total or "?"}건{pct}</span>'
+                f'{name}</div>', unsafe_allow_html=True)
+
+
 with st.container(key="page_header"):
     st.markdown('<div class="aips-title">' + {"성과지표": "AIPS 사전진단 성과지표별 성능테스트",
                                               "판단 여부 점검": "판단 여부 점검"}.get(VIEW, "AIPS 사전진단 성능테스트")
                 + '</div>', unsafe_allow_html=True)
     if SPEC_VIEW:                                   # 왼쪽에서 고른 시험항목의 전체 이름 (예: 2-4 [AI 4] 예외·단서 규정 …)
+        _hs = read_status()                         # 실행 중이면 그 항목을 선택하고 머리 박스를 '실행 중'으로 (11-18 사용자)
+        _run_it = str(_hs.get("mode", "")).split(" ")[-1] if is_running(_hs) and str(_hs.get("mode", "")).startswith("성과지표") else ""
+        if _run_it in spec_eval.SPEC:
+            st.session_state["spec_item"] = st.session_state["spec_item_last"] = _run_it
         _it = st.session_state.get("spec_item") or st.session_state.get("spec_item_last", "AI1")
         if _it in spec_eval.SPEC:
             _sp = spec_eval.SPEC[_it]
-            st.markdown(f'<div class="aips-item">{_sp["name"]}</div>',
-                        unsafe_allow_html=True)
+            if _it == _run_it:
+                _run_header(_sp["name"])
+            else:
+                st.markdown(f'<div class="aips-item">{_sp["name"]}</div>',
+                            unsafe_allow_html=True)
 
 
 @st.fragment(run_every=2)
@@ -343,16 +367,32 @@ def progress_panel():
 
 
 # ---------------- 실행 (백그라운드 프로세스) ----------------
+@st.cache_resource
+def _launch_lock():
+    """모든 접속자(세션)가 함께 쓰는 실행 잠금 — 두 사람이 동시에 눌러도 한 실행만 시작(11-18)"""
+    import threading
+    return threading.Lock()
+
+
 def launch(cmd, total, resume=False, env=None):
-    """qa_runner.py를 별도 프로세스로 시작하고 화면을 새로 그림 (env: 러너에만 넘길 환경변수 — 예: AI6 LLM 키)"""
-    if os.path.exists(qa_runner.STOP_FILE):
-        os.remove(qa_runner.STOP_FILE)
-    qa_runner.write_status(STATUS, dict(state="running", done=0, total=total, current=None, started=time.time(),
-                                        mode="시작 중", message="러너를 시작하는 중…"))
-    log = open("run.log", "a" if resume else "w", encoding="utf-8")
-    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)   # Windows: 터미널 Ctrl+C와 분리
-    subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, creationflags=flags,
-                     env=dict(os.environ, PYTHONIOENCODING="utf-8", **(env or {})))
+    """qa_runner.py를 별도 프로세스로 시작하고 화면을 새로 그림 (env: 러너에만 넘길 환경변수 — 예: AI6 LLM 키)
+    누르는 순간 실행 상태를 다시 읽어, 다른 시험이 돌고 있으면 시작하지 않음(11-18: 미리 열어 둔 화면의 켜진 버튼으로
+    두 번째 실행이 시작돼 AIPS 응답 오류가 났던 일 — 변경내역 136절)"""
+    with _launch_lock():
+        cur = read_status()
+        if is_running(cur):
+            mode = str(cur.get("mode", "")).replace("성과지표 ", "")
+            st.session_state["launch_blocked"] = (f"지금 {mode} 시험이 실행 중입니다({cur.get('done', 0)}/{cur.get('total', '?')}건). "
+                                                  "끝난 뒤 다시 실행하세요. 동시에 돌리면 응답 오류가 날 수 있습니다.")
+            st.rerun()
+        if os.path.exists(qa_runner.STOP_FILE):
+            os.remove(qa_runner.STOP_FILE)
+        qa_runner.write_status(STATUS, dict(state="running", done=0, total=total, current=None, started=time.time(),
+                                            mode="시작 중", message="러너를 시작하는 중…"))
+        log = open("run.log", "a" if resume else "w", encoding="utf-8")
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)   # Windows: 터미널 Ctrl+C와 분리
+        subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, creationflags=flags,
+                         env=dict(os.environ, PYTHONIOENCODING="utf-8", **(env or {})))
     st.session_state["was_running"] = True
     st.session_state.pop("dismissed", None)
     time.sleep(1.5)
@@ -362,6 +402,8 @@ def launch(cmd, total, resume=False, env=None):
 
 # ---------------- 사이드바: 실행(위) & 설정(아래) ----------------
 side = st.sidebar.container()          # 위: 정답셋·실행
+if st.session_state.get("launch_blocked"):
+    side.warning(st.session_state.pop("launch_blocked"), icon="⏳")
 side_bottom = st.sidebar.container()   # 아래: ⚙️ 설정
 
 with side_bottom:
