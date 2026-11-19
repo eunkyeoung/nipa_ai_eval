@@ -10,7 +10,8 @@ import spec_eval as S
 B = "http://192.168.200.116:17801"
 def session(xlsx):
     ws = openpyxl.load_workbook(xlsx, data_only=True).active
-    cell = next(str(r[3]) for r in ws.iter_rows(values_only=True) if r[2] == B + "/")
+    # 접속 URL 칸 바로 오른쪽이 로그인 계정 칸 (11-11 판부터 앞에 'No' 열이 생겨 열 위치가 밀림 → 위치를 찾아서 읽음)
+    cell = next(str(r[r.index(B + "/") + 1]) for r in ws.iter_rows(values_only=True) if B + "/" in r)
     toks = [t for t in re.split(r"[\s/,:]+|ID|PW|PWD|아이디|비밀번호|\(|\)", cell, flags=re.I) if t]
     s = requests.Session()
     s.post(B + "/api/auth/login", json={"username": toks[0], "password": toks[1]}, timeout=10).raise_for_status()
