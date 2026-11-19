@@ -496,7 +496,47 @@ def step_log(events, base=None):
              (f"응답 원문 {', '.join(map(str, sorted(set(at['laws']))))}번 항목(단계별 검토 결과) › 관련 법령" if at["laws"] else ""),
              ev_(at["diagnosis"], "최종 진단 결과") + " › 적용 규칙·용도지역 허용 판정" if at["diagnosis"] is not None else "",
              ev_(at["diagnosis"], "최종 진단 결과") + " › 최종 판정" if at["diagnosis"] is not None else ""]
-    return [dict(단계번호=i + 1, 단계명=STEPS[i], **r, 근거=basis[i]) for i, r in enumerate(rows)]
+    out = [dict(단계번호=i + 1, 단계명=STEPS[i], **r, 근거=basis[i]) for i, r in enumerate(rows)]
+    if not (st["intent"] or st["parcel"] or st["diag"]) and NOBUILD_3D.search(st["reply"]):
+        out = _steps_3d(events, st["reply"])
+    return out
+
+
+TRACE_3D = [(1, ("질문을 이해",)), (2, ("위치를 찾는", "필지를 지도에")), (3, ("토지 정보 에이전트", "면적을 계산", "도로에 접한", "경사도", "규제를 검토")),
+            (4, ("관계 법령",)), (5, ("행위제한", "가능한지 확인", "건폐율"))]
+
+
+def _steps_3d(events, reply):
+    """[AI 3] 판정 자료 없이 3D 한 문장("건축이 어려운 땅이라 3D 건물을 올릴 수 없습니다")으로 끝난 응답의 6단계 로그 (11-19 사용자)
+    결과 자료(조회 결과·법령·룰셋)는 응답에 없으므로, 실제로 거친 단계는 진행 메시지(orc.trace)로 남기고 ⑥ 최종 판단 = 허가 불가능"""
+    hit = {n: [] for n, _ in TRACE_3D}
+    key = ""
+    for i, (ev, d) in enumerate(events):
+        if ev != "orc.trace":
+            continue
+        msg = str((d or {}).get("message") or "")
+        for n, kws in TRACE_3D:
+            if any(k in msg for k in kws):
+                hit[n].append(i)
+        m = re.search(r"「(.*?)」\s*위치를 찾는", msg)
+        key = key or (m.group(1) if m else "")
+    rep = next((i for i, (ev, d) in enumerate(events) if ev == "orc.response" and (d or {}).get("event") == "reply"), None)
+    note = " — 3D 답변이라 결과 자료 없음"
+    out = []
+    for n in range(1, 6):
+        ix = hit[n]
+        out.append(dict(단계번호=n, 단계명=STEPS[n - 1], 실행=bool(ix), 데이터소스="진행 메시지(orc.trace)" if ix else "",
+                        조회키=key if n == 2 and ix else "", 결과건수="", 적용룰셋=[], 검색법령=[], 중간판정값="",
+                        근거=(f"응답 원문 {', '.join(map(str, ix))}번 항목(진행 메시지)" + note) if ix else ""))
+    out.append(dict(단계번호=6, 단계명=STEPS[5], 실행=True, 데이터소스="reply(3D 답변)", 조회키="", 결과건수=1,
+                    적용룰셋=[], 검색법령=[], 중간판정값="허가 불가능",
+                    근거=f"응답 원문 {rep}번 항목(답변 문장) › \"{reply.strip()[:40]}\" = 허가 불가능(3D 답변 규칙, 변경내역 135절)"))
+    return out
+
+
+def is_3d_steps(steps):
+    """6단계 로그가 3D 한 문장 답에서 만든 것인지"""
+    return any(s.get("단계번호") == 6 and s.get("데이터소스") == "reply(3D 답변)" for s in steps or [])
 
 
 EVENT_KIND = {"intent": "질의 해석 결과", "parcel": "필지 조회 결과", "stage": "단계별 검토 결과",
@@ -1014,12 +1054,18 @@ def score_ai3(log):
         base = g.iloc[0]["단계로그"]
         all_ok = True
         for _, r in g.iterrows():
+            note3d = False
             if not r.get("단계로그") or r.get("오류"):
                 diffs = [("응답 오류", "오류")]
             elif not base:
                 diffs = [("기준 회차 오류", "오류")]
             elif int(r["회차"]) == int(g.iloc[0]["회차"]):
                 diffs = []
+            elif is_3d_steps(base) or is_3d_steps(r["단계로그"]):
+                # 3D 한 문장 답은 조회·법령·룰셋 결과 자료가 응답에 없음 → 최종 판단만 비교 (11-19 사용자: 3D 답도 허가 불가 판단)
+                fin = lambda L: next((s["중간판정값"] for s in L if s["단계번호"] == 6), "")
+                diffs = [] if fin(base) == fin(r["단계로그"]) else [(STEPS[5], "최종판단")]
+                note3d = True
             else:
                 diffs = compare_steps(base, r["단계로그"])
             ok = not diffs
@@ -1030,7 +1076,8 @@ def score_ai3(log):
                              "기준": "기준 (1회차)" if int(r["회차"]) == int(g.iloc[0]["회차"]) else "1회차와 비교",
                              "일치": ok, "불일치 단계": "; ".join(sorted({d[0] for d in diffs})) or "없음",
                              "불일치 필드": "; ".join(f"{d[0][:1]}{d[1]}" for d in diffs) or "없음",
-                             "불일치 내용": diff_detail(base, r.get("단계로그") or [], diffs, r.get("오류")),
+                             "불일치 내용": ("3D 한 문장 답 회차 — 결과 자료가 없어 최종 판단만 비교(같음)" if note3d and not diffs
+                                         else diff_detail(base, r.get("단계로그") or [], diffs, r.get("오류"))),
                              "최종 판단": next((s["중간판정값"] for s in r["단계로그"] if s["단계번호"] == 6), "")})
         case_ok.append({"사례ID": cid, "질의문": g.iloc[0].get("질의문", ""), "수행 횟수": len(g), "일치 수행": sum(x["일치"] for x in run_rows if x["사례ID"] == cid),
                         "5회 모두 일치": all_ok})
