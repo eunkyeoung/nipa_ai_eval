@@ -45,3 +45,6 @@ backup/**/landcheck_instance_*.ttl
 deploy/deploy_history.log
 spec_data/da2/_unitlink/
 
+
+# 신청제품 구성요소 폴더(바이너리·라이브러리·소스, 약 9.7GB) — PC 보관용, git 제외. 해시 txt만 git
+신청제품_해시_*/0*/
