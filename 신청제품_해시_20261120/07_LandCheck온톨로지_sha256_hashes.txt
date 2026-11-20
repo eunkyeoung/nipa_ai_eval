@@ -1,0 +1,4 @@
+028e0a06b94a64eaef9f12db4c9f10a80cdb8a19fb7ae8757d219f21934f8f6c  ./02_인스턴스/landcheck_instance_v1.0.ttl
+b89d9427796ab9b7a5bb23503faf1a04e1002bae41667ac21c859c707586dff5  ./03_SHACL/landcheck_shapes_v1.0.ttl
+1eb517ff8412954c701a769d9298a8f7d5907ef88cb380efdc70264f19180c7b  ./01_스키마/landcheck_schema_v1.0.ttl
+최종 SHA256 해시 값: 70b033729b0d2ddb544853624f244b62e2dc97f4edeaad5502fbe58b20b5d55f
